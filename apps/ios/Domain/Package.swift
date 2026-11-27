@@ -21,7 +21,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../Sync"),
-    .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
   ],
   targets: [
     .target(name: "DomainKitNFC"),
@@ -31,9 +31,9 @@ let package = Package(
     .target(name: "GymDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "RoadmapDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "RoadmapLayout"),
-    .executableTarget(name: "GymCatalogGen", dependencies: [syncCore]),
+    .executableTarget(name: "CatalogGen", dependencies: [syncCore]),
     .testTarget(name: "DomainKitTests", dependencies: ["DomainKit", syncCore, syncAPI, syncTesting], exclude: ["Attacks"]),
-    .testTarget(name: "GymCatalogGenTests", dependencies: ["GymCatalogGen", syncCore]),
+    .testTarget(name: "CatalogGenTests", dependencies: ["CatalogGen", syncCore]),
     .testTarget(
       name: "DomainKitTestingTests",
       dependencies: [

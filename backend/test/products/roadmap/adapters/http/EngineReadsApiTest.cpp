@@ -175,7 +175,7 @@ struct Engine {
     return sync::jcs(list);
   }
 
-  // Ann's roadmap "A roadmap", unlisted: Basics (olive), then Ownership, then Traits; under Basics a subtree of Rig and
+  // Ann's roadmap "A roadmap", public: Basics (olive), then Ownership, then Traits; under Basics a subtree of Rig and
   // Knot. Every push a minute after the one before, from kStart.
   void plant() {
     push(kStart, {intent("self/roadmap", "g-root", kStart, R"([{"t": "tree", "id": ")" + kRoot + R"(", "born": "@", "life": ["alive", "@"]}])")});
@@ -187,8 +187,8 @@ struct Engine {
                          step("ownership", "Ownership", "a1"), step("traits", "Traits", "a2"),
                          parse(R"({"t": "edge", "id": ["basics", "ownership"], "life": ["alive", "@"]})"),
                          parse(R"({"t": "edge", "id": ["ownership", "traits"], "life": ["alive", "@"]})")}))});
-    push(kStart + 120'000, {intent("tree/" + kRoot, "g-unlisted", kStart + 120'000,
-                                   R"([{"t": "meta", "id": "meta", "f": {"visibility": ["unlisted", "@"]}}])")});
+    push(kStart + 120'000, {intent("tree/" + kRoot, "g-shared", kStart + 120'000,
+                                   R"([{"t": "meta", "id": "meta", "f": {"visibility": ["public", "@"]}}])")});
     Json::Value subtree = parse(R"({"scope": "self/roadmap", "gestureId": "g-subtree", "d": [], "cmd": {"name": "roadmap.createSubtree"}})");
     subtree["cmd"]["args"] = parse(R"({"tree": ")" + kRoot + R"(", "root": ")" + kRoot + R"(", "step": "basics", "subtree": ")" + kSubtree + R"("})");
     push(kStart + 180'000, {subtree});
@@ -360,9 +360,9 @@ TEST(engine_share_page_names_a_readable_roadmap_and_its_standing_subtree_and_ser
                                                                 Engine::step("one", "One", "a0")}))});
 
   CHECK_EQ(engine.pageOf("", kRoot),
-           SharePageApi::renderShell(kShell, "https://share.example", "A roadmap", 3, Visibility::unlisted, kRoot, ForkLineage{}, false));
+           SharePageApi::renderShell(kShell, "https://share.example", "A roadmap", 3, Visibility::public_, kRoot, ForkLineage{}, false));
   CHECK_EQ(engine.pageOf("", kSubtree),
-           SharePageApi::renderShell(kShell, "https://share.example", "Basics", 2, Visibility::unlisted, kSubtree, ForkLineage{}, false));
+           SharePageApi::renderShell(kShell, "https://share.example", "Basics", 2, Visibility::public_, kSubtree, ForkLineage{}, false));
   CHECK_EQ(engine.pageOf("", kPrivate), kShell);
   CHECK_EQ(engine.pageOf("bea-session", kPrivate), kShell);
   CHECK_EQ(engine.pageOf("ann-session", kPrivate),
@@ -371,7 +371,7 @@ TEST(engine_share_page_names_a_readable_roadmap_and_its_standing_subtree_and_ser
   engine.deleteBasics(kStart + 360'000);
   CHECK_EQ(engine.pageOf("ann-session", kSubtree), kShell);
   CHECK_EQ(engine.pageOf("", kRoot),
-           SharePageApi::renderShell(kShell, "https://share.example", "A roadmap", 2, Visibility::unlisted, kRoot, ForkLineage{}, false));
+           SharePageApi::renderShell(kShell, "https://share.example", "A roadmap", 2, Visibility::public_, kRoot, ForkLineage{}, false));
 }
 
 TEST(engine_gallery_lists_a_public_root_with_its_owners_progress_and_no_subtree) {

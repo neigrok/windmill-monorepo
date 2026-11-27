@@ -382,8 +382,8 @@ final class RoadmapCaptures: DesignCapture {
     return app
   }
 
-  func learnToSail(_ look: Look, board: String = "roadmap-learn-to-sail") -> XCUIApplication {
-    let app = launch(board, look)
+  func learnToSail(_ look: Look, board: String = "roadmap-learn-to-sail", copying copied: String? = nil) -> XCUIApplication {
+    let app = launch(board, look, copying: copied)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     return app
   }
@@ -536,7 +536,7 @@ final class RoadmapCaptures: DesignCapture {
     captureBoard("02.16c-roadmap-paste-not-allowed") { look in
       UIPasteboard.general.string = Self.daySail
       let app = learnToSail(look)
-      app.pasteSteps(allowing: false)
+      app.pasteSteps(refusing: true)
       XCTAssertTrue(app.staticTexts["Paste not allowed"].waitForExistence(timeout: 5))
       return app
     }
@@ -545,9 +545,8 @@ final class RoadmapCaptures: DesignCapture {
   // 02.17: the copied list read back over the Board, a heading and the four steps under it.
   func testPastedStepsReadBack() {
     captureBoard("02.17-roadmap-pasted-steps-read-back") { look in
-      UIPasteboard.general.string = Self.daySail
-      let app = learnToSail(look)
-      app.pasteSteps(allowing: true)
+      let app = learnToSail(look, copying: Self.daySail)
+      app.pasteSteps()
       XCTAssertTrue(app.navigationBars["Paste Steps"].waitForExistence(timeout: 10))
       return app
     }
@@ -556,9 +555,8 @@ final class RoadmapCaptures: DesignCapture {
   // 02.18: the five steps added, washed in their groups, with Undo in the band.
   func testPastedStepsAdded() {
     captureBoard("02.18-roadmap-pasted-steps-added") { look in
-      UIPasteboard.general.string = Self.daySail
-      let app = learnToSail(look)
-      app.pasteSteps(allowing: true)
+      let app = learnToSail(look, copying: Self.daySail)
+      app.pasteSteps()
       XCTAssertTrue(app.buttons["roadmap-paste-add"].waitForExistence(timeout: 10))
       app.buttons["roadmap-paste-add"].tap()
       XCTAssertTrue(app.staticTexts["Added 5 steps"].waitForExistence(timeout: 10))
@@ -1195,7 +1193,7 @@ final class RoadmapCaptures: DesignCapture {
   // 08.5: *Learn to sail* gone into from *Become a day skipper*, whose guide stands under its own.
   func testGuidesFromAbove() {
     captureBoard("08.5-roadmap-guides-from-above") { look in
-      let app = guide(of: "roadmap-guide-above", item: "Guide · +1 from above", look)
+      let app = guide(of: "roadmap-guide-above", item: "Guides, +1 from above", look)
       XCTAssertTrue(app.staticTexts["roadmap-guide-above"].waitForExistence(timeout: 10))
       return app
     }

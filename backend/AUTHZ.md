@@ -9,13 +9,13 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
 `canWrite` in `products/roadmap/domain/Access.h`, and every surface calls those and no parallel copy.
 
 - **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence, MCP `get_tree`) gate
-  on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by
-  anyone holding the id. A denial is byte-identical to an absent tree, so no id can be probed for
+  on `canRead`: a `private` tree is its owner's alone, a `public` one is readable by anyone holding
+  the id. A denial is byte-identical to an absent tree, so no id can be probed for
   existence. `GET …/progress` serves the **owner's** overlay to every reader, under the same gate:
   the stored marks to a caller `canWrite` admits, and to every other reader the owner's derived
   completion (`readerView`, `products/roadmap/domain/OpenedTrees.h`), as the gallery counts it.
   A read is not the whole tree for everyone: the tree a node `opens` goes only to a caller
-  `canWrite` admits, because a tree id is the read capability of an unlisted tree. Every other
+  `canWrite` admits, because the tree it opens may be private. Every other
   reader — a stranger, a signed-out caller, a revoked session — receives `readerView`
   (`products/roadmap/domain/Subgraph.h`), the nodes without their pointers, from `GET` tree, the WS
   subscribe delta and every live frame. The MCP reads answer it, as `opens: {treeId, title, state}`,
@@ -217,7 +217,7 @@ evicts a room somebody is using.
 The real `UserId` is the op `actor`, the `undoKey` and `progressUser_`, so undo and progress are
 per-user. It does not go on the wire: presence frames carry a per-room seat id (`p<N>`,
 `PresenceHub::Member::seat`) instead of `users.id`, because presence fans out to every co-viewer on
-any public or unlisted tree. The display name is still shown.
+any public tree. The display name is still shown.
 
 ### MCP-HTTP (`/mcp`)
 

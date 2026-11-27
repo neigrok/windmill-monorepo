@@ -1,7 +1,7 @@
 // The gym product's route table. GymApp resolves the exact position off the hash; log.js holds the
 // hash grammar.
 
-import { lazy } from 'react';
+import { createElement, lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
 import { adoptGymDeviceRows, createGymApi, gymCommandResult, gymDeviceWork, gymLiveHint, signInWork, watchBrowserCopies } from './gymRuntime.js';
@@ -92,30 +92,24 @@ export const gymRoutes = {
     Component: GymLanding,
     preload: importGymLanding,
     tagline: t('gym.product.tagline'),
-    // The words and the two still scenes the brand root composes gym's band and section from.
+    // What the brand root shows of gym: its row among the three tools and its section.
     root: {
-      platforms: t('gym.product.platforms'),
-      // Cards of prose, so the height steps with where the text wraps rather than scaling with the
-      // frame: these are where it settles once the logger and the proposal sit side by side, and
-      // the pair stands taller stacked. Holding the settled height beats holding nothing.
-      reserve: { band: '220px', section: '412px' },
-      band: {
-        title: t('gym.product.band.title'),
-        sub: t('gym.product.band.sub'),
+      kind: t('gym.root.kind'),
+      line: t('gym.root.line'),
+      link: { href: '/gym', label: t('gym.root.link'), to: 'landing' },
+      title: t('gym.root.title', { break: createElement('br') }),
+      paragraph: t('gym.root.paragraph'),
+      features: [
+        { title: t('gym.root.remembersTitle'), text: t('gym.root.remembersText') },
+        { title: t('gym.root.progressTitle'), text: t('gym.root.progressText') },
+        { title: t('gym.root.phoneTitle'), text: t('gym.root.phoneText') },
+      ],
+      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
+      picture: {
+        label: t('gym.root.composed'),
+        stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
+        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.GymPicture }))),
       },
-      section: {
-        title: t('gym.product.section.title'),
-        sub: t('gym.product.section.sub'),
-        trust: t('gym.product.section.trust'),
-        cta: { href: home(), label: t('gym.product.section.cta') },
-        proof: [
-          { title: t('gym.product.proof.tapsTitle'), copy: t('gym.product.proof.tapsCopy') },
-          { title: t('gym.product.proof.remembersTitle'), copy: t('gym.product.proof.remembersCopy') },
-          { title: t('gym.product.proof.toolsTitle'), copy: t('gym.product.proof.toolsCopy') },
-        ],
-      },
-      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.GymGlimpse }))),
-      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.GymIllustration }))),
     },
   },
   shell: {

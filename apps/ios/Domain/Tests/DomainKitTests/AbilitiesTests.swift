@@ -7,7 +7,7 @@ import Testing
 // language matches alike.
 struct AbilitiesTests {
   static func ability(_ name: String, agent: AgentRule = .runs, seats: AbilitySeats = .any, declared: Bool = true) -> Ability {
-    Ability(name: name, kind: .read, agent: agent, seats: seats, declared: declared, phrase: "read \(name)", input: ["type": "object"],
+    Ability(name: name, kind: .read, agent: agent, seats: seats, declared: declared, strict: true, phrase: "read \(name)", input: ["type": "object"],
             result: ["type": "array"])
   }
 

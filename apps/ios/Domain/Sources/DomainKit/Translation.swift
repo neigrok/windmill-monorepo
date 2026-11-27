@@ -11,6 +11,7 @@ extension Plan {
     }
     try checkOneOperationPerRecord(registry)
     try checkHeldPlan()
+    guard undoChecks.isEmpty || undo != nil else { throw PlanError(rule: 11, "a plan checks an Undo it does not opt into") }
     let predicted = try predicted(in: scope, registry)
     return Gesture(
       changes: changes,

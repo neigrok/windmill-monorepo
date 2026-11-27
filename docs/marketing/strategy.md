@@ -97,7 +97,7 @@ Every route below passes the rules in [What every channel keeps](#what-every-cha
 
 One tutorial video of the first guide is a proposal. Whether Windmill gets a video channel is decided when that tutorial exists. Paid search is a priced option behind the money gates, with no spending approved. [Video route](reports/17-distribution-and-editorial.md#proposed-channel-choices) · [Apple Ads brief](reports/14-apple-ads-test.md)
 
-[Report 17](reports/17-distribution-and-editorial.md) holds the working order for the first two weeks, counted from the day work starts, and how the owner's weekly hours divide. [Report 19](reports/19-product-generated-content.md) assesses small useful things the product could make from a person's own action. [Report 20](reports/20-competitive-presence.md) compares what each room competes with. New page layouts and changes to public screens need an approved design. The public pages' structure, wording, search repairs and look are proposed in [the marketing site proposal](../design/marketing-site-proposal.md). No route adds a requirement to the [launch contract](#launch-contract).
+[Report 17](reports/17-distribution-and-editorial.md) holds the working order for the first two weeks, counted from the day work starts, and how the owner's weekly hours divide. [Report 19](reports/19-product-generated-content.md) assesses small useful things the product could make from a person's own action. [Report 20](reports/20-competitive-presence.md) compares what each room competes with. New page layouts and changes to public screens need an approved design. The public pages' structure, wording, search repairs and look are in [the marketing site](../design/marketing-site-proposal.md). No route adds a requirement to the [launch contract](#launch-contract).
 
 ## Two behavior experiments at a time
 
@@ -171,14 +171,13 @@ For scale, retain the stricter gate: 50 unique non-refunded payers across succes
 Ruled:
 
 - **Scale and spending.** Eight owner hours a week. No standing marketing budget: each spend is its own proposal, with its amount and what it would teach.
-- **The pricing page states where the $12 goes, in dollars**, from the day the page is rebuilt: the AI allowance, the store's fee, running Windmill and the work. It waits on the release's final AI allowance amount. The page states none of this today.
+- **The pricing page states where the $12 goes, in dollars**: the AI you use, $7.00; store and payment fees, about $1.80, naming no store; and Windmill, about $3.20. That page is approved and not built; the live pricing page states none of this.
 - **A master's fee.** There is no standing ceiling: each fee is its own spending proposal. Whether it is owed when the master publishes nothing is agreed in writing with each master before they start. No fee benchmark is recorded in [the evidence](benchmarks.md).
 - **A person's own provider key or token.** Windmill accepts one for Gym and Roadmap once Windmill One has 1,000 subscribers. It takes none today.
-- **The public pages.** Their main heading, structure and look are ruled in [the marketing site proposal](../design/marketing-site-proposal.md#owner-rulings-and-open-decisions).
+- **The public pages.** Their rules, look and approved wording are in [the marketing site](../design/marketing-site-proposal.md#rules-every-public-page-keeps).
 - **App Store countries.** Every country, the EU included, with one check still open. [Access and release checks](reports/01-store-readiness.md)
 
 Open:
 
 - Whether the EU stays in the first release, after the check of what Apple publishes about an individual seller on EU listings.
-- Approval of the front page, which is being redrawn with the ruled wording, and of the night version of the mark.
 - The founder note, which is the owner's to write.

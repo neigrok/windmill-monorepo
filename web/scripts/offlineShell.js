@@ -3,6 +3,9 @@ import { join } from 'node:path';
 
 export const PRECACHE_BUDGET = 4 * 1024 * 1024;
 
+// The front page's face stays out of the precache, so no other page fetches it; the asset cache keeps it once the page fetches it through the worker.
+const FRONT_PAGE_FACE = /@fontsource-variable\/inter\//;
+
 export function offlineShell() {
   return {
     name: 'windmill-offline-shell',
@@ -15,7 +18,10 @@ export function offlineShell() {
         visited.add(name);
         const item = bundle[name];
         if (!item) throw new Error(`offline-shell: missing bundled dependency ${name}`);
-        if (item.type !== 'chunk') { assets.add(name); return; }
+        if (item.type !== 'chunk') {
+          if (!item.originalFileNames?.some((file) => FRONT_PAGE_FACE.test(file))) assets.add(name);
+          return;
+        }
         // The showcase is a developer surface, and search by meaning's model runtime loads on its first use, never with the shell.
         if (Object.keys(item.modules).some((path) => /\/src\/showcase\/|\/node_modules\/(?:@huggingface\/transformers|onnxruntime-[a-z]+)\//.test(path))) return;
         assets.add(name);

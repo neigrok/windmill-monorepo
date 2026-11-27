@@ -279,7 +279,7 @@ TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
   CHECK(s.registry.remove(tid("ghost"), uid("owner")) == Removal{TreeRegistry::RemovalRefusal::notFound});
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
-  s.trees.byId["t"].visibility = Visibility::unlisted;
+  s.trees.byId["t"].visibility = Visibility::public_;
   CHECK(s.registry.remove(tid("t"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notYours});
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
@@ -309,7 +309,7 @@ TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
 
   CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notFound);
   CHECK(s.registry.rename(tid("ghost"), uid("owner"), "Anything") == TreeRegistry::Renaming::notFound);
-  s.trees.byId["t"].visibility = Visibility::unlisted;
+  s.trees.byId["t"].visibility = Visibility::public_;
   CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notYours);
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::nobodysTree);
@@ -454,9 +454,9 @@ TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 
-  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
+  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
-  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(s.trees.byId["t"].visibility == Visibility::public_);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::private_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
@@ -472,13 +472,13 @@ TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
         VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
   CHECK(s.registry.setVisibility(tid("ghost"), uid("owner"), Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
-  s.trees.byId["t"].visibility = Visibility::unlisted;
+  s.trees.byId["t"].visibility = Visibility::public_;
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::nobodysTree});
-  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(s.trees.byId["t"].visibility == Visibility::public_);
 }
 
 TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
@@ -488,10 +488,10 @@ TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
   TreeRoom& room = *s.rooms.open(tid("t"));
   CHECK(room.visibility() == Visibility::private_);
 
-  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
+  CHECK(s.registry.setVisibility(tid("t"), me, Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
-  CHECK(room.visibility() == Visibility::unlisted);
-  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(room.visibility() == Visibility::public_);
+  CHECK(s.trees.byId["t"].visibility == Visibility::public_);
 }
 
 TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
@@ -618,7 +618,7 @@ TEST(set_guide_refuses_a_non_owner_and_reads_a_tree_they_cannot_see_as_absent) {
 
   CHECK(std::get<TreeRegistry::GuideRefusal>(s.registry.setGuide(tid("t"), uid("intruder"), "Mine now")) ==
         TreeRegistry::GuideRefusal::notFound);
-  s.trees.byId["t"].visibility = Visibility::unlisted;
+  s.trees.byId["t"].visibility = Visibility::public_;
   CHECK(std::get<TreeRegistry::GuideRefusal>(s.registry.setGuide(tid("t"), uid("intruder"), "Mine now")) ==
         TreeRegistry::GuideRefusal::notYours);
   s.trees.byId["t"].owner = std::nullopt;
@@ -1044,7 +1044,7 @@ TEST(remove_refused_to_a_non_owner_edits_nothing_of_the_trees_that_open_it) {
   const GraphState intrudersOwn = s.trees.byId["t_mine"].state;
 
   CHECK(s.registry.remove(tid("t_target"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notFound});
-  s.trees.byId["t_target"].visibility = Visibility::unlisted;
+  s.trees.byId["t_target"].visibility = Visibility::public_;
   CHECK(s.registry.remove(tid("t_target"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notYours});
 
   CHECK_FALSE(s.trees.deletedIds.count("t_target"));
@@ -1074,7 +1074,7 @@ TEST(create_subtree_stores_an_empty_child_under_the_step_and_a_retry_answers_it_
   AtTheDoor door;
   const UserId me = uid("me");
   seedParent(s, "t_p", me);
-  s.trees.byId["t_p"].visibility = Visibility::unlisted;
+  s.trees.byId["t_p"].visibility = Visibility::public_;
   const Subtree child{TreeId{"t_00000000000000c1"}, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
 
   CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
@@ -1089,7 +1089,7 @@ TEST(create_subtree_stores_an_empty_child_under_the_step_and_a_retry_answers_it_
   CHECK(s.rooms.open(tid("t_p"))->pendingOps().empty());
   // Its own visibility column holds private, and it is read by its root's.
   CHECK(s.rooms.accessOf(child.id) ==
-        (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p"), {OwningStep{tid("t_p"), nid("rig")}}})));
+        (std::optional<TreeAccess>(TreeAccess{me, Visibility::public_, tid("t_p"), {OwningStep{tid("t_p"), nid("rig")}}})));
 
   // The reply was lost: the same call, with the same proposed id or none, answers the same child and writes nothing.
   CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
@@ -1620,7 +1620,7 @@ TEST(a_subtree_admits_whom_its_root_admits_and_no_one_once_its_root_is_removed) 
   CHECK_FALSE(readable("t_d1", uid("stranger")));
   CHECK_FALSE(readable("t_d2", uid("stranger")));
 
-  REQUIRE(s.registry.setVisibility(tid("t_p"), me, Visibility::unlisted) ==
+  REQUIRE(s.registry.setVisibility(tid("t_p"), me, Visibility::public_) ==
           VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
   CHECK(readable("t_d1", uid("stranger")));
   CHECK(readable("t_d2", uid("stranger")));
@@ -1667,7 +1667,7 @@ TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_it
   Setup s;
   const UserId me = uid("me");
   seedParent(s, "t_p", me);
-  s.trees.byId["t_p"].visibility = Visibility::unlisted;
+  s.trees.byId["t_p"].visibility = Visibility::public_;
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"))));

@@ -111,10 +111,11 @@ for (const browserName of ['chromium', 'webkit']) {
     });
   }
 
+  // Only a public roadmap offers a step's link: any other visibility, unlisted among them, reads as private.
   for (const options of [
     { role: 'owner', visibility: 'public' },
-    { role: 'owner', visibility: 'unlisted' },
     { role: 'owner', visibility: 'private' },
+    { role: 'owner', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public' },
     { role: 'reader', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public', demo: true },
@@ -136,7 +137,7 @@ for (const browserName of ['chromium', 'webkit']) {
         const step = page.getByRole('article', { name: 'Read the wind', exact: true });
         await step.waitFor();
         await step.getByRole('button', { name: 'More', exact: true }).click();
-        const shareable = options.visibility !== 'private' && !options.demo;
+        const shareable = options.visibility === 'public' && !options.demo;
         assert.deepEqual(await page.getByRole('menuitem').allTextContents(), [
           ...(shareable ? ['Copy link'] : []), 'Open in Graph', ...(options.role === 'owner' ? ['Delete step'] : []),
         ]);

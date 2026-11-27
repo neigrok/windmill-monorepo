@@ -2,7 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but two,
+v15/minimum-15 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but two,
 which the web alone runs: `refused-start-actions.json`, while the phones' recovery of a start that lost a race waits on
 its design ([open problems](../../../../docs/foundation/local-first-open-problems.md) LP-6), and
 `rest-settings-actions.json`, while no phone sets the default rest or the rest sound.

@@ -5,7 +5,7 @@ import { Reader, Views } from './reading.js';
 import { precondition } from './values.js';
 
 /** @typedef {{ scope: string, stamp: string | null, localIds: string[], ids: (import('./entities.js').RecordID | null)[] }} ActSegmentReceipt */
-/** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null }} ActReceipt */
+/** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null, undo: import('./runner.js').UndoHandle }} ActReceipt */
 /** @typedef {{ scopes: string[], hold: boolean, gestureId?: string, undo?: { version: 1, segments: { index: number, recipes: import('./values.js').Json[] }[] } }} ActRequest */
 /**
  * The engine's act context (engine §7.1 Ordered local acts). In a composed act, `stage` commits one part's segment to the

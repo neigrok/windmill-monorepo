@@ -181,7 +181,7 @@ final class AppModel {
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
                           wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
                           role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), sync: sync,
-                          handedFile: RoadmapFixture.chosenFile)
+                          clipboard: RoadmapFixture.clipboard(), handedFile: RoadmapFixture.chosenFile, exportFile: RoadmapFixture.exportFile)
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
@@ -513,10 +513,10 @@ final class AppModel {
 
   func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
-  // What a room opens the sign-in for: Fork on a shared roadmap's cover (Roadmap · iOS 09.9a), or Sign In on a link the
-  // phone could not open, which may be the person's own (09.10b).
+  // What a room opens the sign-in for: Fork on a shared roadmap's cover or a gallery row (Roadmap · iOS 09.9a), Sign In on
+  // a link the phone could not open, which may be the person's own (09.10b), or Sign In on the Share sheet (09.2a).
   enum RoomSignIn {
-    case fork, link
+    case fork, link, share
   }
 
   // The shell's sign-in, opened by a room for one of its own verbs, as a sheet of its own: closing it leaves the journal's

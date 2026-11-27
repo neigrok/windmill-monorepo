@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, Input, Button } from '../../design-system';
 import { sendFeedback, isSendableMessage, MESSAGE_MAX } from './FeedbackClient.js';
+import { track } from '../../telemetry/beacon.js';
+import { captureError } from '../../telemetry/sentry.js';
 import { t } from '../i18n/entry/index.js';
 
 export function FeedbackDialog({ open, onClose }) {
@@ -29,8 +31,14 @@ export function FeedbackDialog({ open, onClose }) {
     setError(null);
     try {
       await sendFeedback({ message, email });
+      track('feedback_send', { outcome: 'sent' });
       setPhase('done');
-    } catch {
+    } catch (failure) {
+      const status = failure?.status ?? 0;
+      const refused = status === 400 || status === 429;
+      const reason = refused ? 'refused' : status === 0 ? 'network' : status >= 500 ? 'server' : 'request';
+      track('feedback_send', { outcome: refused ? 'refused' : 'failed', reason });
+      if (!refused) captureError('feedback', 'feedback-send', '', '/feedback', { reason });
       setPhase('form');
       setError(t('shell.feedback.sendFailed'));
     }

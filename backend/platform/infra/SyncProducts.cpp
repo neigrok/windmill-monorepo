@@ -9,15 +9,7 @@
 #include "products/roadmap/sync/PgRoadmap.h"
 #include "products/roadmap/sync/RoadmapProduct.h"
 
-#include <cstdlib>
-
 namespace wm::sync {
-
-RoadmapServing roadmapServing() {
-  const char* flag = std::getenv("ROADMAP_ENGINE_ENABLED");
-  const std::string_view switched = flag ? flag : "";
-  return switched == "true" || switched == "1" ? RoadmapServing::served : RoadmapServing::withheld;
-}
 
 const Registry& productRegistry() {
   static const Registry registry([] {

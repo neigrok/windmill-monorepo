@@ -8,6 +8,7 @@
 @import './tokens/shadows.css';
 @import './tokens/motion.css';
 @import './tokens/palettes.css';
+@import './tokens/looks.css';
 
 *,
 *::before,

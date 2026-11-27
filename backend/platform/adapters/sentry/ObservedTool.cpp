@@ -4,7 +4,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <stdexcept>
 
 namespace wm {
 namespace {
@@ -26,10 +25,5 @@ void stopToolObservability() {
   stopLogTee();
   installWriteReporter({});
   if (toolReporter) toolReporter->drain();
-}
-
-FailureReporter& toolFailureReporter() {
-  if (!toolReporter) throw std::logic_error("the tool's observability is not installed");
-  return *toolReporter;
 }
 }

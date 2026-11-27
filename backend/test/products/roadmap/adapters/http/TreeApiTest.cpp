@@ -92,7 +92,7 @@ struct Harness {
   }
 
   void seedSource(const char* id, const char* title) {
-    seed(id, title, UserId{"owner"}, Visibility::unlisted);
+    seed(id, title, UserId{"owner"}, Visibility::public_);
   }
   void seed(const char* id, const char* title, const UserId& owner, Visibility visibility) {
     TreeData data;
@@ -294,9 +294,9 @@ TEST(fork_of_a_source_that_stored_a_position_carries_none) {
   const char* placed = R"({"nodes":[{"id":"root","createdAt":"1:0:seed","label":"Root","labelAt":"1:0:seed",
                                      "position":{"x":3,"y":4},"positionAt":"2:0:seed"}],"edges":[]})";
   h.trees->byId["t_placed"] = StoredTree{graphStateFromJson(parse(placed)), LegendState{}, {"Sail", {}}, 0,
-                                         UserId{"owner"}, Visibility::unlisted};
+                                         UserId{"owner"}, Visibility::public_};
   h.trees->byId["t_plain"] = StoredTree{graphStateFromJson(parse(plain)), LegendState{}, {"Sail", {}}, 0,
-                                        UserId{"owner"}, Visibility::unlisted};
+                                        UserId{"owner"}, Visibility::public_};
 
   Json::Value fromPlaced =
       bodyOf(sendFork(h.api, forkRequest(withId("t_00000000000000a1"), "s-live"), "t_placed"));
@@ -330,8 +330,8 @@ TEST(get_tree_owner_reads_a_private_tree_with_mine_true) {
 TEST(get_tree_carries_the_guide_beside_the_title_to_any_reader_and_an_empty_one_when_there_is_none) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_guided", "Learn to sail", me, Visibility::unlisted);
-  h.seed("t_plain", "Sourdough", me, Visibility::unlisted);
+  h.seed("t_guided", "Learn to sail", me, Visibility::public_);
+  h.seed("t_plain", "Sourdough", me, Visibility::public_);
   h.trees->byId["t_guided"].guide = Lww<std::string>{"Rig first, then sail.", Hlc{5, 0, "srv"}};
 
   Json::Value guided = bodyOf(sendGetTree(h.api, "", "t_guided"));
@@ -365,7 +365,7 @@ TEST(get_tree_gives_the_tree_a_node_opens_to_its_owner_and_to_no_other_reader) {
   h.seed("t_pub", "Public", owner, Visibility::public_);
   NodeStateEntry withheld = h.trees->byId["t_pub"].state.nodes[0];
   NodeStateEntry whole = withheld;
-  whole.opens = TreeId{"t_00000000000000f2"};  // the owner's unlisted tree: its id is its key
+  whole.opens = TreeId{"t_00000000000000f2"};  // a tree of the owner's, which may be private
   whole.opensAt = Hlc{2000, 0, "r_a"};
   {
     std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{"t_pub"}));
@@ -697,24 +697,15 @@ TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
   CHECK_EQ(absentBody, std::string(R"({"error":"no such tree"})"));
 }
 
-TEST(get_tree_unlisted_is_readable_by_anyone_but_not_mine_for_a_stranger) {
-  Harness h;
-  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
-
-  drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_shared");
-  CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
-  Json::Value body = bodyOf(anon);
-  CHECK_EQ(body["visibility"].asString(), std::string("unlisted"));
-  CHECK_FALSE(body["mine"].asBool());
-}
-
-TEST(get_tree_public_is_world_readable) {
+TEST(get_tree_public_is_readable_by_anyone_but_not_mine_for_a_stranger) {
   Harness h;
   h.seed("t_demo", "The demo", UserId{"owner"}, Visibility::public_);
 
   drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_demo");
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(anon)["visibility"].asString(), std::string("public"));
+  Json::Value body = bodyOf(anon);
+  CHECK_EQ(body["visibility"].asString(), std::string("public"));
+  CHECK_FALSE(body["mine"].asBool());
 }
 
 TEST(get_diagnostics_private_denial_is_404_byte_identical_to_absent) {
@@ -731,9 +722,9 @@ TEST(get_diagnostics_private_denial_is_404_byte_identical_to_absent) {
   CHECK_EQ(dump(bodyOf(anon)), dump(bodyOf(absent)));
 }
 
-TEST(get_diagnostics_unlisted_is_readable_by_anyone) {
+TEST(get_diagnostics_public_is_readable_by_anyone) {
   Harness h;
-  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::public_);
   CHECK_EQ(sendGetDiagnostics(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
 }
 
@@ -984,9 +975,9 @@ TEST(get_activity_private_denial_is_404_byte_identical_to_absent) {
   CHECK_EQ(dump(bodyOf(anon)), dump(bodyOf(absent)));
 }
 
-TEST(get_activity_unlisted_is_readable_by_anyone) {
+TEST(get_activity_public_is_readable_by_anyone) {
   Harness h;
-  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::public_);
   CHECK_EQ(sendGetActivity(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
 }
 
@@ -994,7 +985,7 @@ TEST(get_activity_unlisted_is_readable_by_anyone) {
 
 TEST(get_progress_shows_the_owners_journey_to_an_anonymous_visitor) {
   Harness h;
-  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_);
   h.progress->setStatuses(TreeId{"t_shared"}, UserId{"owner"}, {{NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}}}, StampedBy::replica, 2);
 
   drogon::HttpResponsePtr anon = sendGetProgress(h.api, "", "t_shared");
@@ -1330,7 +1321,7 @@ TEST(get_tree_answers_a_grandchilds_name_and_its_way_down_from_its_root_to_anyon
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-stranger", "stranger@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   const Json::Value grandchild = parse(R"({"root":"t_a","parent":{"tree":"t_s","step":"rig"},"path":[)"
                                        R"({"tree":"t_a","step":"sail","title":"My year"},)"
                                        R"({"tree":"t_s","step":"rig","title":"Learn to sail"}],"depth":2})");
@@ -1362,7 +1353,7 @@ TEST(get_tree_answers_a_grandchilds_name_and_its_way_down_from_its_root_to_anyon
 TEST(get_tree_tells_every_reader_what_a_step_owning_a_subtree_comes_to_for_the_owner) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   h.mark("t_r", owner, "bowline", ProgressStatus::complete, 10);
   const auto nodesOf = [&](const char* session) {
     const drogon::HttpResponsePtr read = sendGetTree(h.api, session, "t_a");
@@ -1413,7 +1404,7 @@ TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issu
   installWriteReporter(failures);
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   h.trees->placeReadsFail = true;
 
   const drogon::HttpResponsePtr subtree = sendGetTree(h.api, "", "t_s");
@@ -1438,7 +1429,7 @@ TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issu
 TEST(get_guides_names_a_subtree_by_its_owning_step_and_never_by_its_own_title_register) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   h.trees->byId["t_a"].guide = Lww<std::string>{"Plan the year.", Hlc{2, 0, "seed"}};
   h.trees->byId["t_s"].guide = Lww<std::string>{"Rig first.", Hlc{2, 0, "seed"}};
   h.trees->byId["t_s"].title = Lww<std::string>{"Its own register", Hlc{3, 0, "r_old"}};
@@ -1459,7 +1450,7 @@ TEST(a_hidden_branch_answers_every_rest_door_as_absent_and_a_subtree_is_forked_o
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-stranger", "stranger@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
 
   const drogon::HttpResponsePtr refused = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-stranger"), "t_r");
   REQUIRE_EQ(refused->getStatusCode(), drogon::k409Conflict);
@@ -1492,7 +1483,7 @@ TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-reader", "reader@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   const auto onRoot = [&](const std::function<void(TreeRoom&)>& write) {
     std::lock_guard<std::mutex> strand(h.rooms->strandFor(TreeId{"t_a"}));
     write(*h.rooms->open(TreeId{"t_a"}));
@@ -1536,7 +1527,7 @@ TEST(a_read_whose_standing_read_fails_as_its_room_opens_files_one_issue_under_th
   } reporter;
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedForest(owner, Visibility::unlisted);
+  h.seedForest(owner, Visibility::public_);
   h.trees->absentReadsFail = true;
   CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(reporter.failures->reports,

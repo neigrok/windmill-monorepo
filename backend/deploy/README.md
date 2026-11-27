@@ -56,7 +56,6 @@ check the Web Deploy run of the last merge that touched the web and re-run it if
 | Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step, its roadmaps by owner and visibility and its pointers alive with no `opens` (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
-| Move every unlisted roadmap of people's to private through the sync engine, a dry run unless `write` is set (by hand, from `main`, never during a deploy) | `/.github/workflows/ops-roadmaps-to-private.yml` |
 | Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval, never during a deploy; reads only), and its test | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
 | Roadmap's cutover onto the sync engine (by hand; it moved production in run 44846026848 and refuses there now), its host stages and their test, which also drives it against a local stack | `/.github/workflows/roadmap-cutover.yml`, `deploy/roadmap-cutover.sh`, `test/deploy/roadmap_cutover_test.py` |
 | Pause the site or lift the pause (by hand) | `/.github/workflows/ops-maintenance.yml` |
@@ -373,20 +372,37 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 14 / minimum 11. Every schema in that interval carries explicit gym
-`other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
-schema 13 / minimum 11, verified on 2026-11-21 by the start stage of
-[Roadmap cutover 44846026848](https://github.com/neigrok/windmill-monorepo/actions/runs/44846026848).
-The latest published Android release is [0.14.0 / code 277](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0),
-tag `android-v0.14.0` at `3b136a3d`. iOS 0.2.0 (23) is uploaded and VALID,
-with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; intended tester access
-is unverified. [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
-completed across three scopes and corrected two digests. Web Deploy promotes each web push to `main`
-once the live hello admits it. The last complete promotion is
-[run 41325909004](https://github.com/neigrok/windmill-monorepo/actions/runs/41325909004), source `6aabcde2`.
-The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
-is not monitored. Queued client delivery and final native
-availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+The repository registry is schema 15 / minimum 15. Every schema in that interval carries explicit gym
+`other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind.
+
+- **Production.** Its hello advertises schema 15 / minimum 15 and answers schemas 11 to 14 `426 upgrade-required`.
+  - [Deploy to VPS 45836480908](https://github.com/neigrok/windmill-monorepo/actions/runs/45836480908) moved it from
+    14 / 11 on 2026-11-26, with the image of `a92962882` (image ID `sha256:c207d343…`).
+  - An anonymous hello, pull and Gym request after it confirmed this.
+- **Android.** The latest published release is
+  [0.19.0 / code 527](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.19.0), tag
+  `android-v0.19.0` at `4b3e33ba`.
+- **iOS.** 0.2.0 (42) is uploaded and VALID, with internal READY_FOR_BETA_TESTING and external
+  READY_FOR_BETA_SUBMISSION. Intended tester access is unverified.
+- **Digests.** [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
+  completed across three scopes and corrected two digests. Schema 15 drops and renames no field, so it needs no resum.
+
+Web Deploy promotes each web push to `main` once the live hello admits it.
+
+- **The last complete promotion.**
+  [Run 45823176030](https://github.com/neigrok/windmill-monorepo/actions/runs/45823176030), attempt 3, source
+  `a9296288`, schema 15 / minimum 15. It was held at 14 / 11 until the deploy above. The live `index.html` and every
+  `assets/index-*` file match its release manifest's SHA-256.
+- **Not monitored:** the host's free disk.
+- **Unverified:** queued client delivery and final native availability.
+
+The deployment guard requires exact acknowledgement for any further minimum change.
+
+Schema 15 narrows roadmap's `meta.visibility` and `meta.reach` to private and public, and `reach` opens a roadmap at
+public alone (engine.md §2.4, A.1): Share has two states, and no roadmap holds `unlisted`. A rule clients enforce
+changes, so the minimum rises to 15 with it. A server at 15 answers a client of 14 or older `426 upgrade-required` at
+hello, push, pull and the live upgrade; Web Deploy holds a schema 15 web until the live hello advertises 15; and Deploy
+to VPS takes the raise only with its exact acknowledgement (step 4 below).
 
 Schema 14 adds `values` to a restore that brings a keyed record back alive (engine.md §6.4) and keeps minimum 11, so
 the promotion rule below admits a schema 14 web against a schema 13 server; a client sends the values only once a
@@ -401,40 +417,45 @@ rooms' routes and `/v1/socket` answer 410 `client-update-required` (`SPEC.md`, H
 stay beside them, served by nothing, until the Roadmap on the engine tree's node `m5-delete-roadmaps-own-sync` deletes
 them with roadmap's own sync.
 
-1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
-   refuses a candidate minimum that differs from the live server.
-2. Prepare schema 11 readers on every surface. Preserve stored equipment/count values, exact zero,
-   absent targets and pending writes. Web Deploy retains the complete pinned `dist`, source/file-hash
-   manifest and composed compatibility artifact before checking the live anonymous hello. It holds
-   promotion before mkdir/rsync unless live schema is at least the client minimum and live minimum
-   accepts the client schema; incompatible or unreadable state leaves the served web files intact.
-   New selectors require their own
-   design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
-   fresh hello advertises a server schema at least the client's generated registry minimum.
-3. Verify the signed Android update over the public replacement floor, including retained local work
-   and delivery against the schema 11 server. Upload the exact iOS version/build through the manual
-   `ios-release.yml` workflow and check processing, beta readiness and intended tester availability.
-   Verify both native replacements against the schema 11 candidate, publish the Android release,
-   and verify both upgrade destinations. TestFlight status alone proves no tester access.
-4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
-   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch
-   **Deploy to VPS** from `main` with that `image_tag`, its exact `expected_old_minimum`,
-   `expected_new_minimum=11` and `expected_image_id`. Both raises and lowers require exact
-   acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
-5. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below), then verify schema 11 /
-   minimum 11 at hello and schema 10 or older `426 upgrade-required` refusals at
-   hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
-   header and return `426 client-update-required` for missing/old carriers before JSON, image or
-   SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
-   web and old native clients retain local work and show their existing update-required surface.
-   Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted
-   main source. Each attempt retains a separate pinned web artifact; inspect its full source SHA,
-   schema and file hashes. The preflight reads the current compose deployment and promotes no
-   backend state. Verify the new web release and real queued delivery after promotion.
-6. Keep a schema 11 / minimum 11 maintenance image available before accepting the new load range
-   or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
-   column caps. Automation resumes when candidate and live minimum match. Server and migration use
-   the same pinned image ID.
+A change of the registry's minimum ships in these steps. The old minimum is the live hello's `minSchema` and the new
+one the composed registries' `minVersion`; for schema 15 they are 11 and 15, so schemas 11 to 14 are refused.
+
+1. Keep a maintenance image of the live server's interval available. Automatic deployment refuses a candidate minimum
+   that differs from the live server's.
+2. Prepare readers of the new registry on every surface, keeping stored values and pending writes. Web Deploy retains
+   the complete pinned `dist`, source/file-hash manifest and composed compatibility artifact before checking the live
+   anonymous hello. It holds promotion before mkdir/rsync unless live schema is at least the client minimum and live
+   minimum accepts the client schema; incompatible or unreadable state leaves the served web files intact. Each bound
+   sender keeps writes ready until an owner/token/replica/epoch-matched fresh hello advertises a server schema at least
+   the client's generated registry minimum.
+3. Verify the signed Android update over the public replacement floor, including retained local work and delivery
+   against a server of the new registry. Upload the exact iOS version/build through the manual `ios-release.yml`
+   workflow and check processing, beta readiness and intended tester availability. Verify both native replacements
+   against the candidate, publish the Android release, and verify both upgrade destinations. TestFlight status alone
+   proves no tester access.
+4. Record the full backend commit SHA and the immutable image ID: what the host's `docker image inspect --format
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>` gives.
+   - The host stores images by their manifest-list digest, which Backend CI/CD's `build-and-push` job prints under
+     *ImageID*. The registry is private.
+   - A merge to `main` cancels a Backend CI/CD run in progress, so take the latest `main` commit that has an image.
+
+   Read the live minimum again, then dispatch **Deploy to VPS**
+   from `main` with that `image_tag`, `expected_old_minimum` the live minimum, `expected_new_minimum` the registries'
+   `minVersion` and `expected_image_id` the recorded ID (`11`, `15` and the ID for schema 15). Both raises and lowers
+   require exact acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
+5. The deploy's verify step requires the new schema and minimum at hello, and `426 upgrade-required` at hello, push,
+   pull and WebSocket upgrade for every schema from the old minimum to the one below the new (11 to 14 for schema 15);
+   it fails the deploy otherwise. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below).
+   Active Gym HTTP routes require the generated minimum header and return `426 client-update-required` for
+   missing/old carriers before JSON, image or SSE delivery. Verify queued native/web work delivers only after a fresh
+   compatible hello. Cached web and old native clients retain local work and show their existing update-required
+   surface. Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted main source.
+   Each attempt retains a separate pinned web artifact; inspect its full source SHA, schema and file hashes. The
+   preflight reads the current compose deployment and promotes no backend state. Verify the new web release and real
+   queued delivery after promotion.
+6. Keep a maintenance image of the new interval available. Roll back only to an image whose registry reads every value
+   the live database holds. Automation resumes when candidate and live minimum match. Server and migration use the
+   same pinned image ID.
 
 The guard queries anonymous hello with a high schema header to read live metadata even during a
 manually acknowledged downgrade. This is a metadata read, not a client capability claim. It neither
@@ -787,53 +808,6 @@ docker compose exec -T server windmill_subtree_inventory
 
 Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
 stdout did not take the counts.
-
-## Move unlisted roadmaps to private
-
-Share has two states, public and private, so every unlisted roadmap of people's becomes private
-([SPEC.md](../SPEC.md#unlisted-roadmaps-to-private)): each unlisted root takes `visibility` private by
-its owner's server-origin write through the sync engine, its subtrees' reach follows, and every replica
-pulls the change. A house account's roadmap is refused and never written.
-
-Dispatch **Ops · roadmaps to private** (`ops-roadmaps-to-private.yml`) from `main`, first with `write`
-unset: that run is a dry run, which counts what it would move and writes nothing. Open its block, and
-dispatch it again with `write` set to move them. A root whose scope another write held past the
-engine's lock timeout counts `busy`, and a run again moves it; once none is left, a run finds nothing
-to move and writes nothing. Its first job refuses a run from any other branch, and while any workflow
-whose concurrency takes the `deploy-vps` lock has a run queued or running, as the copy's does; only
-then does the move job queue for the lock, so no deploy recreates the server container under the tool.
-It runs `windmill_roadmaps_to_private`, with `--write` when `write` is set, inside the live `server`
-container, which already holds `DATABASE_URL` and `ROADMAP_ENGINE_ENABLED`; no credential leaves the
-host.
-
-Everything the tool says is private: its counts and its write lines, one per roadmap it writes, say how
-someone shares their roadmaps where few people hold any, and this repository's logs are public. So the
-host merges the tool's stderr into its stdout, the runner seals the whole stream to
-`.github/ops/inventory-recipient.pem` as it arrives, and the job log shows the sealed block alone. The
-block is printed whether the tool finished or stopped, since what it moved before a stop stays private;
-the job then fails with the tool's exit named. If the stream cannot be sealed, nothing is printed and
-the job fails, but what the tool moved stays moved, and a dry run counts what is left. Against an image
-that does not carry the tool, it says so.
-
-To read it, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as `moved.pem`, and
-open it with the private key that belongs to the certificate:
-
-```sh
-openssl smime -decrypt -inform PEM -inkey <key> -in moved.pem
-```
-
-It holds the tool's JSON object of counts ([SPEC.md](../SPEC.md#unlisted-roadmaps-to-private)) and its
-`write` lines: one `roadmap.unlisted.move` per root a write run acts on, `moved`, `unchanged`, `busy`
-or refused, and the run's `roadmap.unlisted.to_private`. From `~/windmill` on the host, the tool prints
-them in the clear:
-
-```sh
-docker compose exec -T server windmill_roadmaps_to_private            # dry run
-docker compose exec -T server windmill_roadmaps_to_private --write
-```
-
-Exit 0 means the run reached its end and printed its counts, 2 means its usage was wrong or
-`DATABASE_URL` is unset, and 1 means a read or a write failed or stdout did not take the counts.
 
 ## Copy production's roadmaps for a rehearsal
 

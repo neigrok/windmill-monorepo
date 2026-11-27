@@ -47,15 +47,15 @@ struct StepWorkspace {
   }
 }
 
-// A link's address as the web's room reads one. A page opens an address that is http, https or mailto (`SAFE_URL`). An
-// address a person types takes https where it names no scheme, and is a link once it is then a web address with a host
-// (`workspaceLink`, and its link form's `valid`).
+// A link's address as the web's room reads one. A page opens an address the domain's rule shows, http, https or mailto
+// (`RoadmapRules.showsAddress`, the web's `SAFE_URL`). An address a person types takes https where it names no scheme, and
+// is a link once it is then a web address with a host (`workspaceLink`, and its link form's `valid`).
 struct LinkAddress: Equatable {
   let url: URL
 
   // The address a link holds; none where no page opens it.
   init?(_ held: String) {
-    guard let url = URL(string: held), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+    guard RoadmapRules.showsAddress(held), let url = URL(string: held) else { return nil }
     self.url = url
   }
 

@@ -728,7 +728,7 @@ test('the token bridge: one block per skin, and no shared role pointed back at g
   assert.notEqual(start, -1, 'the bridge is a named block, not a scatter of overrides');
   const bridge = tokens.slice(start);
   // Each skin block is keyed twice: on a stamped .gym-skin, and on an unstamped one standing in a gym
-  // ground — the brand root's scenes — which takes the theme of that ground.
+  // ground — the brand root's picture — which takes the theme of that ground.
   const skin = (theme) => `.gym-skin[data-theme="${theme}"],\n[data-theme="${theme}"][data-brand="gym"] .gym-skin:not([data-theme]) {`;
   const blocks = bridge.match(/\.gym-skin\[data-theme="(dark|light)"\],\n[^\n]*\{/g) ?? [];
   assert.deepEqual(blocks, [skin('dark'), skin('light')]);

@@ -570,10 +570,6 @@ four-screen introduction was decided on 2026-10-04 — direction A · Three room
 Where to start?, About Windmill in You and the account sheet, and the four screens are the accepted
 exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `OnboardingPager.kt`).
 
-- **9a · Platform lines.** The Marketing superapp landing boards (`98:2538`) print *Web · iOS* for
-  journal and *Web · iOS · Android* for gym; the shipped `landing.root.platforms` in each product's
-  `routes.js` reads *Web* and *Web · Android*, and the onboarding's per-phone tags follow the code.
-  Redraw the boards from the code, or change the code when the iOS app ships.
 - **9c · The roadmap glimpse.** `_Glimpse / Roadmap` (`210:2`) fans the sail tree from the root to
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
@@ -682,17 +678,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
-  the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
-  name there wraps onto a second line where the board truncates it; the menu
+  the system tells the room nothing of its rename; the system's *Rename* tile draws no pencil, where 01.3 draws one,
+  since a title menu gives a tile of the room's own no rename to call; a long name in the menu wraps onto a second line
+  where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
   at the domain's 200 characters with no counter, and no board
   draws the bound; no board draws All Roadmaps when a search finds nothing, and it is built as the system's own
   `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
   its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
   stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
-  the phone's copy holds it, with no band, as no board draws one for it; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
-  Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
-  phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
+  the phone's copy holds it, with no band, as no board draws one for it; and 01.4 groups a count's digits
+  (*3,200 of 5,000*) and the app writes every count as Swift does, *3200 of 5000*.
 - **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
   *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
   built in Debug builds from 01.6, 01.8 to 01.8c, 02.16 to 02.18, 02.16b and 02.16c. To draw or rule: 01.8 and 01.8b
@@ -717,6 +713,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   holds text, so the system asks before it hands over another app's text (02.16c), where
   [Roadmap · iOS](ios/roadmap.md)'s stock parts name `PasteButton` for paste, as New Roadmap's *A Copied Plan* is; that
   question is SpringBoard's alert, which the room waits on with its main actor free.
+- **Roadmap · iOS · the foot's + is a button with a context menu.** 02.16 draws the + as a menu whose tap is New Step and
+  whose long press offers New Step above Paste Steps. Built with the iOS 27 SDK, a SwiftUI `Menu`'s primary action opened
+  no step form on iOS 26.3, so the + is built as a `Button` whose tap opens New Step, with both items in its context menu
+  on a long press (`RoadmapRoom.swift`). The flow is 02.16's; the long press lifts the + under the menu, as a context menu
+  does, where 02.16 draws the menu alone. To draw or rule: draw 02.16's long press as the context menu, or rule the lift
+  acceptable.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
   board of the form draws Coach's composer, and the form is built without it until its screen is; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
@@ -872,6 +874,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
   cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
   or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what Share, Export and the public gallery leave for the boards.** Share, Export and *Planted in
+  Public* are built in Debug builds from 09.1a to 09.3, 09.12a and 09.12b, with *Share* and *Export* in 01.3's title
+  menu, *Export* in 07.11b's … menu and *Planted in Public* as 01.4's last row. To draw or rule: *Sign In* on 09.2a opens
+  the shell's own sign-in saying *Sign in to share this roadmap.*, which no board words; the share sheet's header names
+  the roadmap, where 09.1b draws no system sheet; a gallery's later page that comes to nothing says *Can’t reach the
+  gallery just now.* with *Try Again* under the rows read, and a later page being read shows a spinner there, which no
+  board draws; a row's *Fork* while it runs shows the spinner and *Forking…*, and a fork with no connection or that
+  comes to nothing says *Forking needs a connection.* or *Couldn’t fork this roadmap. Try again.* in the room's band, as
+  the cover's words, which 09.12a does not draw; a row's bordered *Fork* and *Open Your Copy* wear the system's tinted
+  fill, where 09.12a draws a dark one; 09.12b's sentence stands on one line where the board breaks it in two; and a
+  person with no roadmap reaches no *Planted in Public*, since
+  All Roadmaps opens from the title menu alone and 01.5 offers New Roadmap only.
 - **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
   Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
   or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
@@ -930,8 +944,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
   step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
   steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
-  which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
-  every board of the section draws Coach's composer, which is not built.
+  which has no title menu and so no way to Set Aside; 10.5a draws the title menu before 01.3's tiles, which the room
+  draws there too; and every board of the section draws Coach's composer, which is not built.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
@@ -968,10 +982,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   keyboard rises; a bar folds its buttons into an overflow before it truncates a title; `.glass` on a white card
   is white on white. Roadmap's kit is matched to the probe. To check against it: the library's iOS parts and the
   Gym and Journal iOS boards.
-- **Roadmap · iOS · the iOS 18 boards are not probed.** Section 12's iOS 18 boards are drawn from knowledge of
-  iOS 18, with no simulator run. Before they are built: one probe of the bar, the sheets, Find and the action
-  sheet on an iOS 18 runtime. With the title in the principal slot the system's in-bar rename is unavailable there,
-  so renaming on iOS 18 needs a ruling.
+- **Roadmap · iOS · the iOS 18 boards await review.** Section 12's boards 12.6 to 12.10 were checked against an iOS 18.6
+  simulator run of the room and the design probe (2026-11-26). Each differed from what iOS 18 draws, and each is
+  corrected as a 🧪 Proposal for the owner's review:
+  - the bar's tint is the ink;
+  - the bar's buttons are bordered circles;
+  - there is no hairline under the bar or on the foot;
+  - a dialog dims less;
+  - the medium sheet sits higher.
+
+  NOTE 12 says renaming is the in-bar field iOS 26 has, once the title is a binding. The app passes a string there, so
+  its title menu has no Rename on iOS 18 (plan step `m6-the-room-on-ios-18-renames-and-its-captures-pass`).
+- **Roadmap · iOS · a sheet's close word on iOS 18.** The built Kinds, Guide and Set Aside sheets close with *Done* on
+  iOS 18; board 12.10 and NOTE 12 say *Close*. To check against the iOS 26 boards and the Journal and Gym sheets, and
+  settle on one word.
 - **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
   state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
   the file's other pages were not checked. Delete it once they are.
@@ -1117,10 +1141,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
   *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
   canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
-  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
-  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
-  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
-  gallery.
+  included, and it can appear in the public gallery.*; published, to its owner and to a reader alike, *My year is public:
+  …* 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the gallery.
 - **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
   the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
   step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
@@ -2300,15 +2322,19 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
 
 ## Marketing and email
 
-- **Marketing site proposal against brand foundations.** The [proposal](marketing-site-proposal.md)
-  sets Inter in place of Baloo 2 and Nunito on the public pages, the word “Windmill” in Inter beside the
-  unchanged mark, a night version of the mark, hairlines and one ground in place of card outlines,
-  shadows and a ground per room, and a first screen with no live scene. Brand foundations' Fonts, Logo
-  and Landings sections describe the pages as built. Update them when the flow is marked ✅ Ready for dev.
+- **The public pages not yet rebuilt.** The front page is built in the Instrument look
+  ([marketing site](marketing-site-proposal.md#the-instrument-look)). Pricing and the three room
+  pages are drawn in it and ✅ Ready for dev (sections `284:2508`, `290:2508`, `294:2508`, `293:2508`),
+  and are still built in the older look: Baloo 2 and Nunito (the room landings through
+  `web/src/shell/marketing/landing.css`, pricing in `web/public/pricing.html`), with a live vignette as
+  each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
+  page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
+  Instrument look.
+- **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
+  (three product bands with per-room platform lines), describe the root the front page replaced. Archive
+  them (🗄 Archived prefix and tag).
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
-- **0i · Brand-root anatomy.** Reconcile the common landing roles with the root's product-band
-  layout, including a useful loop, truthful limitations and the role of static scenes.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
   stylesheet arrives. Check and remove the resulting landing layout shift.
 - **F23 / F24 · Email templates.** `magic-link-fork.html` lacks the light-only CSS rule used by

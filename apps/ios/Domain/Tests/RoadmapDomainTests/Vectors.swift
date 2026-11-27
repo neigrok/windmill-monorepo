@@ -94,7 +94,7 @@ extension RoadmapTree {
               opens: try pointer.member("opens").asString(), setAt: try pointer.optionalStamp("setAt"))
     }
     self.init(id: id, present: try form.optionalBool("present"), read: read, own: try form.optionalBool("own"),
-              updatedAt: try form.optionalInstant("updatedAt"), parent: parent, meta: meta,
+              updatedAt: try form.optionalInstant("updatedAt"), stampedAt: try form.optionalInstant("stampedAt"), parent: parent, meta: meta,
               nodes: try (form["nodes"]?.asArray() ?? []).map(Step.init(form:)), edges: edges,
               kinds: try (form["kinds"]?.asArray() ?? []).map(Kind.init(form:)), marks: marks, pointers: pointers)
   }
@@ -181,7 +181,7 @@ extension RoadmapTree {
       ["node": .string($0.node), "present": .bool($0.present), "opens": .string($0.opens), "setAt": $0.setAt?.json ?? .null]
     }
     return ["id": .string(id), "present": .bool(present), "read": .string(read.rawValue), "own": .bool(own), "updatedAt": .of(updatedAt),
-            "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
+            "stampedAt": .of(stampedAt), "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
             "pointers": .array(opened)]
   }
 }

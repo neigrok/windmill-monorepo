@@ -11,19 +11,23 @@ import Testing
   }
 
   @Test func packagesFormTheClosedWorld() throws {
-    #expect(ClosedWorld.findings(in: try Self.world.get()).sorted().map(\.description) == [])
+    let findings = ClosedWorld.findings(in: try Self.world.get()).sorted().map(\.description)
+    #expect(findings == [])
   }
 
   @Test func edgesKeepTheLayers() throws {
-    #expect(Layers.findings(in: try Self.world.get()).sorted().map(\.description) == [])
+    let findings = Layers.findings(in: try Self.world.get()).sorted().map(\.description)
+    #expect(findings == [])
   }
 
   @Test func targetsTakeTheirRowsSettings() throws {
-    #expect(Settings.findings(in: try Self.world.get()).sorted().map(\.description) == [])
+    let findings = Settings.findings(in: try Self.world.get()).sorted().map(\.description)
+    #expect(findings == [])
   }
 
   @Test func sourcesKeepTheirRows() throws {
-    #expect(SourceRules.findings(in: try Self.world.get()).sorted().map(\.description) == [])
+    let findings = SourceRules.findings(in: try Self.world.get()).sorted().map(\.description)
+    #expect(findings == [])
   }
 
   @Test func parserMatchesTheCompiler() throws {
@@ -34,7 +38,8 @@ import Testing
   }
 
   @Test func workflowsPassNoOverrides() throws {
-    #expect(try Workflows.findings(in: Checkout.repositoryRoot.appending(path: ".github/workflows")).sorted().map(\.description) == [])
+    let findings = try Workflows.findings(in: Checkout.repositoryRoot.appending(path: ".github/workflows")).sorted().map(\.description)
+    #expect(findings == [])
   }
 
   @Test func judgesTheProbeApp() {

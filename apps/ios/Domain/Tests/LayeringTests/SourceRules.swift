@@ -64,14 +64,17 @@ enum SourceRules {
     return []
   }
 
-  // §2.3: the parser's major version matches the compiler's (602 for Swift 6.2).
+  // §2.3: the parser's major version is at least the compiler's (604 for Swift 6.4), so it reads all the syntax the compiler does.
   static func parserVersionFindings(resolved: String, file: String, compilerVersion: String) -> [Finding] {
     let pins = (try? JSONDecoder().decode(JSONValue.self, from: Data(resolved.utf8)))?["pins"]?.elements ?? []
     let pinned = pins.first { $0["identity"]?.text == "swift-syntax" }?["state"]?["version"]?.text ?? "none"
     let compiler = compilerVersion.split(separator: ".").compactMap { Int($0) }
-    let expected = compiler.count >= 2 ? compiler[0] * 100 + compiler[1] : 0
+    let needed = compiler.count >= 2 ? compiler[0] * 100 + compiler[1] : nil
     let major = Int(pinned.split(separator: ".").first ?? "")
-    return major == expected ? [] : [Finding(file, "parser-version", "swift-syntax \(pinned) for Swift \(compilerVersion) (\(expected))")]
+    guard let needed, let major, major >= needed else {
+      return [Finding(file, "parser-version", "swift-syntax \(pinned) for Swift \(compilerVersion) (\(needed.map(String.init) ?? "unread"))")]
+    }
+    return []
   }
 }
 

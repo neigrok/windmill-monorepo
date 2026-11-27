@@ -167,8 +167,8 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
   // A {visibility} body reshares the tree, a {guide} body sets its guide, a {title} body renames it.
   if (json && json->isMember("visibility")) {
     const std::string requested = (*json)["visibility"].asString();
-    if (requested != "private" && requested != "unlisted" && requested != "public") {
-      callback(error(drogon::k400BadRequest, "visibility must be private, unlisted, or public"));
+    if (requested != "private" && requested != "public") {
+      callback(error(drogon::k400BadRequest, "visibility must be private or public"));
       return;
     }
     const std::variant<TreeRegistry::VisibilityChange, NotARoot> answer =

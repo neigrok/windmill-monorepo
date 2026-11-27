@@ -248,6 +248,42 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["act": "guide", "outcome": "ok"]) == ["act": .label("guide"), "outcome": .label("ok")])
   }
 
+  // Share, Export and the public gallery (Roadmap on iOS §11): each step by its kind, a fork by its mode, and nothing of a
+  // roadmap, its address, its file or a page of the gallery.
+  @Test func shareExportAndTheGalleryTellTheirStepsAndNothingOfARoadmap() {
+    let events = ["roadmap_verb", "roadmap_export", "roadmap_gallery", "fork_attempt", "fork_claim"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for step in ["open", "link", "copy", "sign_in"] {
+      #expect(TelemetryPrivacy.properties(["verb": "share", "step": step, "url": "https://windmill.works/t/t_0000000000000001"]) ==
+              ["verb": .label("share"), "step": .label(step)])
+    }
+    for (step, outcome) in [("publish", "ok"), ("private", "ok"), ("publish", "failed")] {
+      #expect(TelemetryPrivacy.properties(["verb": "share", "step": step, "outcome": outcome, "title": "Learn to sail"]) ==
+              ["verb": .label("share"), "step": .label(step), "outcome": .label(outcome)])
+    }
+    for door in ["menu", "more"] {
+      #expect(TelemetryPrivacy.properties(["step": "open", "door": door, "file": "Learn to sail.md"]) == ["step": .label("open"), "door": .label(door)])
+      for outcome in ["saved", "cancelled", "failed"] {
+        #expect(TelemetryPrivacy.properties(["outcome": outcome, "door": door]) == ["outcome": .label(outcome), "door": .label(door)])
+      }
+    }
+    for (step, outcome) in [("load", "available"), ("load", "empty"), ("page", "failed")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "outcome": outcome, "cursor": "t_0000000000000005", "rows": "24"]) ==
+              ["step": .label(step), "outcome": .label(outcome)])
+    }
+    for mine in ["true", "false"] {
+      #expect(TelemetryPrivacy.properties(["step": "row", "mine": mine, "tree": "t_0000000000000001"]) == ["step": .label("row"), "mine": .label(mine)])
+    }
+    for step in ["open", "retry", "copy"] { #expect(TelemetryPrivacy.properties(["step": step]) == ["step": .label(step)]) }
+    #expect(TelemetryPrivacy.properties(["mode": "browse", "outcome": "signed_out"]) == ["mode": .label("browse"), "outcome": .label("signed_out")])
+    #expect(TelemetryPrivacy.properties(["write": "visibility", "refusal": "notARoot"]) == ["write": .label("visibility"), "refusal": .label("notARoot")])
+    #expect(TelemetryPrivacy.properties(["step": "switch", "door": "gallery"]) == ["step": .label("switch"), "door": .label("gallery")])
+    for operation in ["roadmap_gallery", "roadmap_export"] {
+      #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": "decode", "route": "/v1/gallery"]) ==
+              ["operation": .label(operation), "failure_kind": .label("decode"), "route": .label("/v1/gallery")])
+    }
+  }
+
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
     let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
                   "roadmap_graph_fit"]
@@ -339,13 +375,17 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
       #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": kind, "refusal": "invalid", "file": "Sailing plan.md"]) ==
               ["operation": .label(operation), "failure_kind": .label(kind), "refusal": .label("invalid")])
     }
-    for (domain, code) in [("cocoa", "missing"), ("posix", "permission"), ("other", "unreadable"), ("cocoa", "cancelled"), ("other", "other")] {
+    for (domain, code) in [("cocoa", "missing"), ("posix", "permission"), ("cocoa", "space"), ("other", "unreadable"), ("cocoa", "cancelled"), ("other", "other")] {
       #expect(TelemetryPrivacy.properties(["operation": "roadmap_file", "error_domain": domain, "error_code": code, "message": "private-marker"]) ==
               ["operation": .label("roadmap_file"), "error_domain": .label(domain), "error_code": .label(code)])
     }
     #expect(NewRoadmapDraft.labels(of: CocoaError(.fileReadNoSuchFile)) == ["error_domain": "cocoa", "error_code": "missing"])
     #expect(NewRoadmapDraft.labels(of: POSIXError(.EACCES)) == ["error_domain": "posix", "error_code": "permission"])
     #expect(NewRoadmapDraft.labels(of: URLError(.badURL)) == ["error_domain": "other", "error_code": "other"])
+    // An export the system could not write reads apart by why: no permission where it was put, or no space left.
+    #expect(NewRoadmapDraft.labels(of: CocoaError(.fileWriteNoPermission)) == ["error_domain": "cocoa", "error_code": "permission"])
+    #expect(NewRoadmapDraft.labels(of: CocoaError(.fileWriteOutOfSpace)) == ["error_domain": "cocoa", "error_code": "space"])
+    #expect(NewRoadmapDraft.labels(of: POSIXError(.ENOSPC)) == ["error_domain": "posix", "error_code": "space"])
   }
 
   @Test func theStepFormTellsItsStepsByKindAndNothingOfTheStep() {

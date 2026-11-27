@@ -18,8 +18,8 @@ time, randomness or localization.
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
 `read`, `own` (the tree is in the person's own list), `updatedAt` (when the server last received any
-record of it, or null), immutable `parent`, metadata (`meta: null` where its tree scope holds no meta),
-every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
+record of it, or null), `stampedAt` (the time of the newest engine stamp the device holds of it, or null),
+immutable `parent`, metadata (`meta: null` where its tree scope holds no meta), every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
 once its tree scope holds its meta; a loaded root without it (a creation or a fork under way) is hidden,
 with every subtree under it, so it has no title, count, list row or address and a pointer at it dangles.
 An unread root keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
@@ -48,7 +48,7 @@ ID byte order.
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
-| `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
+| `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, or by `stampedAt` where no server has received any record of the roadmap, one with neither last, ID byte ties | no |
 | `listing` (`replica.json`) | One roadmap that stands, whoever owns it, as a list shows it, null for one that does not stand | no |
 
 `readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
@@ -63,7 +63,8 @@ nor of its overlay (none carries an `ru`): a roadmap the device made, which the 
 way leaves it unread, whatever rows it has brought. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
 acked) still changes its record, and its `recordedAt` is that record's `ru`; a mark an entry still changes is the
 device's, with no `recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
-roadmap's record, its tree scope's records and its overlay's.
+roadmap's record, its tree scope's records and its overlay's. `stampedAt` is the milliseconds of the newest engine stamp
+(a record's birth, its life's or a field's) among the same records as the device holds them, null where it holds none.
 
 `FollowGraph` reads every live incoming edge. A present predecessor is a boundary. Any other endpoint
 is traversed, including an ID with no node record. Missing records remain diagnosed separately from
@@ -264,9 +265,9 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 |---|---|---|
 | A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted; of a record it knows only by its spent id, the life alone (`dead`), its earlier values being the server's | writes the change back |
 | Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it, and of an import's marks `roadmap.restoreOverlay` of each `mark`, unset `{status: none, outOfOrder: false}`; one act, so one Undo takes every chunk and every mark | revives the step, link or kind |
-| Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place | deletes it again |
+| Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place. A kind's Undo makes the kind again, so its plan names the check a kind made passes (`undoCheckedBy`): while another present kind wears its hue the Undo is refused before anything is written, `unavailable` (`refused`), and so is the Undo of its Redo | deletes it again |
 | A roadmap's title, guide or visibility | the field (`meta`, unset `""` and `private`); the server writes the branch's reach back | writes the change back |
-| Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life; of a kind known only by its spent id, its life alone | writes them back |
+| Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life; of a kind known only by its spent id, its life alone. Of a present kind, the Undo writes its earlier hue back, checked as a kind changed is: refused while another present kind wears that hue | writes them back |
 | Complete, Reset | `roadmap.restoreOverlay` of the `mark`, unset `{status: none, outOfOrder: false}` | writes the mark back |
 | Set or clear a pointer | `opens` and the life, or `createdRecord` of a pointer the overlay never held | writes it back |
 | Add, change or move a subtask or a link | `createdRecord`, or the changed fields and `ord` | the change; a deleted subtask or link is terminal, so the Redo of an add brings nothing back |
@@ -279,10 +280,12 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
 binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
-<role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
+<role>}` (`subtree: true` gives a Redo the product's slots; an Undo or a Redo takes the Undo handle of its role's receipt, or of the
+Redo before it), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
 input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
-`{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
-`<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
+`{cancelHeld}`, and an inspection's visible records. In what a scene reads back, a minted id (`t_` and sixteen hex
+digits, or sixteen of `0-9a-z`) is named by the first role whose result holds it, `$role` or `$role.path`, and one no role
+holds is `<new>`; every other string stands as it is. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
 fields and texts written back, a created record deleted, and a record revived with the fields it had (the Undo of a
 delete, a pointer's clear among them, and the Redo of a creation or of an Undo that took a record away).

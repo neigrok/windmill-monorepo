@@ -139,10 +139,10 @@ try {
     && value(below, 'meta', 'meta', 'reach') === 'private' && genesis.every(([id, hue]) => value(below, 'kind', id, 'hue') === hue),
   'the subtree is planted: its place, its meta one deeper with the root\'s reach, and its genesis kinds', 'the subtree differs');
 
-  await engine.commit(tree, [{ op: 'write', t: 'meta', id: 'meta', f: { visibility: 'unlisted' } }]);
+  await engine.commit(tree, [{ op: 'write', t: 'meta', id: 'meta', f: { visibility: 'public' } }]);
   await settle();
-  check(stored('roadmap_metas', `tree:${root}`, 'meta', 'reach') === 'unlisted' && stored('roadmap_metas', `tree:${subtree}`, 'meta', 'reach') === 'unlisted'
-    && value(below, 'meta', 'meta', 'reach') === 'unlisted', 'the root\'s visibility writes its reach and the standing subtree\'s', 'a reach stayed private');
+  check(stored('roadmap_metas', `tree:${root}`, 'meta', 'reach') === 'public' && stored('roadmap_metas', `tree:${subtree}`, 'meta', 'reach') === 'public'
+    && value(below, 'meta', 'meta', 'reach') === 'public', 'the root\'s visibility writes its reach and the standing subtree\'s', 'a reach stayed private');
 
   await engine.commit(tree, [], { cmd: { name: 'roadmap.recolourKind', args: { kind: 'learn', hue: 'sky' } } });
   await settle();

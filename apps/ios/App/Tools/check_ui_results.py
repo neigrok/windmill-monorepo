@@ -4,7 +4,8 @@ import os
 import re
 
 
-FIXTURE_SKIPS = {
+# The skips a shard may hold, each with its one reason: a fixture the shard does not run.
+EXPECTED_SKIPS = {
     ("GymIntegrationFlowTests", "testFiniteLoadsKeepTheirValueOnThePadAndSyncBeyondTheOldLimitIncludingZero"):
         "requires the isolated schema10 load fixture",
     ("GymIntegrationFlowTests", "testAConnectedToolsProposalAppliesFromItsRoutinesRow"):
@@ -12,6 +13,8 @@ FIXTURE_SKIPS = {
     ("GymIntegrationFlowTests", "testAConnectedToolsRemovalAsksThenRemovesItsRoutine"):
         "requires the isolated removal fixture",
     ("JournalIntegrationFlowTests", "testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers"):
+        "requires the verify skill's isolated backend",
+    ("RoadmapIntegrationFlowTests", "testARoadmapMadePublicIsExportedAndAnotherAccountForksItFromTheGallery"):
         "requires the verify skill's isolated backend",
 }
 
@@ -45,9 +48,9 @@ def check_results(log, expected, *, load_fixture_requested=False):
     assert started == expected, f"UI executions differ: expected={expected}, started={started}"
     assert not failed, f"UI failures: {failed}"
     assert passed + skipped == expected, f"UI completions differ: expected={expected}, passed={passed}, skipped={skipped}"
-    assert all(test in FIXTURE_SKIPS for test in skipped), f"Unexpected skipped UI tests: {skipped}"
+    assert all(test in EXPECTED_SKIPS for test in skipped), f"Unexpected skipped UI tests: {skipped}"
     assert not load_fixture_requested or not skipped, "The requested finite-load fixture must pass, never skip."
-    allowed_reasons = Counter({(*test, FIXTURE_SKIPS[test]): count for test, count in skipped.items()})
+    allowed_reasons = Counter({(*test, EXPECTED_SKIPS[test]): count for test, count in skipped.items()})
     assert reasons == allowed_reasons, f"UI skip reasons differ: expected={allowed_reasons}, observed={reasons}"
     return passed, skipped
 
@@ -56,4 +59,4 @@ if __name__ == "__main__":
     expected = expected_tests(os.environ["UI_TEST_SELECTION"], Path(__file__).resolve().parent.parent / "UITests")
     passed, skipped = check_results(Path(os.environ["UI_TEST_LOG"]).read_text(), expected,
         load_fixture_requested=bool(os.environ.get("WM_GYM_LOAD_CASES")))
-    print(f"UI results: {sum(passed.values())} passed, {sum(skipped.values())} explicitly expected fixture skips; every selected test ran exactly once.")
+    print(f"UI results: {sum(passed.values())} passed, {sum(skipped.values())} expected skips; every selected test ran exactly once.")

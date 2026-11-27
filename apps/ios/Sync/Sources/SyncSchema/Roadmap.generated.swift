@@ -276,7 +276,7 @@ public enum Roadmap {
         "serverInternal": false,
       ],
     ],
-    "minVersion": 11,
+    "minVersion": 15,
     "products": [
       "roadmap": [
         "codes": ["step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"],
@@ -399,9 +399,9 @@ public enum Roadmap {
           ],
           "reach": [
             "default": "private",
-            "domain": ["enum": ["private", "unlisted", "public"], "type": "string"],
+            "domain": ["enum": ["private", "public"], "type": "string"],
             "kind": "lww",
-            "opens": ["unlisted", "public"],
+            "opens": ["public"],
             "writer": "server",
           ],
           "root": ["kind": "const", "ref": "tree", "writer": "server"],
@@ -415,7 +415,7 @@ public enum Roadmap {
           ],
           "visibility": [
             "default": "private",
-            "domain": ["enum": ["private", "unlisted", "public"], "type": "string"],
+            "domain": ["enum": ["private", "public"], "type": "string"],
             "kind": "lww",
             "writer": "client",
           ],
@@ -834,6 +834,6 @@ public enum Roadmap {
         "type": "coachWriteFate",
       ],
     ],
-    "version": 14,
+    "version": 15,
   ]
 }

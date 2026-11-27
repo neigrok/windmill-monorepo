@@ -10,11 +10,13 @@ roadmap nodes can cite them.
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
 the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5) and the direct writes
-(§6), in `web/src/products/roadmap/domain/abilities/`, which claim the read abilities' vectors, the
-context's and the direct writes', every vector but the proposal's; and the tool host that carries the
-abilities out through the room's doors, in `web/src/products/roadmap/coach/toolHost.js`, which no turn
-runs yet. The roadmap's AI today is tending: a server-side agent that edits a roadmap at once from one
-sentence (`backend/products/roadmap`, `TendingApi`). What a person
+(§6), in `web/src/products/roadmap/domain/abilities/`, which claim every vector but the proposal's; and
+the tool host that carries the abilities out through the room's doors, in
+`web/src/products/roadmap/coach/toolHost.js`. On the iPhone the standing roadmap, the read abilities
+and the direct writes are built, which claim every vector but the context's and the proposal's, with
+the tool host's executor over the phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
+No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-coach`.
@@ -701,6 +703,14 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
   an Issue. Whatever throws in an ability's call, the ability, the standing roadmap it reads or the
   room's door, throws out of the tool host, which reports nothing of it; the turn's engine reports
   it once, as `agent-host`, and ends the turn `failed` with `host-fault`, as it does for gym's Coach.
+- A write the device could not store differs by surface: on the web the room's session reports it
+  as `roadmap-replica-write` and the tool host answers `roadmap-not-ready`; on the iPhone the room's
+  act runner throws it out of the tool host, so the turn ends `failed` with `host-fault`, reported as
+  `agent-host`.
+- An Undo of a direct write runs outside a turn, so a failure of it is reported under the room's own
+  write-failure operation: on the web by the room's session, as `roadmap-replica-write`, and on the
+  iPhone, where the tool host throws it to its caller, by the wiring that calls it, as `roadmap_write`
+  with the write `coachUndo`.
 - The backend logs nothing of a turn but the pass it signed.
 - They are listed in the web's and the iPhone's observability notes when built.
 

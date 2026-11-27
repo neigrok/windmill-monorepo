@@ -181,7 +181,7 @@ enum Plans {
       guard case .committed = try phone.runner.runAct(PlannedAct(plans: try plans(setup))) else { throw ContractError("\(vector) set up no act") }
       phone.sync()
     }
-    let actId: String?
+    let act: UndoHandle?
     let outcome: JSON
     do {
       if let parts = vector.input["parts"] {
@@ -191,28 +191,28 @@ enum Plans {
         }
         switch try phone.runner.runComposed(actions) {
         case .committed(_, let receipt):
-          actId = receipt.gestureId
+          act = receipt.undo
           outcome = Plans.form(receipt)
         case .unchanged:
-          actId = nil
+          act = nil
           outcome = ["kind": "unchanged"]
         case .refused(let part, let refusal):
-          actId = nil
+          act = nil
           outcome = ["kind": "refused", "part": JSON(part), "refusal": refusal.form]
         }
       } else if let save = vector.input["save"] {
         let saved = try Plans.save(try Drafts.draftable(save.member("t").asString()), save, on: phone)
-        actId = saved.receipt?.gestureId
+        act = saved.receipt?.undo
         outcome = saved.form
       } else if let reversible = vector.input["reversible"] {
         guard let segment = try plans(vector.input.member("segments")).first else { throw ContractError("a single action names one segment") }
         let ran = try phone.runner.run(PlannedAction(scope: segment.scope, plan: segment.plan, reversible: try reversible.asBool()))
-        actId = ran.receipt?.gestureId
-        outcome = ran.receipt.map { (receipt: CommitReceipt) -> JSON in ["kind": "committed", "count": JSON(receipt.localIds.count)] } ?? ["kind": "refused"]
+        act = ran.receipt?.undo
+        outcome = ran.receipt.map { (receipt: Receipt<CommitReceipt>) -> JSON in ["kind": "committed", "count": JSON(receipt.localIds.count)] } ?? ["kind": "refused"]
       } else {
         let ran = try phone.runner.runAct(PlannedAct(plans: try plans(vector.input.member("segments"))))
         guard case .committed(_, let receipt) = ran else { return ["outcome": ["kind": "refused"]] }
-        actId = receipt.gestureId
+        act = receipt.undo
         outcome = Plans.form(receipt)
       }
     } catch is PlanError {
@@ -224,9 +224,10 @@ enum Plans {
       switch try step.asString() {
       case "sync": phone.sync()
       case "read": results.append(Plans.form(try phone.runner.inverseResult(requestId ?? "")))
-      case "cancel": results.append(["cancelled": .bool(try phone.runner.cancelHeld(actId ?? ""))])
+      case "cancel": results.append(["cancelled": .bool(try phone.runner.cancelHeld(act?.actId ?? ""))])
       case let undoOrRedo:
-        let result = undoOrRedo == "undo" ? try phone.runner.undo(actId ?? "") : try phone.runner.redo(requestId ?? "")
+        guard let act else { throw ContractError("\(vector) committed no act to undo") }
+        let result = undoOrRedo == "undo" ? try phone.runner.undo(act) : try phone.runner.redo(requestId ?? "", of: act).result
         if case .unavailable = result {} else { requestId = Plans.requestId(of: result) }
         results.append(Plans.form(result))
       }
@@ -243,7 +244,7 @@ enum Plans {
   }
 
   // An act's committed outcome: the entries of each segment, and whether the act is held.
-  static func form(_ receipt: ActReceipt) -> JSON {
+  static func form(_ receipt: Receipt<ActReceipt>) -> JSON {
     let counts: [JSON] = receipt.segments.map { (segment: ActSegmentReceipt) -> JSON in JSON(segment.localIds.count) }
     return ["kind": "committed", "counts": .array(counts), "held": .bool(receipt.releaseAt != nil)]
   }
@@ -308,7 +309,7 @@ enum Plans {
 
   // `save: {t, id, scope?, current}`: the record's draft opened on the phone, `current` edited over it and saved through
   // `ActionRunner.save`.
-  static func save<E: ProbeEntity & Draftable>(_ type: E.Type, _ save: JSON, on phone: Harness) throws -> (receipt: CommitReceipt?, form: JSON) {
+  static func save<E: ProbeEntity & Draftable>(_ type: E.Type, _ save: JSON, on phone: Harness) throws -> (receipt: Receipt<CommitReceipt>?, form: JSON) {
     let id = try RecordID(json: save.member("id"))
     let scope = try save["scope"].map { (scope: JSON) throws -> ScopeRef in try ScopeRef(json: scope) } ?? E.fixtureScope
     guard var draft = try phone.runner.open(ID<E>(id), in: scope) else { throw ContractError("a save opens a record the phone holds") }

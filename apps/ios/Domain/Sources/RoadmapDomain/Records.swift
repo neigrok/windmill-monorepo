@@ -271,6 +271,8 @@ public struct RoadmapTree: Sendable {
   public let own: Bool
   // When the server last received any record of it.
   public let updatedAt: Instant?
+  // The time of the newest engine stamp the device holds of it.
+  public let stampedAt: Instant?
   public let parent: Parent?
   // Nil while its tree scope holds no meta.
   public let meta: Metadata?
@@ -285,13 +287,15 @@ public struct RoadmapTree: Sendable {
   let marksByStep: ByText<Mark>
   let pointersByStep: ByText<Pointer>
 
-  public init(id: String, present: Bool? = nil, read: Read? = nil, own: Bool? = nil, updatedAt: Instant? = nil, parent: Parent? = nil,
-              meta: Metadata?, nodes: [Step] = [], edges: [Edge] = [], kinds: [Kind] = [], marks: [Mark] = [], pointers: [Pointer] = []) {
+  public init(id: String, present: Bool? = nil, read: Read? = nil, own: Bool? = nil, updatedAt: Instant? = nil, stampedAt: Instant? = nil,
+              parent: Parent? = nil, meta: Metadata?, nodes: [Step] = [], edges: [Edge] = [], kinds: [Kind] = [], marks: [Mark] = [],
+              pointers: [Pointer] = []) {
     self.id = id
     self.present = present ?? true
     self.read = read ?? .loaded
     self.own = own ?? false
     self.updatedAt = updatedAt
+    self.stampedAt = stampedAt
     self.parent = parent
     self.meta = meta
     self.nodes = nodes.sorted(by: authoredOrder)

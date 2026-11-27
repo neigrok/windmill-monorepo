@@ -20,9 +20,8 @@
 #include <string>
 
 // Roadmap's one server-origin write path (Roadmap on the sync engine §7, engine.md §6.3): every write the server makes
-// for a person — MCP's write tools, tending, the fork, the fork at sign-up and the move of unlisted roadmaps to private
-// (`windmill_roadmaps_to_private`) — is a call of the door, whose admits are intents built under their scope's lock and
-// admitted through roadmap's binding. A call with a requestId writes once:
+// for a person — MCP's write tools, tending, the fork and the fork at sign-up — is a call of the door, whose admits are
+// intents built under their scope's lock and admitted through roadmap's binding. A call with a requestId writes once:
 // its reply is stored with it, and the same call sent again is answered that reply. Each call logs one
 // `roadmap.server_call` line (operation, product, door, outcome or refusal code, duration) and reports an unexpected
 // failure under that static name; neither names an id or a text.

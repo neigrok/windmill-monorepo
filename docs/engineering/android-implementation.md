@@ -39,7 +39,7 @@ fatal exception. Host timing is kept separate from device readiness and the comp
 
 The app model, rack acceptance, performed rows and saved-workout recovery have no set-kind API or
 control. Every set contributes to counters, totals, history, last-time prefill and early-finish rules.
-Sets carry no kind (registry v14/minimum 11): no read, write or command argument names one.
+Sets carry no kind (registry v15/minimum 15): no read, write or command argument names one.
 Debug and Release real-wire suites each pass 17 cases with zero skips. A further
 Debug run passes all 17 against the backend auth-receipt/schema prerequisite on main.
 
@@ -919,8 +919,8 @@ Web promotion checks the live sync interval before mkdir or rsync and retains a 
 source/schema/file-hash artifact first. The helper passes 33 script checks plus the final seven-case
 web class, including rejection of symlinks before hashing. An actual local anonymous hello at
 schema 10/minimum 10 admitted the matching client and held both mismatch directions, which
-proves the local decision and the modeled workflow boundary. Current source is registry 12 /
-minimum 11; production's hello advertised schema 12 / minimum 11 when last verified, on 2026-11-01.
+proves the local decision and the modeled workflow boundary. Current source is registry 15 /
+minimum 15; the [coordinated cutoff](../../backend/deploy/README.md#coordinated-client-cutoff) records what production's hello advertises.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and

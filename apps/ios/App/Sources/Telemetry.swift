@@ -52,7 +52,7 @@ nonisolated enum TelemetryPrivacy {
     "roadmap_board_branch", "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_activity",
     "roadmap_first_read", "roadmap_guide", "roadmap_link_opened", "roadmap_cover", "fork_attempt", "fork_claim",
     "roadmap_tree_open", "roadmap_tree_back", "roadmap_subtree_open", "roadmap_subtree_back", "roadmap_tree_attach",
-    "roadmap_landing", "roadmap_write_cannot_land", "roadmap_kept"
+    "roadmap_landing", "roadmap_write_cannot_land", "roadmap_kept", "roadmap_verb", "roadmap_export", "roadmap_gallery"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -63,7 +63,7 @@ nonisolated enum TelemetryPrivacy {
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
                "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo",
                "openInGraph", "viewBranch", "clear", "copyLink"],
-    "outcome": ["signed_out", "unauthenticated", "busy", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left", "cleared", "own", "readable", "unreadable", "copied"],
+    "outcome": ["available", "empty", "signed_out", "unauthenticated", "busy", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left", "cleared", "own", "readable", "unreadable", "copied"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other", "last_root", "closed", "forked", "copy_late", "replaced", "refused", "device", "empty", "denied", "roadmapDeleted", "capFilled", "accessEnded", "noteTooLong"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
@@ -78,7 +78,7 @@ nonisolated enum TelemetryPrivacy {
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form", "graph", "find", "tool", "bulk", "activity", "link", "import", "file", "paste", "band"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form", "graph", "find", "tool", "bulk", "activity", "link", "import", "file", "paste", "band", "more", "gallery"],
     // The Roadmap room, in the web's vocabulary: the act a Board event tells of, the step of a delete, of the roadmaps'
     // switcher, of a new roadmap or of the step form, the view a step's delete was made on, the group a step stands in
     // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
@@ -103,7 +103,8 @@ nonisolated enum TelemetryPrivacy {
             "attach", "change", "detach"],
     "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close",
              "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "edit", "save", "tooLong", "conflict",
-             "read", "clear", "unread", "settings", "refused", "paste", "fork", "attach", "change", "detach", "copy", "discardAll"],
+             "read", "clear", "unread", "settings", "refused", "paste", "fork", "attach", "change", "detach", "copy", "discardAll",
+             "publish", "private", "link", "sign_in", "load", "page", "retry", "row"],
     "menu": ["sortFilter"],
     "sort": ["roadmap", "newest", "oldest"],
     "what": ["kinds"],
@@ -113,10 +114,15 @@ nonisolated enum TelemetryPrivacy {
     "above": ["none", "some"],
     "length": ["0", "1-500", "501-2000", "2001-4500", "4501-5000"],
     // A roadmap's link and a shared roadmap's cover: the claimed form the address came in, whether the roadmap it named was
-    // the person's own, and Fork's one way on the iPhone, the web's instant one.
+    // the person's own, and Fork's two ways, the web's instant one on a roadmap's own screen and browse on a gallery row;
+    // a failed fork's request names its door, cover, attach or browse.
+    // Share, Export and the gallery (§7.3, §7.4): the verb Share's steps are told under, each step of the sheet, a page of
+    // the gallery read with what it came to, and Export's door, the root's title menu or a roadmap gone into's … menu,
+    // with whether the file was saved.
     "address": ["share", "app"],
     "mine": ["true", "false"],
-    "mode": ["instant"],
+    "mode": ["instant", "browse", "cover", "attach"],
+    "verb": ["share"],
     "legend": ["add", "rename", "describe", "recolor", "remove"],
     "count": ["0", "1", "2-5", "6-20", "21+"],
     "view": ["board", "graph"],
@@ -140,21 +146,22 @@ nonisolated enum TelemetryPrivacy {
     "place": ["band", "step"],
     "steps": ["1-100", "101-1000", "1001-5000", "5001-10000"],
     "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode", "workspace", "note",
-              "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind", "guide", "ImportSubgraph", "pointer", "clearLanding", "dismissNotice"],
+              "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind", "guide", "ImportSubgraph", "pointer", "clearLanding", "dismissNotice",
+              "visibility"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    // A file New Roadmap could not read: its error's domain, and its code as a bucket.
+    // A file New Roadmap could not read, or Export could not write: its error's domain, and its code as a bucket.
     "error_domain": ["cocoa", "posix", "other"],
-    "error_code": ["missing", "permission", "unreadable", "cancelled", "other"],
+    "error_code": ["missing", "permission", "space", "unreadable", "cancelled", "other"],
     // Why an Undo of an act skipped operations when it settled (`sync_inverse`): the engine's closed list, never a code
     // beyond it.
     "skip_reason": Set(InverseSkipReason.allCases.map(\.rawValue)),
-    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal", "/v1/trees"],
+    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal", "/v1/trees", "/v1/gallery"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "refusal", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted", "fallback", "unseated", "budget", "marks"],
-    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "roadmap_progress", "roadmap_fork", "roadmap_subscribe", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts", "roadmap_plant", "roadmap_file", "roadmap_landing", "roadmap_kept"],
+    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "roadmap_progress", "roadmap_fork", "roadmap_gallery", "roadmap_export", "roadmap_subscribe", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts", "roadmap_plant", "roadmap_file", "roadmap_landing", "roadmap_kept"],
   ]
 
   // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests, wait and the targets a

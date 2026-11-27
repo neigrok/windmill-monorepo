@@ -212,6 +212,10 @@ export const UndoRecipe = Object.freeze({
     Object.freeze({ kind: 'command', command, input, evidence: Object.freeze({ ownedFields, unchangedCreatedRecords, unchangedCreatedScopes }) }),
 });
 
+// K-3: what an act's Undo must find standing where it is asked, read in one scope: `check` throws the `Violation` the
+// Undo would break, as a decide does, and the Undo then writes nothing. A plan names it beside its recipes.
+/** @typedef {{ scope: string, check(read: import('./reading.js').Reader): void }} UndoCheck */
+
 export class Plan {
   constructor() {
     /** @type {Operation[]} */
@@ -226,6 +230,8 @@ export class Plan {
     this.supersededGestures = [];
     /** @type {UndoRecipe[]} */
     this.undoRecipes = [];
+    /** @type {UndoCheck[]} */
+    this.undoChecks = [];
     this.undoEvidence = false;
   }
 
@@ -333,6 +339,13 @@ export class Plan {
   undoBy(...recipes) {
     precondition(recipes.length > 0 && recipes.every((recipe) => ['fields', 'createdRecord', 'command'].includes(recipe?.kind)), 'undoBy takes Undo recipes');
     this.undoRecipes.push(...recipes);
+  }
+
+  // K-3: what the act's Undo must find standing where it is asked, as a rule its act kept that the Undo could break: the
+  // runner hands it out with the act's Undo, which is asked with it.
+  /** @param {UndoCheck} check */
+  undoCheckedBy(check) {
+    this.undoChecks.push(check);
   }
 
   // K-3: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's

@@ -123,7 +123,9 @@ extension RoadmapTree {
   // A subtree's date and a pointer's order are the stamps of the registers that hold them. §5 Dates: the server has
   // received a mark once no queued entry still changes its record (`isPending`), and its time is the record's `ru`; a mark
   // an entry still changes is the device's, timed by its register's stamp. A roadmap was last changed when the server
-  // last received a record of it: the newest `ru` among its entry, its tree scope's records and its overlay's.
+  // last received a record of it: the newest `ru` among its entry, its tree scope's records and its overlay's; and it was
+  // last stamped at the time of the newest engine stamp among them as the device holds them, which orders a roadmap no
+  // server has received.
   public init(id: ID<RoadmapEntry>, listed: Record?, tree: [Record], overlay: [Record]?, read: Bool = true) throws(DecodeError) {
     let overlaid = overlay ?? []
     var meta: RoadmapMeta?
@@ -169,13 +171,16 @@ extension RoadmapTree {
     if let listed { place = try RoadmapEntry(Fields(listed)).parent } else { place = meta?.parent }
     let held = tree + overlaid
     let received = ([listed?.ru] + held.map(\.ru)).compactMap { $0 }.max()
+    let stamped = ([listed].compactMap { $0 } + held).flatMap { (record: Record) -> [Stamp] in
+      [record.born, record.life?.stamp].compactMap { $0 } + Array(record.stamps.values)
+    }.max()
     let madeHere = !tree.isEmpty && held.allSatisfy { $0.ru == nil }
     let metadata = meta.map { (meta: RoadmapMeta) -> Metadata in
       Metadata(title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: (meta.root ?? id).description, depth: meta.depth,
                visibility: meta.visibility, reach: meta.reach, forkedFrom: meta.forkedFrom?.description)
     }
     self.init(id: id.description, present: listed.map { $0.life?.isAlive == true } ?? true, read: read || madeHere ? .loaded : .unread,
-              own: listed != nil, updatedAt: received.map(Instant.init(ms:)),
+              own: listed != nil, updatedAt: received.map(Instant.init(ms:)), stampedAt: stamped.map { Instant(ms: $0.ms) },
               parent: place.map { Parent(tree: $0.tree.description, step: $0.step.description) }, meta: metadata, nodes: nodes, edges: edges,
               kinds: kinds, marks: marks, pointers: pointers)
   }

@@ -217,8 +217,8 @@ timestamp comparison is `gym-hang-audit.md`; baseline and serial privacy scans f
 or credentials in their event/envelope payloads.
 
 Local Xcode 27.1 architecture-probe failures also reproduce on clean `a352e56b`
-(`domain-baseline-architecture.log`); they do not establish a change regression. CI is pinned to
-Xcode 26.3 and remains the authoritative full compatibility gate. The pure `CoachBubbleShape` and
+(`domain-baseline-architecture.log`); they do not establish a change regression. For that run, CI's
+Xcode 26.3 was the full compatibility gate. The pure `CoachBubbleShape` and
 archive content predicates declare their nonisolated behavior explicitly. `CoachScreensTests`
 expresses its eight cases as a typed loop to avoid the Xcode 27 macro type-check timeout.
 
@@ -240,7 +240,7 @@ Native suites live in `Tests/Gym`, `GymWorkoutFlowTests`, `GymCoachFlowTests`,
 The unit scheme is `WindmillUnitTests`. Nightly and design suites require
 `TEST_RUNNER_WM_NIGHTLY_UI=1` and `TEST_RUNNER_WM_DESIGN_CAPTURE=1`, respectively. Follow
 `apps/ios/App/README.md` for generation, fixture and owned-simulator setup. Local commands use
-`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; CI uses Xcode 26.3.
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, Xcode 27.1, as CI does.
 
 Local-stack acceptance follows `.claude/skills/verify/SKILL.md`: isolated Postgres/backend/Vite,
 fixture accounts, real native writes, and inspection of structured write logs, first-party event

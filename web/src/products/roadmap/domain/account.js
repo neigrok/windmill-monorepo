@@ -247,11 +247,13 @@ export class RoadmapAccount {
   }
 
   // The person's own roadmaps as their list shows them: each root of theirs that stands, newest first by when the server
-  // last received a record of it, a roadmap it has received nothing of last, ties in id byte order.
+  // last received a record of it, or, of a roadmap no server has received, by its newest stamp the device holds; one with
+  // neither last, ties in id byte order.
   list() {
+    const recency = (/** @type {RoadmapTree} */ tree) => tree.updatedAt ?? tree.stampedAt;
     return [...this.trees.values()]
       .filter((tree) => tree.own && this.locate(tree.id).standing === 'standing' && this.locate(tree.id).place?.parent === null)
-      .sort((a, b) => Number(a.updatedAt === null) - Number(b.updatedAt === null) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || compareText(a.id, b.id))
+      .sort((a, b) => Number(recency(a) === null) - Number(recency(b) === null) || (recency(b) ?? 0) - (recency(a) ?? 0) || compareText(a.id, b.id))
       .flatMap((tree) => this.listing(tree.id) ?? []);
   }
 

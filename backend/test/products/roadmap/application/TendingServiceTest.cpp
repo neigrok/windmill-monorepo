@@ -437,7 +437,6 @@ TEST(a_budget_under_the_ceiling_lets_the_run_start) {
 TEST(a_tend_runs_only_on_a_tree_its_caller_can_write) {
   Harness h;
   h.plant("t_public", UserId{"someone"}, Visibility::public_);
-  h.plant("t_unlisted", UserId{"someone"}, Visibility::unlisted);
   h.plant("t_private", UserId{"someone"}, Visibility::private_);
   h.plant("t_demo", std::nullopt, Visibility::public_);
   TendingService service(h.runs, h.agent, h.tools, accessThrough(h.rooms), h.clock, h.tokens, h.entitlements, /*enabled=*/true);
@@ -451,7 +450,6 @@ TEST(a_tend_runs_only_on_a_tree_its_caller_can_write) {
     return std::string(tendRefusalName(run.refusal));
   };
   CHECK_EQ(refusalOf("t_public"), std::string("not-yours"));
-  CHECK_EQ(refusalOf("t_unlisted"), std::string("not-yours"));
   CHECK_EQ(refusalOf("t_demo"), std::string("nobodys-tree"));
   CHECK_EQ(refusalOf("t_private"), std::string("no-such-tree"));
   CHECK_EQ(refusalOf("t_absent"), std::string("no-such-tree"));

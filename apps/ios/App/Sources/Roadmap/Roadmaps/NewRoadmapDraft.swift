@@ -132,7 +132,8 @@ final class NewRoadmapDraft: Identifiable {
     }
   }
 
-  // A file's failure as its report carries it: the error's domain and its code as a bucket, never its message or a name.
+  // A file's failure as its report carries it, a read's or Export's write: the error's domain and its code as a bucket,
+  // never its message or a name.
   nonisolated static func labels(of error: any Error) -> [String: String] {
     let error = error as NSError
     let domain = switch error.domain {
@@ -142,7 +143,9 @@ final class NewRoadmapDraft: Identifiable {
     }
     let code = switch (error.domain, error.code) {
     case (NSCocoaErrorDomain, NSFileNoSuchFileError), (NSCocoaErrorDomain, NSFileReadNoSuchFileError), (NSPOSIXErrorDomain, Int(ENOENT)): "missing"
-    case (NSCocoaErrorDomain, NSFileReadNoPermissionError), (NSPOSIXErrorDomain, Int(EACCES)), (NSPOSIXErrorDomain, Int(EPERM)): "permission"
+    case (NSCocoaErrorDomain, NSFileReadNoPermissionError), (NSCocoaErrorDomain, NSFileWriteNoPermissionError), (NSPOSIXErrorDomain, Int(EACCES)),
+         (NSPOSIXErrorDomain, Int(EPERM)): "permission"
+    case (NSCocoaErrorDomain, NSFileWriteOutOfSpaceError), (NSPOSIXErrorDomain, Int(ENOSPC)): "space"
     case (NSCocoaErrorDomain, NSFileReadCorruptFileError), (NSCocoaErrorDomain, NSFileReadUnknownError): "unreadable"
     case (NSCocoaErrorDomain, NSUserCancelledError): "cancelled"
     default: "other"

@@ -248,10 +248,16 @@ struct AccountSheet: View {
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
-  // The sign-in a room opens for one of its own verbs says that verb (Roadmap · iOS 09.9a, 09.10b).
+  // The sign-in a room opens for one of its own verbs says that verb (Roadmap · iOS 09.2a, 09.9a, 09.10b).
   func signIn(for reason: AppModel.RoomSignIn) -> some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text(reason == .fork ? "Sign in to fork this roadmap." : "Sign in to open this roadmap.").font(ShellType.title)
+      Group {
+        switch reason {
+        case .fork: Text("Sign in to fork this roadmap.")
+        case .link: Text("Sign in to open this roadmap.")
+        case .share: Text("Sign in to share this roadmap.")
+        }
+      }.font(ShellType.title)
       if model.canSignIn {
         authDoors.padding(.top, 10)
       } else {

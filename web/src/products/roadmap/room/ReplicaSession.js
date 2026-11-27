@@ -30,10 +30,11 @@ const NOTHING_TO_TAKE_BACK = Object.freeze({ kind: 'unavailable' });
 // The fields of a step a gesture that changes it may carry, each written whole: its web links among them.
 const STEP_FIELDS = Object.freeze(['label', 'description', 'color', 'links']);
 
-// A write's receipt: the act it wrote, once it has (null where it wrote nothing), and its parts' results once it was
-// taken (null where it was not).
+// A write's receipt, `{ act, undo, landed }`: the id of the act it wrote and that act's Undo handle, once it has (null
+// where it wrote nothing), and its parts' results once it was taken (null where it was not).
 function receiptOf(written) {
-  return Object.freeze({ act: written.then(({ act }) => act), landed: written.then(({ complete, results }) => (complete ? results : null)) });
+  return Object.freeze({ act: written.then(({ act }) => act), undo: written.then(({ receipt }) => receipt?.undo ?? null),
+    landed: written.then(({ complete, results }) => (complete ? results : null)) });
 }
 
 // §5 Undo: what an Undo or a Redo came to, once the engine answers: `applied` where it changed what the device holds,
@@ -81,7 +82,8 @@ export class ReplicaSession {
     this.undoStack = [];
     // Each write of the person's own overlay whose maker keeps its Undo (`markUndoably`, `keepUndoably`), out of the stack.
     this.kept = [];
-    // Each gesture taken back, `{ inverse }`: its act's Undo, once asked (null where there was none).
+    // Each gesture taken back, `{ inverse, undo }`: its act's Undo once asked (null where there was none), and the Undo
+    // handle it was asked with, which its Redo takes.
     this.redoStack = [];
     // Each Undo or Redo the engine is still settling, by its request: what it was (`undo` or `redo`), and how to hand on
     // its result once it has settled.
@@ -343,14 +345,15 @@ export class ReplicaSession {
     const done = this.undoStack.pop();
     if (!done) return;
     this.bump();
-    this.redoStack.push(Object.freeze({ inverse: this.inverse(done) }));
+    this.redoStack.push(Object.freeze({ inverse: this.inverse(done), undo: done.undo }));
   }
 
   redo() {
     const undone = this.redoStack.pop();
     if (!undone) return;
     this.bump();
-    this.undoStack.push(Object.freeze({ act: this.reapply(undone) }));
+    const undo = this.reapply(undone);
+    this.undoStack.push(Object.freeze({ act: undo.then((act) => act?.actId ?? null), undo }));
   }
 
   // Takes back what the receipt wrote, leaving alone anything written since, and lets the receipt go; Redo cannot bring
@@ -386,10 +389,10 @@ export class ReplicaSession {
     return true;
   }
 
-  // A gesture's act taken back, answering its Undo (null where it wrote nothing or has none); the act itself leaves the
-  // engine's journal once its Undo is asked.
+  // A gesture's act taken back by the Undo its receipt carries, answering it (null where it wrote nothing or has none);
+  // the act itself leaves the engine's journal once its Undo is asked.
   async inverse(done) {
-    const act = await done.act;
+    const act = await done.undo;
     if (act === null) {
       this.trackInverse('undo', NOTHING_TO_TAKE_BACK);
       return null;
@@ -401,26 +404,26 @@ export class ReplicaSession {
       this.report('roadmap-replica-write', error, { write: 'undo' });
     }
     if (result) this.undone.set(done, this.trackInverse('undo', result));
-    await this.release(act);
+    await this.release(act.actId);
     return result?.kind === 'unavailable' ? null : result;
   }
 
-  // A gesture taken back, written again: answers the act its Redo wrote.
+  // A gesture taken back, written again: answers the Undo of the act its Redo wrote, checked as the gesture's was.
   async reapply(undone) {
     const inverse = await undone.inverse;
     if (inverse === null) {
       this.trackInverse('redo', NOTHING_TO_TAKE_BACK);
       return null;
     }
-    let result = null;
+    let redone = null;
     try {
-      result = await this.runner.redo(inverse.requestId);
+      redone = await this.runner.redo(inverse.requestId, await undone.undo);
     } catch (error) {
       this.report('roadmap-replica-write', error, { write: 'redo' });
     }
-    if (result) this.trackInverse('redo', result);
+    if (redone) this.trackInverse('redo', redone.result);
     await this.release(inverse.inverseActId);
-    return result && result.kind !== 'unavailable' ? result.inverseActId : null;
+    return redone?.undo ?? null;
   }
 
   // §5 Undo: what an Undo or a Redo came to (`inverseOutcome`), told to the intake once the engine knows, as soon as it

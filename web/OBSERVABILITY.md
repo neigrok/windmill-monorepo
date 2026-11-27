@@ -328,6 +328,33 @@ unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismi
 the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
 to say, so the room voices no notice and tells no `refusal` step for it.
 
+## Front page
+
+The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) tells one event for each link and control a person uses, through
+`track` in `src/telemetry/beacon.js`. Properties are allowlisted, bounded labels: no address, link text, account or email
+enters them. `product` is a product's registry id. Nothing inside a picture frame is a control, so a picture tells nothing.
+`test/shell/marketing/BrandLanding.test.js` drives every link and control, signed out, signed in and with a link already sent,
+and holds the events to this table.
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| The page opened, once per mount, at its first paint without waiting on the network; the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | none |
+| A link followed. `area` is where it stands: the header, the three tools, a room's section, "Your AI, or ours." or the footer's sitemap. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page | `front_link` | `area: header/tools/room/ai/sitemap`, `to: home/landing/room/app/pricing/connect/changelog/gallery/privacy/terms/refunds`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+
+A room's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
+`front-picture-journal` or `front-picture-gym` once, with kind `render` and no stack (`BrandLanding.browser.test.js`). Any
+other render crash reaches `client_error` under the route family `/`. The sign-in door and the feedback dialog it opens tell
+and report their own sends:
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| A sign-in link asked for at the shared door, on any page | `sign_in_link` | `outcome: sent/refused/failed`, `reason?: invalid_email/rate_limited` when refused, `network/server/request` when failed |
+| Feedback sent from the shared dialog | `feedback_send` | `outcome: sent/refused/failed`, `reason?: refused` (a 400 or 429), `network/server/request` when failed |
+
+A failed send, not a refusal, also reports to Sentry with no stack: `auth-magic-link` (kind `auth`) and `feedback-send`
+(kind `feedback`), each tagged with its `reason`. Neither carries the address, the message or the server's words.
+
 ## Roadmap
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires
@@ -475,7 +502,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A kept change's Copy: its text reached the clipboard, or the clipboard refused it or failed | `roadmap_kept` | `step: copy`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong`, `outcome: copied/failed` |
 | Select text, after a kept change's copy failed | `roadmap_kept` | `step: select`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
 | A kept change discarded: asked once, and the engine dismissed its notice, or the carry-over's ledger let go of its record. One the engine or the ledger no longer holds, discarded in another tab, closes quietly and emits nothing | `roadmap_kept` | `step: discard`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
-| A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing). No text and no id leave; the person is shown nothing of a skip | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
+| A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing) or the domain refused the Undo before anything was written, a check its act named failing over what stands (a kind brought back onto a hue another kind has come to wear). No text and no id leave; the person is shown nothing of a skip or a refusal | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
 | A room on the device's copy: a write the domain refused, decided before anything was written (or, rarely, at its commit); a roadmap at its cap and a link that would close a loop are said in the words of the room with the switch off, and any other shows what that room shows for that gesture's failure. No success is shown or emitted for it: a gesture's success toast and `saved` event wait until its write has landed | `roadmap_write_refused` | `write: mark/title/guide/visibility/workspace/note/landing/CreateNode/RenameNode/DescribeNode/SetNodeColor/EditNode/SetNodeOrder/AddEdge/RemoveEdge/ReconnectEdge/DeleteNode/BulkDelete/BulkRecolor/ImportSubgraph/SetNodeTree/AddKind/RenameKind/DescribeKind/RecolorKind/RemoveKind/deleteRoadmap`, `refusal: invalid/gone/taken/tooLarge/full/roadmapGone/unreachable/notARoot/stepOpensARoadmap/depthLimit/other` |
 | Undo of one of Roadmap Coach's direct writes by its receipt (`coach/toolHost.js`), told once the engine has settled it, which waits for the server where the server settles it: `undone` where it took the write back, `skipped` where a later write the person made of the same field, a change of a subtask it added, or a mark they set on the step since, stood in its way, `unavailable` where the room no longer holds the write (⌘Z took it back first). The room tells the same Undo as `roadmap_undo`. Nothing offers the Undo yet, so production emits none of it | `roadmap_coach_write_undone` | `ability: set_progress/update_node/create_node/connect`, `outcome: undone/skipped/unavailable` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |

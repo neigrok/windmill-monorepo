@@ -47,11 +47,12 @@ enum GymTab: String {
   }
 
   // WM_CAPTURE_ARGUMENTS adds launch arguments to every capture, such as another language: -AppleLanguages (ar) -AppleLocale ar_SA.
-  func launch(_ fixture: String, _ look: Look, arguments: [String] = []) -> XCUIApplication {
+  func launch(_ fixture: String, _ look: Look, arguments: [String] = [], copying copied: String? = nil) -> XCUIApplication {
     let captureArguments: [String] = ProcessInfo.processInfo.environment["WM_CAPTURE_ARGUMENTS"]?.split(separator: " ").map(String.init) ?? []
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", fixture] + look.launchArguments + arguments
     app.launchArguments += captureArguments
+    app.launchEnvironment["WM_COPIED_STEPS"] = copied
     app.launch()
     return app
   }

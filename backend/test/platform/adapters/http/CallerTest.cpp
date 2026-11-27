@@ -205,7 +205,7 @@ std::string webRoot() {
 }
 
 // Behind the roadmap's REST reads and pages over its rooms: Ann's private roadmap t_mine with its card and video, her
-// public one t_open with its card, and an unlisted one to fork, t_src.
+// public one t_open with its card, and another account's public one to fork, t_src.
 struct Roadmaps {
   Accounts& accounts;
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
@@ -227,7 +227,7 @@ struct Roadmaps {
   explicit Roadmaps(Accounts& seated) : accounts(seated) {
     plant("t_mine", "Mine", accounts.ann, Visibility::private_);
     plant("t_open", "Open", accounts.ann, Visibility::public_);
-    plant("t_src", "Source", UserId{"owner"}, Visibility::unlisted);
+    plant("t_src", "Source", UserId{"owner"}, Visibility::public_);
     const std::string png = std::string("\x89PNG\r\n\x1a\n", 8) + "card";
     cards->byId["t_mine"] = png;
     cards->byId["t_open"] = png;

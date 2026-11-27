@@ -50,9 +50,8 @@ pair makes a repeated rotation idempotent, `resum_sync_digests.cpp` is the offli
 every alive scope's digest from its feed after a registry change (`deploy/README.md`),
 `subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step, and the
 engine's roadmaps by owner and visibility and its pointers alive with no `opens`, reading only (`SPEC.md`, Subtree
-inventory), `roadmaps_to_private.cpp` moves every unlisted roadmap of people's to private through `RoadmapDoor`, a dry run
-unless told `--write` (`SPEC.md`, Unlisted roadmaps to private), and `roadmap_adopt.cpp` runs roadmap's cutover onto the
-sync engine stage by stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
+inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
+stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
 
 ## How a product plugs in
 
@@ -78,7 +77,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:15)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and fifteen script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and fourteen script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -104,13 +103,13 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v14/minimum 11 and composition.json.
+(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v15/minimum 15 and composition.json.
 `windmill_sync_tests` replays the server's files again over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's thirteen types and nine commands, `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`, and
 `products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
-their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v14/minimum-11 catalog.
+their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v15/minimum-15 catalog.
 `windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
 where `ROADMAP_ENGINE_ENABLED` is `true` or `1`, and elsewhere withholds them, so they read as absent and admit
 nothing. Production reads it only from the host's `roadmap-engine.env`, which holds `ROADMAP_ENGINE_ENABLED=1`
@@ -124,8 +123,8 @@ the door directly; `TrainingService` uses it for stale closes, `ThreadService` f
 `coach::TurnService` for a dropped turn's message. Catalog, program, notes, settings and
 weigh-in reads use repository ports directly. The gym repositories only read, but for shares and
 Coach threads. Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, every roadmap write the server makes for a person — the MCP
-roadmap tools (`RoadmapDoorTools`), tending through them, `POST /v1/trees/{id}/fork`, the fork at sign-up (`DoorForks`) and
-the move of unlisted roadmaps to private (`roadmaps_to_private.cpp`) — is a call of `RoadmapDoor`, on the engine's store and clock, its intents built under their scope's lock; MCP's roadmap
+roadmap tools (`RoadmapDoorTools`), tending through them, `POST /v1/trees/{id}/fork` and the fork at sign-up (`DoorForks`)
+— is a call of `RoadmapDoor`, on the engine's store and clock, its intents built under their scope's lock; MCP's roadmap
 reads read the typed tables through the read domain (`products/roadmap/domain/read/`), which claims the shared read
 vectors. There the rooms' socket and routes are retired (`products/roadmap/routes.cpp`): `/v1/socket`'s upgrade and a plain
 GET of it, `POST`/`GET /v1/trees`, `GET`/`PATCH`/`DELETE /v1/trees/{id}`, its `/guides` and `/diagnostics` and
