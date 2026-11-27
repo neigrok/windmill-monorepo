@@ -267,7 +267,10 @@ ability's result as data and never as instructions.
   Loops and dead ends among the roadmaps that steps open are reported only among roadmaps the
   device holds.
 - A result is at most 16 KiB, the catalog's `maxBytes`; a longer one is paged, never cut (§5.2).
-- The tool host notes the stamp of every register a turn's context and reads returned. §7 uses them.
+- The tool host notes the stamps of the registers a turn's context and reads returned, a later read's over an earlier
+  one's: of each step one answers, the life and every field of its record, its mark and the life of each link into it;
+  and of a roadmap's header, its kinds'. The context answers every step it gives a line, its completions among them.
+  §7 uses them.
 
 ### §5.1 What each read answers
 
@@ -464,6 +467,7 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 | `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text, links or subtasks, the roadmap's steps, links, subtasks or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps, links or subtasks is full, for `create_node`, `connect` and `update_node` alike |
 | `unknown-step` | A step the roadmap does not hold, or a ref no earlier change gave |
 | `closes-cycle` | A link, or a merge, would close a loop |
+| `takes-every-start` | A proposal's `remove_step` would remove the roadmap's last starting step, a present step that follows nothing. It is the room's rule, which its own delete keeps ("A roadmap keeps one starting step", board 02.12), held for Coach by the domain's `effects` read, the read the room's delete asks. A merge and a split pass: no control of the room makes either, and a split's parts or a merge's survivor stand where the step stood |
 | `unknown-kind` | A kind the roadmap's legend does not show, one it does not have or one wearing a hue an earlier kind owns, or a ref no earlier `add_kind` gave |
 | `address-not-allowed` | A web link's address is not one `roadmap-link-urls.json` shows |
 | `opens-roadmap` | A mark on a step that opens a roadmap: it is complete when that roadmap is, or by its own mark where the roadmap it points to no longer stands, and the room offers no mark on it either way |
@@ -488,7 +492,7 @@ or a required one left out, is `invalid-input`.
 | `connect` | `nodeId`, `prerequisiteId` | | A link added: `nodeId` is the step that waits, `prerequisiteId` the step it waits on |
 | `disconnect` | `nodeId`, `prerequisiteId` | | That link removed |
 | `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it |
-| `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed |
+| `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed, and its links with it |
 | `set_progress` | `nodeId`, `status` | | The step marked `complete` or `none` |
 | `add_kind` | `ref`, `label`, `hue` | `description` | A new kind |
 | `rename_kind` | `kind`, `label` | | A kind's label |
@@ -503,12 +507,34 @@ or a required one left out, is `invalid-input`.
   record's `changes` hold those ids: a new step's under `nodeId`, a new kind's under `kind`, and
   every field that named the ref names its id.
 - **The fold.** The ability folds the changes in order over a scratch copy of the standing roadmap,
-  validating each as §6 validates a write, and refuses a set that could not be applied. A change
-  that names a step under a delete the person can still undo is `roadmap-not-ready`. A kind takes no
-  hue another kind wears, checked at each change as the room's recolour checks it, so two kinds do
-  not swap hues in one proposal. A `merge` whose two steps are one is `invalid-input`. It also
-  refuses, as `roadmap-changed`, a set that touches a register which has moved since this turn read
-  it, so the model reads again and never proposes over an edit it has not seen.
+  validating each over the copy as the changes before it left it, and refuses a set that could not be
+  applied. A new step takes the order key the room's own gives a new step, after the steps its first
+  prerequisite leads to, and a split's parts each after the one before. The call is checked in this
+  order, and the first failure refuses it:
+  1. the Shape rule over the whole input, as the gate checks it first;
+  2. the roadmap and the person (§6, rules 1 and 2): `unknown-roadmap`, `roadmap-unavailable`,
+     `not-owner`; §6's rule 3 is no rule of a proposal (§10);
+  3. the count of changes;
+  4. each change, at its index:
+     1. a step it names under a delete the person can still undo: `roadmap-not-ready`;
+     2. the rules of its input, `invalid-input`: its op's row, a `merge` whose two steps are one, a
+        `describe` that sends neither field, a `split` of fewer than two parts, a ref given twice, and a
+        text the domain cannot store;
+     3. a value past its cap, `over-limit`;
+     4. a web link's address, `address-not-allowed`;
+     5. the steps and kinds it names, `unknown-step` and `unknown-kind`, and a new id the copy holds,
+        `invalid-input`;
+     6. the roadmap's counts of steps, links and kinds, `over-limit`;
+     7. its own rule of the graph: `takes-every-start` for a `remove_step`; `closes-cycle` for a
+        `connect` (after a link that stands, which changes nothing), a `merge` or a `split`; and
+        `hue-taken` for a kind, checked at each change as the room's recolour checks it, so two
+        kinds do not swap hues in one proposal;
+     8. `roadmap-changed`: a register it touches that the turn read at another stamp than the copy
+        holds now (§5), so the model reads again and never proposes over an edit it has not seen. A
+        register the turn never read is taken at the copy's stamp;
+     9. the marks, `opens-roadmap` and `step-locked`, as `set_progress` checks them;
+     10. `no-change`, where it writes nothing over the scratch;
+  5. the record's size.
 - **The record's size.** A set of more than 100 changes is `over-limit`, and so is a minted record
   whose `changes` pass 65,536 bytes or whose `base` passes 262,144, as the sync registry caps them
   (§6, rule 4).
@@ -525,17 +551,26 @@ or a required one left out, is `invalid-input`.
 
 A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[], state, undone}`.
 
-- `base` names, for every step a change mentions, whether the step exists and the stamp of its
-  being there; for every register a change writes, that register's stamp; and for `set_progress`,
-  the mark's. An `add_step` records that its id is unheld. They are the stamps the turn's reads
-  returned, read from the copy, so they exist for a roadmap that has never reached the server.
+- `base` is a list of registers, `{t, id, register, stamp}`, in the order the changes first touch
+  them: for every step a change mentions, the stamp of its being there, its `life`; for every register
+  a change writes, that register's stamp; and for `set_progress`, the mark's. `t` is `node`, `edge`,
+  `kind` or `progress`, `id` the record's id (`[from, to]` for a link), `register` `life` or a field,
+  and `stamp` the copy's, null for a record the copy does not hold. A new step or kind records its
+  id's life unheld, and the records it makes are its alone. A recolour's base is the kind's hue: the
+  room's recolour is one command, which repaints the steps that wear it. They are the stamps the
+  turn's reads returned, read from the copy, so they exist for a roadmap that has never reached the
+  server.
 - `state` is `pending`, then one of `applied`, `rejected`, `stale` or `replaced`, and never moves
   again. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
   field, and `applied` outranks the other three.
 - `undone` is set once, when the person undoes an applied proposal.
-- A roadmap has one pending proposal. Minting another marks the earlier one `replaced`. Where two
-  devices each mint one before they sync, the one born later stays pending, and any device that
-  holds both marks the earlier `replaced`.
+- A roadmap has one pending proposal. Minting another marks every earlier one `replaced`, in the
+  write that makes it. Where two devices each mint one before they sync, the one born later stays
+  pending: a device reads the latest-born pending proposal about a roadmap as its pending one and
+  every earlier one as replaced, and the next one minted about the roadmap writes each `replaced`.
+- Coach's message names the proposal it minted (`proposalId`, §9). In a conversation about all
+  roadmaps a turn may mint one for each of two roadmaps, and a message then carries more than one;
+  the card reads a message's proposals by their `messageId`.
 
 **Apply**, pressed by the person on the review:
 
