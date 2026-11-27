@@ -192,8 +192,10 @@ new local simulator the same way: it seeds English/US preferences, Live Activity
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility
 automation, UTC, a fixed status bar and the software keyboard, with autocorrection and predictions off. The shard
 builds its tests before it runs them, so the build's memory is free before the first launch, turns off Spotlight
-indexing on the runner, and logs the runner's load every 15 seconds. Tests run serially on that UUID, and a result check requires every selected test to pass
-exactly once. A shard's budget for setup, build, tests and cleanup is 75 minutes; the shards take 40 to 62 minutes. A
+indexing on the runner, and logs the runner's load every 15 seconds. Tests run serially on that UUID, and a result check requires every selected test to run
+exactly once and pass, or skip for its one reason in `App/Tools/check_ui_results.py`'s `EXPECTED_SKIPS`: a fixture the
+shard does not run, or Paste Steps' allowed paste, which the iOS 27.0 simulator cannot ask for (its pasteboard daemon is
+refused SpringBoard's alert), so that test proves the empty clipboard and the refusal and skips the rest. A shard's budget for setup, build, tests and cleanup is 75 minutes; the shards take 40 to 62 minutes. A
 failed shard prints each failed test's app hierarchy at its failure and retains its logs and xcresult
 bundle for three days. Cleanup deletes the device even after failure. CI does not run `e2e.sh`, which needs the local
 backend.

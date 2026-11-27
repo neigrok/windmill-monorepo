@@ -47,10 +47,11 @@ class WarningGateTests(unittest.TestCase):
         source = self.root / relative
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(self.source)
-        subprocess.run(["xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-default-isolation", "MainActor",
-                        "-warnings-as-errors", "-Wwarning", "DeprecatedDeclaration", "-typecheck", str(source),
-                        "-Xfrontend", "-serialize-diagnostics-path", "-Xfrontend", str(self.build / f"{source.stem}.dia")],
-                       check=True, capture_output=True, timeout=300)
+        compiled = subprocess.run(["xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-default-isolation", "MainActor",
+                                   "-warnings-as-errors", "-Wwarning", "DeprecatedDeclaration", "-typecheck", str(source),
+                                   "-Xfrontend", "-serialize-diagnostics-path", "-Xfrontend", str(self.build / f"{source.stem}.dia")],
+                                  capture_output=True, text=True, timeout=300)
+        self.assertEqual(0, compiled.returncode, f"needs the pinned Xcode's compiler (DEVELOPER_DIR):\n{compiled.stderr[-2000:]}")
 
     def run_gate(self, *arguments):
         output = io.StringIO()

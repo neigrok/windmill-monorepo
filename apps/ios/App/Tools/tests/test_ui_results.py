@@ -12,7 +12,7 @@ spec.loader.exec_module(results)
 
 class UIResultChecks(unittest.TestCase):
     mandatory = ("GymIntegrationFlowTests", "testMandatoryFlow")
-    fixture = next(iter(results.FIXTURE_SKIPS))
+    fixture = next(iter(results.EXPECTED_SKIPS))
     expected = Counter({mandatory: 1, fixture: 1})
 
     def entry(self, test, status):
@@ -22,7 +22,7 @@ class UIResultChecks(unittest.TestCase):
         return f"Test Case '-[WindmillUITests.{test[0]} {test[1]}]' started.\n"
 
     def skipped(self, reason=None):
-        reason = results.FIXTURE_SKIPS[self.fixture] if reason is None else reason
+        reason = results.EXPECTED_SKIPS[self.fixture] if reason is None else reason
         return (f"fixture.swift:51: -[WindmillUITests.{self.fixture[0]} {self.fixture[1]}] : Test skipped - {reason}\n"
                 + self.entry(self.fixture, "skipped"))
 

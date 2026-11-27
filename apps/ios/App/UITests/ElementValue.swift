@@ -128,20 +128,30 @@ extension XCUIApplication {
 
   // Paste Steps, from the long press of the room's +; the system then asks, in SpringBoard's alert, before the room reads
   // what another app copied, answered as `allowing` says. Once allowed, the system asks no more of the same copied text,
-  // so an allowing paste answers only where it is asked, and a refusing one needs text copied since.
-  func pasteSteps(allowing allowed: Bool? = nil, file: StaticString = #filePath, line: UInt = #line) {
+  // so an allowing paste answers only where it is asked, and a refusing one needs text copied since. Where the system
+  // cannot ask (`systemAsksBeforePaste`), it refuses unasked: a refusing paste holds, and an allowing one returns false.
+  @discardableResult
+  func pasteSteps(allowing allowed: Bool? = nil, file: StaticString = #filePath, line: UInt = #line) -> Bool {
     let plus = buttons["roadmap-new-step"]
     XCTAssertTrue(plus.waitForHittable(timeout: 10), file: file, line: line)
     plus.press(forDuration: 1.0)
     let item = buttons["Paste Steps"]
     XCTAssertTrue(item.waitForExistence(timeout: 5), file: file, line: line)
     item.tap()
-    guard let allowed else { return }
+    guard let allowed else { return true }
+    guard Self.systemAsksBeforePaste else { return !allowed }
     let answer = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons[allowed ? "Allow Paste" : "Don’t Allow Paste"]
     let asked = answer.waitForExistence(timeout: allowed ? 3 : 10)
     XCTAssertTrue(asked || allowed, "the system asks before the room reads another app's text", file: file, line: line)
     if asked { answer.tap() }
+    return true
   }
+
+  // The iOS 27.0 simulator cannot ask before a paste: SpringBoard refuses its pasteboard daemon the alert (the daemon lacks
+  // the com.apple.springboard.CFUserNotification entitlement), and the read fails as not authorized.
+  static let systemAsksBeforePaste = ProcessInfo.processInfo.operatingSystemVersion.majorVersion != 27
+    || ProcessInfo.processInfo.operatingSystemVersion.minorVersion != 0
+  static let pasteUnasked = "the iOS 27.0 simulator cannot ask before a paste, so nothing can allow one"
 
   // The system's Paste button in New Roadmap's *A Copied Plan* row, which takes the row's label and frame: its capsule
   // stands at the row's trailing end, where a tap reaches it.

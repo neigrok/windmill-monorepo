@@ -727,8 +727,9 @@ import XCTest
   // Roadmap · iOS 02.16 to 02.18, 02.16b and 02.16c, R-15: Paste Steps in the +'s long press says when the clipboard
   // holds no text and when the system was not allowed to hand it over; allowed, it reads the copied list back under the
   // roadmap's starting step in the states its steps will land in; Cancel writes nothing, Add writes them with the mark
-  // the list brings done, and Undo takes the paste back whole. Settings leads to Windmill's page in Settings.
-  func testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack() {
+  // the list brings done, and Undo takes the paste back whole. Settings leads to Windmill's page in Settings. Where the
+  // system cannot ask before a paste, nothing can allow one, and the test ends at the refusal.
+  func testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack() throws {
     UIPasteboard.general.items = []
     let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 30))
@@ -741,7 +742,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Paste not allowed"].waitForExistence(timeout: 5) && app.buttons["roadmap-settings"].exists)
     XCTAssertFalse(app.navigationBars["Paste Steps"].exists)
 
-    app.pasteSteps(allowing: true)
+    guard app.pasteSteps(allowing: true) else { throw XCTSkip(XCUIApplication.pasteUnasked) }
     XCTAssertTrue(app.navigationBars["Paste Steps"].waitForExistence(timeout: 10))
     // The medium sheet's list draws the rows on screen alone.
     XCTAssertEqual(Array(planned(app).prefix(4)), ["Up next, Day sail", "Done, Check the forecast", "Locked, Plan the passage", "Locked, Brief the crew"])
