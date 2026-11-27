@@ -7,13 +7,15 @@ const THEMES = ['light', 'dark'];
 // 'clay' is the neutral rooms' brand.
 const brandsOf = (products) => ['clay', ...new Set(products.map((product) => product.shell.scope.brand))];
 
-function declarations(css, selector) {
+// The custom properties a token sheet declares under exactly `selector`, a later block's over an earlier one's.
+export function declarations(css, selector) {
   const found = {};
   const pattern = new RegExp(`(^|,)\\s*${selector.replace(/[[\]"$^*+?.()|{}\\]/g, '\\$&')}\\s*(,[^{]*)?\\{([^}]*)\\}`, 'gm');
   for (const block of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(pattern)) {
     for (const line of block[3].split(';')) {
-      const [name, value] = line.split(':');
-      if (name && value) found[name.trim()] = value.trim();
+      const colon = line.indexOf(':');
+      const [name, value] = [line.slice(0, colon), line.slice(colon + 1)];
+      if (colon > 0 && value.trim()) found[name.trim()] = value.trim();
     }
   }
   return found;

@@ -254,8 +254,11 @@ its own head and no-JS body. Shelf pages live in `public/`.
 
 The build generates `sitemap.xml` from canonical URLs, excluding `noindex` pages; there is no
 source sitemap to edit. `staticPageAssets.js` checks canonical, Open Graph and Twitter metadata
-and supplies shared fonts, chrome, boot and appearance assets. Missing landing modules or fallback
-bodies fail the build.
+and supplies shared fonts, chrome, boot and appearance assets. A page in `public/` names its look on
+`<html data-look>`: with none it wears the family look (`/fonts.css`, `/chrome.css`); `instrument`,
+the pricing page's, links `/instrument.css`, which holds Inter, the brand root's look tokens resolved from
+`styles/tokens/looks.css` and `scripts/staticInstrument.css`. The build fails a page that misses its look's
+links or the box `/appearance.js` fills. Missing landing modules or fallback bodies fail the build.
 
 Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
 association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.
@@ -271,7 +274,8 @@ and per-quest landing pages have no implementation here.
 
 `shell/appearance.js` stores the device preference and exposes it through `useAppearance`.
 The app account menu offers Light, Dark and System; the brand root's footer offers the same three as
-Auto, Light and Dark; the product landings' and static pages' controls offer Light and Dark. Browser chrome metadata follows the active room or landing and is restored on unmount.
+Auto, Light and Dark; the product landings' controls offer Light and Dark. A static page's switch offers what its box
+names: Light and Dark in the family look's header, Auto, Light and Dark in the pricing page's footer. Browser chrome metadata follows the active room or landing and is restored on unmount.
 
 `scripts/appBoot.js` stamps theme and ground colour before the bundle arrives. It reads rooms from
 `shell/products.js` and colours from shared tokens, failing when declarations drift. App rooms hide
