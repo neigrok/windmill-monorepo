@@ -39,7 +39,7 @@ ID byte order.
 | `guides` | Nearest eight nonempty guides including own, displayed farthest first, ID byte ties | yes |
 | `legend` | Authored kind IDs, hue owners and collisions, and the legend shown, which a paste reads over: each hue's owner in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order, with a null id | yes |
 | `search` | MCP node IDs, with independent kind/color filters and relevance order | yes |
-| `board` | Overall progress, query facts, three columns, folding and structured card reasons | no |
+| `board` | Overall progress, query facts, three columns, folding and structured card reasons; and, for the step a query reveals, each part of it that alone hides the step, as it reads cleared (`revealing`: `{kinds?: [], search?: "", branch?: null}`, null where it reveals none or the step is not present) | no |
 | `diagnostics` | Bounded graph errors and warnings | yes |
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
@@ -148,7 +148,7 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 `{operation, trees, tree: id, ids, links?, attach?}` over the account's graph of that roadmap (`links`: `{requires: [id], opens: [id]}`;
 `attach`: `{complete}`), and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
-it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
+it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded,reveal}` or MCP's `{query,color,kind}`.
 Optional query fields have the defaults in `reads.js`.
 
 The read modules are `records.js` (normalized values, authored ordering, the device's landing note, and each

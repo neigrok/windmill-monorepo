@@ -1,7 +1,6 @@
 // Three columns of the domain's Board (`BoardRead`): filter, search and branch narrow the cards, never the states or
 // progress.
 
-import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { COLUMN_OF_STATE, domainReading, readBoard } from '../model/domainReads.js';
 
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
@@ -60,30 +59,9 @@ export class BoardQuery {
     return new BoardQuery({ ...this, ...change });
   }
 
-  predicate(tree) {
-    const branchExists = this.branch !== null && tree?.nodesById.has(this.branch);
-    const scope = branchExists ? new Set([
-      this.branch,
-      ...tree.ancestorsOf(this.branch).map((step) => step.id),
-      ...tree.descendantsOf(this.branch).map((step) => step.id),
-    ]) : null;
-    const hues = new Set(this.kinds);
-    const needle = this.search.trim().toLowerCase();
-    return (step) => {
-      if (scope !== null && !scope.has(step.id)) return false;
-      if (hues.size > 0 && !hues.has(step.color ?? DEFAULT_NODE_COLOR)) return false;
-      if (needle === '') return true;
-      return (step.label ?? '').toLowerCase().includes(needle)
-        || (step.description ?? '').toLowerCase().includes(needle);
-    };
-  }
-
+  // The query with each part that alone hides `step` cleared, as the domain reads them; itself where none does.
   revealing(step, tree) {
-    const cleared = {};
-    for (const [key, empty] of [['kinds', []], ['search', ''], ['branch', null]]) {
-      const restriction = new BoardQuery({ [key]: this[key] });
-      if (!restriction.predicate(tree)(step)) cleared[key] = empty;
-    }
+    const cleared = readBoard(tree, null, { ...this, reveal: step.id }).revealing ?? {};
     if (Object.keys(cleared).length === 0) return this;
     return this.with(cleared);
   }

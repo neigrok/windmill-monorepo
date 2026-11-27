@@ -23,6 +23,7 @@ test('Board uses effective opening dates and keeps unread account knowledge dist
       { id: 'opening', column: 'done', needs: null, unlocks: null, unlockCount: 0 },
       { id: 'ordinary', column: 'done', needs: null, unlocks: null, unlockCount: 0 },
     ],
+    revealing: null,
   });
   assert.equal(account.progress('unread'), null);
   assert.equal(account.graph('unread'), null);

@@ -100,7 +100,8 @@ extension RoadmapTree {
   }
 }
 
-// What the Board asks: how to sort what is unfinished, the hues to keep, words to find in a label or a description, and a branch to stay in.
+// What the Board asks: how to sort what is unfinished, the hues to keep, words to find in a label or a description, a branch
+// to stay in, and a step to show, which names the parts that alone hide it.
 public struct BoardQuery: Sendable {
   public enum Sort: String, Sendable {
     case roadmap, newest, oldest
@@ -111,13 +112,16 @@ public struct BoardQuery: Sendable {
   public var search: String
   public var branch: String?
   public var doneExpanded: Bool
+  public var reveal: String?
 
-  public init(sort: Sort = .roadmap, kinds: [String] = [], search: String = "", branch: String? = nil, doneExpanded: Bool = false) {
+  public init(sort: Sort = .roadmap, kinds: [String] = [], search: String = "", branch: String? = nil, doneExpanded: Bool = false,
+              reveal: String? = nil) {
     self.sort = sort
     self.kinds = kinds
     self.search = search
     self.branch = branch
     self.doneExpanded = doneExpanded
+    self.reveal = reveal
   }
 }
 
@@ -126,6 +130,11 @@ public struct BoardRead: Sendable {
   // The filters the query applies, which an empty column offers to clear.
   public enum Recovery: String, Sendable {
     case search, kinds, both
+  }
+
+  // A part of the query that alone hides the step it reveals.
+  public enum Part: String, Sendable, CaseIterable {
+    case kinds, search, branch
   }
 
   // Why a card is locked: the first step it still follows, how many more, and how many steps it owes however far back.
@@ -167,6 +176,8 @@ public struct BoardRead: Sendable {
   public let recovery: Recovery?
   public let columns: [Column]
   public let cards: [Card]
+  // The parts that alone hide the step the query reveals, in their order; nil where it reveals none or the step is not present.
+  public let revealing: [Part]?
 
   public init(_ graph: FollowGraph, _ query: BoardQuery = BoardQuery()) {
     let index = graph.tree.index
@@ -178,14 +189,22 @@ public struct BoardRead: Sendable {
     }
     let hues = Set(query.kinds.map { Array($0.utf8) })
     let toGo = graph.owedIndex().toGo
+    // Each part of the query, as it keeps a step.
+    let keeps = { (part: Part, slot: Int) -> Bool in
+      let node = index.nodes[slot]
+      switch part {
+      case .branch: return branch.map { $0[slot] } ?? true
+      case .kinds: return hues.isEmpty || hues.contains(Array(node.color.utf8))
+      case .search:
+        return needle.isEmpty || BoardRead.lowercase(node.label).holds(needle) || BoardRead.lowercase(node.description).holds(needle)
+      }
+    }
+    revealing = query.reveal.flatMap(index.slot(of:)).map { revealed in Part.allCases.filter { !keeps($0, revealed) } }
     var cards: [Card] = []
     var slots: [Int] = []
-    for (slot, node) in index.nodes.enumerated() {
-      if let branch, !branch[slot] { continue }
-      if !hues.isEmpty && !hues.contains(Array(node.color.utf8)) { continue }
-      if !needle.isEmpty && !BoardRead.lowercase(node.label).holds(needle) && !BoardRead.lowercase(node.description).holds(needle) {
-        continue
-      }
+    for slot in index.nodes.indices {
+      let node = index.nodes[slot]
+      if !Part.allCases.allSatisfy({ keeps($0, slot) }) { continue }
       let state = graph.stateAt[slot]
       let unlocked = state == .complete ? [] : graph.opens[slot].map { index.ids[$0] }
       let needs = state == .locked ? graph.firstUnmet[slot].map { first in

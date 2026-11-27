@@ -185,9 +185,9 @@ web's `deriveLegend` over the kinds `ReplicaRoadmap` keeps), each with how many 
 kinds a step may wear, the named ones
 first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
 (`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
-(`onRemoveKind`). And of the Board's query: a step the form made that the query hides is shown by clearing
-each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`), once the phone's copy holds the
-step, whether the Board then shows a list or nothing left.
+(`onRemoveKind`). And from the domain's `BoardRead`: a step the form made that the query hides is shown by clearing
+each part that alone hides it (`BoardReading.reveal`, the domain's `revealing`, which the web's `BoardQuery.revealing`
+reads too), once the phone's copy holds the step, whether the Board then shows a list or nothing left.
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,

@@ -279,7 +279,7 @@ extension BoardQuery {
     }
     self.init(sort: sort ?? .roadmap, kinds: try form.optional("kinds") { try $0.asArray().map { try $0.asString() } } ?? [],
               search: try form.optionalString("search") ?? "", branch: try form.optionalString("branch"),
-              doneExpanded: try form.optionalBool("doneExpanded") ?? false)
+              doneExpanded: try form.optionalBool("doneExpanded") ?? false, reveal: try form.optionalString("reveal"))
   }
 }
 
@@ -295,8 +295,11 @@ extension BoardRead {
       return ["id": .string(card.id), "column": .string(card.column.rawValue), "needs": needs, "unlocks": unlocks,
               "unlockCount": JSON(card.unlockCount)]
     }
+    // Each part that hides the revealed step, as it reads cleared.
+    let cleared: [BoardRead.Part: JSON] = [.kinds: .array([]), .search: .string(""), .branch: .null]
+    let revealing = self.revealing.map { parts in JSON.object(JSON.Object(uniqueKeysWithValues: parts.map { ($0.rawValue, cleared[$0] ?? .null) })) }
     return ["overall": overall.form, "sort": .string(sort.rawValue), "branch": .of(branch), "recovery": .of(recovery?.rawValue),
-            "columns": .array(columns), "cards": .array(cards)]
+            "columns": .array(columns), "cards": .array(cards), "revealing": revealing ?? .null]
   }
 }
 

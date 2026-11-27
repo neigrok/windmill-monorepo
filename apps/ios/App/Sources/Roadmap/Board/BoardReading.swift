@@ -136,16 +136,19 @@ final class BoardReading {
   }
 
   // The room read the open roadmap, which it shows in `lens`. A step the form made that the copy now holds is shown: each
-  // part of the query that alone hides it is cleared, as the web's room reveals a step (`BoardQuery.revealing`), and the
-  // order stays.
+  // part of the query that alone hides it is cleared, as the domain reads them (`BoardRead.revealing`, which the web's room
+  // reads too), and the order stays.
   func read(_ open: RoadmapModel.OpenRoadmap, shown lens: RoadmapModel.Lens) {
     self.lens = lens
     guard let step = made, open.step(step) != nil else { return }
     made = nil
-    let keeps = { (query: BoardQuery) -> Bool in BoardRead(open.graph, query).cards.contains { $0.id.utf8.elementsEqual(step.utf8) } }
-    if !kinds.isEmpty && !keeps(BoardQuery(kinds: kinds)) { kinds = [] }
-    if !needle.isEmpty && !keeps(BoardQuery(search: needle)) { finding = "" }
-    if let branch, !keeps(BoardQuery(branch: branch)) { self.branch = nil }
+    for part in BoardRead(open.graph, BoardQuery(kinds: kinds, search: needle, branch: branch, reveal: step)).revealing ?? [] {
+      switch part {
+      case .kinds: kinds = []
+      case .search: finding = ""
+      case .branch: branch = nil
+      }
+    }
   }
 
   // Another roadmap opened: the Board asks nothing of it yet, and Find ends.

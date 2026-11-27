@@ -930,7 +930,7 @@ Graph's multi-select. Its immutable `StepSelection` reads the filtered pane and 
 leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion and the step
 menu. The host owns whether Board selection is open: phone, active Board and owner. A deletable step's page
 menu offers Select under that rule. `useStepPage` closes the visit, selects the step, clears only query dimensions
-that hide it through `BoardQuery.revealing` and records a request, keeping sort. After the step leaves the URL,
+that hide it through `BoardQuery.revealing` (the domain's `BoardRead.revealing`) and records a request, keeping sort. After the step leaves the URL,
 `BoardView` stands its column past any Done fold and consumes the request once through the hold's same `start`.
 Successful start acknowledges its key to the host, which clears that request; a Board crash also clears any
 pending request. Request keys increase independently of the pending request. The selected card receives focus,

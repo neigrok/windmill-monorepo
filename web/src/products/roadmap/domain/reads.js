@@ -54,7 +54,7 @@ export function selectNodes(tree, filter = {}) {
   return ranked.sort((a, b) => a.rank - b.rank).map((match) => match.id);
 }
 
-/** @typedef {{sort?:'roadmap'|'newest'|'oldest',kinds?:string[],search?:string,branch?:string|null,doneExpanded?:boolean}} BoardQuery */
+/** @typedef {{sort?:'roadmap'|'newest'|'oldest',kinds?:string[],search?:string,branch?:string|null,doneExpanded?:boolean,reveal?:string|null}} BoardQuery */
 
 export class BoardRead {
   /** @param {FollowGraph} graph @param {BoardQuery} query */
@@ -75,10 +75,20 @@ export class BoardRead {
     // Each card's slot in the graph, so a sort reads its keys by index.
     /** @type {number[]} */
     this.slots = [];
+    const nodeAt = (/** @type {number} */ slot) => /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
+    // Each part of the query, as it keeps a step.
+    const inBranch = (/** @type {number} */ slot) => branch === null || branch.has(nodeAt(slot).id);
+    const ofKind = (/** @type {number} */ slot) => !hues.size || hues.has(nodeAt(slot).color);
+    const found = (/** @type {number} */ slot) => !needle || nodeAt(slot).label.toLowerCase().includes(needle) || nodeAt(slot).description.toLowerCase().includes(needle);
+    // The parts that alone hide the step `reveal` names, each as it reads cleared.
+    const revealed = graph.slot.get(query.reveal ?? '');
+    /** @type {[string, string[]|string|null, (slot: number) => boolean][]} */
+    const parts = [['kinds', [], ofKind], ['search', '', found], ['branch', null, inBranch]];
+    this.revealing = revealed === undefined ? null
+      : Object.fromEntries(parts.filter(([, , keeps]) => !keeps(revealed)).map(([part, cleared]) => [part, cleared]));
     for (let slot = 0; slot < graph.nodes.length; slot++) {
-      const node = /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
-      if ((branch !== null && !branch.has(node.id)) || (hues.size && !hues.has(node.color))
-        || (needle && !node.label.toLowerCase().includes(needle) && !node.description.toLowerCase().includes(needle))) continue;
+      const node = nodeAt(slot);
+      if (!inBranch(slot) || !ofKind(slot) || !found(slot)) continue;
       const state = graph.states.valueAt(slot);
       const unlocked = state === 'complete' ? [] : graph.unlocksAt(slot);
       this.slots.push(slot);
@@ -108,7 +118,7 @@ export class BoardRead {
       const folded = name === 'done' && !this.expanded && ids.length > 12;
       return { name, count: ids.length, ids, shown: folded ? ids.slice(0, 12) : ids, folded };
     });
-    return { overall: this.overall, sort: this.sort, branch: this.branch, recovery: this.recovery, columns, cards: this.cards };
+    return { overall: this.overall, sort: this.sort, branch: this.branch, recovery: this.recovery, columns, cards: this.cards, revealing: this.revealing };
   }
 }
 
