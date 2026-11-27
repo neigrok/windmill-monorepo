@@ -81,12 +81,13 @@ public struct PlanFile: Sendable, Equatable {
     text = lines.joined(separator: "\n")
   }
 
-  // §7.3 One roadmap of the device's copy, written as the room shows it, as the web writes the roadmap its room reads
-  // (`ReplicaRoadmap.seedOf`): its title, a subtree's being its owning step's label; its guide; the kinds that own their hue,
-  // in the legend's order; and its present steps in authored order, each following what the domain reads it follows
-  // through absent steps (D-5), with its description and its links' addresses, and marked where the room shows it done. A
-  // step that owns a subtree or opens a roadmap is written as a step, and the roadmap it leads to is not. Nil for a
-  // roadmap that does not stand or is not read.
+  // §7.3 One roadmap of the device's copy, written as the room shows it: its title, a subtree's being its owning step's
+  // label; its guide; the kinds that own their hue, in the legend's order; and its present steps in authored order, each
+  // following what the domain reads it follows through absent steps (D-5), as the web's room reads them
+  // (`ReplicaRoadmap.seedOf`), with its description and its links' addresses, and marked where the room shows it done. The
+  // web's export marks the owner's marks instead, which differs for a step that opens a roadmap. A step that owns a
+  // subtree or opens a roadmap is written as a step, and the roadmap it leads to is not. Nil for a roadmap that does not
+  // stand or is not read.
   public init?(_ id: String, in account: RoadmapAccount) {
     guard let graph = account.graph(id) else { return nil }
     let tree = graph.tree

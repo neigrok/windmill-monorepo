@@ -75,7 +75,8 @@ struct PlanFileTests {
     }
   }
 
-  // §7.3 A roadmap of the device's copy, written as the room shows it, is the text of the shared case that names it: its
+  // §7.3 A roadmap of the device's copy, written as the room shows it, is the text of the shared case that names it, whose
+  // writing and read-back the web's grammar runs too: its
   // title, guide and the kinds owning their hues; *Night passage*, which owns a subtree, and *Become a skipper*, whose
   // pointer opens a roadmap that is complete, are steps; *Leave the dock*, deleted, is left out, and *Sail solo*, which
   // followed it, follows what it followed; *Night passage*'s own mark is set aside while its subtree is not done.
@@ -102,7 +103,7 @@ struct PlanFileTests {
        "marks": [["node": "theory", "status": "complete", "outOfOrder": false]]],
     ]
     let account = RoadmapAccount(try trees.map(RoadmapTree.init(form:)))
-    let named = "A roadmap the room writes: a step that owns a subtree or opens a roadmap is a step, a step deleted is left out and the step after it follows what it followed, and a step is done as the room shows it"
+    let named = "The iPhone's Export of its copy: a step that owns a subtree or opens a roadmap is a step, a step deleted is left out and the step after it follows what it followed, and a step is done as the iPhone's room shows it"
     let shared = try #require(try Contract.vectors("roadmap/plan/write.json").first { $0.name == named })
     let file = try #require(PlanFile("t_0000000000000001", in: account))
     #expect(JSON.string(file.text) == shared.expect["text"])
