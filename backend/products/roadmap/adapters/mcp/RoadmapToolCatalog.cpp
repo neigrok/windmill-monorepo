@@ -283,8 +283,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     tools.push_back(treeTool("delete_tree", Access::del,
-        "Delete a roadmap you own, every subtree under it, and the steps of your other roadmaps that open it. This "
-        "cannot be undone.",
+        "Delete a roadmap you own, every subtree under it, the steps of your other roadmaps that open it, and your "
+        "Coach conversations about them. This cannot be undone.",
         Json::Value(Json::objectValue), {}));
   }
   {

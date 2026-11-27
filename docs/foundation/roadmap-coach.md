@@ -592,6 +592,10 @@ minted ids has no part here (§6).
   mark does.
 - A running turn's text is written to its message at most once a second, so another tab or device
   sees the answer grow.
+- A turn withdrawn before its answer began is a held delete, held for the 9 s of any roadmap
+  delete. An Undo in that time brings back its messages without the turn's mark, which recovery
+  follows, so the Coach message reads as `running` until it has stood `TURN_STALE` with no write and
+  a device ends it `interrupted` ([Coach engine](coach-engine.md) §5, R-5).
 - Asking needs a connection; when there is none the question stays in the field. Reading History,
   reviewing and applying a proposal need none.
 
@@ -634,7 +638,8 @@ picture's original, as gym keeps one.
 - Deleting a roadmap deletes the conversations and proposals about it and about every subtree under
   it, in the same gesture, on the device that deletes it. The server removes them, with their
   messages and write fates, whatever deleted the roadmap: a device, the backend's door or an Undo
-  ([sync engine](engine.md) A.1). Conversations about all roadmaps stay.
+  ([sync engine](engine.md) A.1). Conversations about all roadmaps stay, and so does another
+  person's conversation about a roadmap shared with them, since each person's records are their own.
 - The opening of a turn and its end are declared once in the domain kit and proven by shared
   vectors, as gym's are, so the iPhone writes the same records.
 
