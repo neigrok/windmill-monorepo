@@ -262,9 +262,11 @@ and supplies shared fonts, chrome, boot and appearance assets. A page in `public
 `<html data-look>`: with none it wears the family look (`/fonts.css`, `/chrome.css`); `instrument`,
 the pricing page's, links `/instrument.css`, which holds Inter, the brand root's look tokens resolved from
 `styles/tokens/looks.css` and `scripts/staticInstrument.css`, and `/events.js` (`scripts/staticEvents.js`), which tells
-the site's events under the page it names on `<html data-page>` ([observability](OBSERVABILITY.md)). The build fails a
-page that misses its look's links, the box `/appearance.js` fills or, in the instrument look, `/events.js` and a page it
-knows. Missing landing modules or fallback bodies fail the build.
+the site's events under the page it names on `<html data-page>` ([observability](OBSERVABILITY.md)). The support page, in the
+family look, links `/events.js` too. The build fails a page that misses its look's links or the box `/appearance.js`
+fills, and one in the instrument look or linking `/events.js` that lacks the file or a page it knows.
+`test/scripts/staticInstrument.test.mjs` holds the static header, footer and switch to `shell/marketing/site.css`'s
+measures and colours. Missing landing modules or fallback bodies fail the build.
 
 Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
 association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.
