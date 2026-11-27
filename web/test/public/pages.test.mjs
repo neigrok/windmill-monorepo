@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { loadScreen } from '../products/gym/harness.mjs';
 
 const PAGES = new URL('../../public/', import.meta.url);
 const pages = fs.readdirSync(PAGES).filter((name) => name.endsWith('.html')).sort();
@@ -29,4 +30,22 @@ test('every family page links Support from its footer row, and the 404 lists it'
     assert.ok(read(name).includes('<a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a><a href="/support.html">Support</a></span>'), name);
   }
   assert.ok(read('404.html').includes('<a href="/refunds.html">Refunds</a> · <a href="/support.html">Support</a></li>'));
+});
+
+// A page in the instrument look writes the site's footer by hand; it is the one the front page and the landings draw
+// (SiteChrome.jsx), column by column and link by link, so the two cannot drift.
+test('every instrument page\'s footer has the shared footer\'s columns and links, in its order', async () => {
+  const { SITEMAP } = await loadScreen('shell/marketing/SiteChrome.jsx');
+  const instrument = pages.filter((name) => /<html\b[^>]*\sdata-look="instrument"/.test(read(name)));
+  assert.deepEqual(instrument, ['pricing.html']);
+  const shared = SITEMAP.map(({ title, links }) => ({ title, links: links.map(({ href, label }) => ({ href, label })) }));
+  for (const name of instrument) {
+    const html = read(name);
+    const footer = html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
+    const columns = [...footer.matchAll(/<h2 class="site-sitemap-title">([^<]*)<\/h2>\s*<ul>([\s\S]*?)<\/ul>/g)].map(([, title, list]) => ({
+      title,
+      links: [...list.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(([, href, label]) => ({ href, label })),
+    }));
+    assert.deepEqual(columns, shared, name);
+  }
 });

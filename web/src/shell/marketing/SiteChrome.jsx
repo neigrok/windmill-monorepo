@@ -23,7 +23,9 @@ import './site.css';
 // The header and the footer name the rooms in the brand's order, whatever the registry's.
 const ROOMS = ['roadmap', 'gym', 'journal'].map((id) => PRODUCTS.find((product) => product.id === id));
 
-const SITEMAP = [
+// The footer's columns. A static page in this look writes the same footer by hand, and test/public/pages.test.mjs holds
+// it equal to this one.
+export const SITEMAP = [
   { title: t('shell.brandLanding.rooms'), links: ROOMS.map((product) => ({ href: product.landing.href, label: product.label, to: 'landing', product: product.id })) },
   { title: t('shell.brandLanding.ownAssistant'), links: [{ href: '/connect.html', label: t('shell.site.connect'), to: 'connect' }] },
   { title: t('shell.brandLanding.windmill'), links: [

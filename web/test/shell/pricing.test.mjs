@@ -57,14 +57,12 @@ test('the visible questions and the FAQ data are one list, and the page carries 
   assert.deepEqual(data.mainEntity, shown.map(([name, answer]) => ({ '@type': 'Question', name, acceptedAnswer: { '@type': 'Answer', text: answer } })));
 });
 
-test('the page has one h1, and its header and footer carry the front page\'s links and no About', () => {
+// The footer's sitemap is held to the shared one in test/public/pages.test.mjs; its last row writes to the feedback address.
+test('the page has one h1, its header carries the front page\'s links, its footer ends on Feedback, and nothing says About', () => {
   assert.equal(body.match(/<h1\b/g).length, 1);
   const header = body.slice(body.indexOf('<header'), body.indexOf('</header>'));
   assert.deepEqual([...header.matchAll(/href="([^"]+)"/g)].map((link) => link[1]), ['/', '/roadmap', '/gym', '/journal', '/pricing.html', '/?signin', '/app/settings', '/app']);
-  const footer = body.slice(body.indexOf('<footer>'), body.indexOf('</footer>'));
-  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((link) => link[1]), [
-    '/roadmap', '/gym', '/journal', '/connect.html', '/pricing.html', '/changelog.html', '/gallery',
-    '/privacy.html', '/terms.html', '/refunds.html', 'mailto:hello@windmill.works',
-  ]);
+  const foot = body.slice(body.indexOf('<div class="site-wrap site-foot"'), body.indexOf('</footer>'));
+  assert.deepEqual([...foot.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map((link) => link.slice(1)), [['mailto:hello@windmill.works', 'Feedback']]);
   assert.equal(/About/.test(text(body)), false);
 });
