@@ -1975,8 +1975,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
-  drafts are not named. The account line names what the account holds; *it* for one item, else
+  movements, notes, journal pages, and on iOS roadmaps and conversations (Roadmap · iOS 10.7). Sets go with their workout; settings,
+  movement names and Coach drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
   three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
@@ -2185,7 +2185,7 @@ Android. It and the product differ in these places.
 
 - **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
   2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
-  shell's words and roadmap's in flow 50's.
+  shell's words and roadmap's in flow 50's, or in Roadmap Coach 10.4's where its work holds conversations.
 - **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
   in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
   all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.

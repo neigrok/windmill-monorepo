@@ -1,11 +1,14 @@
 // Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50, Roadmap
 // Coach 10.4): the words of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and
-// of its sign-out question, Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
-// covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes,
-// and the old stores the carry-over carried into them; and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
-// landing notes, a dormant one's included, the told notice ids, what the browser kept of every roadmap but the anonymous
-// ones, and, where the account's replica went with a Discard, the old stores its question named. The route table hands
-// these to the shell only where the room reads the copy.
+// of its sign-out question, Keep or Discard, where every unsent change is roadmap's. Flow 50's sign-in question and its
+// sign-out question name every roadmap their Discard takes; where the signed-out work holds Coach's conversations, 10.4's
+// sign-in question names none and counts the roadmaps, the conversations and the changes to another's roadmaps its
+// Discard takes. Either way a Discard covers exactly the work its question told (engine.md §7.10). Then what the browser
+// kept beside the roadmaps a sign-in's Discard takes, and the old stores the carry-over carried into them; and what an
+// explicit sign-out, an account replacement and an account closure take from the browser: every replica's landing notes,
+// a dormant one's included, the told notice ids, what the browser kept of every roadmap but the anonymous ones, and, where
+// the account's replica went with a Discard, the old stores its question named. The route table hands these to the shell
+// only where the room reads the copy.
 
 import { effectsOf } from '../../../../../packages/api-contract/sync/reference/client/projections.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
