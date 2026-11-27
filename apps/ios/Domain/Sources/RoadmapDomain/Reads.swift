@@ -270,27 +270,53 @@ public struct ActivityRead: Sendable {
   }
 }
 
-// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+// What deleting `ids`, resetting one, attaching a roadmap to one or linking one would do (the corpus README's
+// `effects`); each fact past the starting steps walks the graph when asked. `links` are a draft's sides of the one step,
+// by default what it follows and what follows it as stored; `attach` is a roadmap attached to it, complete or not.
 public struct EffectsRead: Sendable {
+  // A draft's two sides of one step: the steps it would require and the steps it would open.
+  public struct Links: Sendable {
+    public let requires: [String]
+    public let opens: [String]
+
+    public init(requires: [String], opens: [String]) {
+      self.requires = requires
+      self.opens = opens
+    }
+  }
+
+  // The present steps a new link of the one step would close a loop with: the steps it may not come to follow, and
+  // the steps it may not come to lead to, each itself included.
+  public struct Loops: Sendable {
+    public let requires: [String]
+    public let opens: [String]
+  }
+
   public let kept: String?
+  // Where a paste lands: the first starting step in authored order, none where every step follows another.
+  public let under: String?
   public let takesEveryStart: Bool
   public let deletable: Bool
   let graph: FollowGraph
   let chosen: [Int]
-  let marked: Bool
+  let only: Int?
+  let links: Links?
+  let attach: Bool?
 
-  public init(_ graph: FollowGraph, ids: [String]) {
+  public init(_ graph: FollowGraph, ids: [String], links: Links? = nil, attach complete: Bool? = nil) {
     let index = graph.tree.index
     let slots = ids.compactMap(index.slot(of:))
     let chosen = Set(slots)
     let present = slots.count == ids.count
     self.graph = graph
     self.chosen = Array(chosen)
+    only = present && chosen.count == 1 ? chosen.first : nil
+    self.links = links
+    attach = complete
     kept = graph.starting.count == 1 ? graph.starting[0] : nil
+    under = graph.starting.first
     takesEveryStart = !graph.starting.isEmpty && graph.starting.allSatisfy { index.slot(of: $0).map(chosen.contains) == true }
     deletable = !ids.isEmpty && present && !takesEveryStart
-    let only = chosen.count == 1 ? chosen.first : nil
-    marked = present && only.map { graph.done[$0] && index.markedDone[$0] } == true
   }
 
   public var follow: [String] {
@@ -308,7 +334,47 @@ public struct EffectsRead: Sendable {
     return followers.sorted().map { index.ids[$0] }
   }
 
-  public var relocks: [String] { marked ? follow.filter { graph.states[$0] == .available } : [] }
+  // Whether the one step holds a complete mark, counted or set aside.
+  var marked: Bool { only.map { graph.tree.mark(on: graph.tree.index.ids[$0])?.isComplete == true } ?? false }
+
+  // The followers that stand Up next only while the one step stands complete.
+  var upNextFollowers: [String] { follow.filter { graph.states[$0] == .available } }
+
+  public var relocks: [String] {
+    guard let only, graph.done[only], graph.tree.index.markedDone[only] else { return [] }
+    return upNextFollowers
+  }
+
+  // A complete mark the graph does not count, because the step opens or owns a roadmap that is not complete: the steps
+  // it alone would open, which lock while it stands aside.
+  public var setAside: [String]? {
+    guard let only, marked, !graph.tree.index.markedDone[only], !graph.done[only] else { return nil }
+    return graph.opens[only].map { graph.tree.index.ids[$0] }
+  }
+
+  // What attaching a roadmap does to the steps after a marked step: a roadmap that is not complete sets the mark aside,
+  // so the steps that stood Up next by the step's completion lock again.
+  public var attachRelocks: [String]? {
+    guard let complete = attach, let only, marked else { return nil }
+    return complete || !graph.done[only] ? [] : upNextFollowers
+  }
+
+  // Live links are walked through absent steps, never through the step itself: onward from the steps it opens for the
+  // steps it may not require, back from the steps it requires for the steps it may not open.
+  public var loops: Loops? {
+    guard let only else { return nil }
+    let index = graph.tree.index
+    let reached = { (sides: [String]?, onward: [[Int]]) -> [String] in
+      var passed: Set<Int> = [only]
+      var pending = sides.map { $0.compactMap(index.slot(of:)) } ?? onward[only]
+      while let vertex = pending.popLast() {
+        guard passed.insert(vertex).inserted else { continue }
+        pending.append(contentsOf: onward[vertex])
+      }
+      return passed.filter { $0 < index.ids.count }.sorted().map { index.ids[$0] }
+    }
+    return Loops(requires: reached(links?.opens, index.children), opens: reached(links?.requires, index.parents))
+  }
 }
 
 // A step the device linked that is now read through an absent step: its own links that bridge the absence, and what it follows through them.

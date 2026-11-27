@@ -301,9 +301,18 @@ extension BoardRead {
 }
 
 extension EffectsRead {
+  // A case's selection, the draft's sides it names and the roadmap it attaches, complete or not.
+  static func asked(_ input: JSON) throws -> (ids: [String], links: Links?, attach: Bool?) {
+    let strings = { (list: JSON) throws -> [String] in try list.asArray().map { try $0.asString() } }
+    let links = try input["links"].map { Links(requires: try strings($0.member("requires")), opens: try strings($0.member("opens"))) }
+    return (try strings(input.member("ids")), links, try input["attach"].map { try $0.member("complete").asBool() })
+  }
+
   var form: JSON {
-    ["kept": .of(kept), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable), "follow": .strings(follow),
-     "relocks": .strings(relocks)]
+    ["kept": .of(kept), "under": .of(under), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable),
+     "follow": .strings(follow), "relocks": .strings(relocks), "setAside": setAside.map(JSON.strings) ?? .null,
+     "attachRelocks": attachRelocks.map(JSON.strings) ?? .null,
+     "loops": loops.map { ["requires": .strings($0.requires), "opens": .strings($0.opens)] } ?? .null]
   }
 }
 

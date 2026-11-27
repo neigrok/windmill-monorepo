@@ -161,17 +161,26 @@ export function landingFacts(graph, edges) {
   });
 }
 
-// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+// A draft's two sides of one step: the steps it would require and the steps it would open.
+/** @typedef {{requires: string[], opens: string[]}} StepLinks */
+
+// What deleting `ids`, resetting one, attaching a roadmap to one or linking one would do (the corpus README's
+// `effects`); each fact past the starting steps walks the graph when asked. `links` are a draft's sides of the one step,
+// by default what it follows and what follows it as stored; `attach` is a roadmap attached to it, complete or not.
 export class EffectsRead {
   /** @type {FollowGraph} */
   #graph;
   /** @type {number[]} */
   #chosen;
-  /** @type {boolean} */
-  #marked;
+  /** @type {number} */
+  #only;
+  /** @type {StepLinks|null} */
+  #links;
+  /** @type {{complete: boolean}|null} */
+  #attach;
 
-  /** @param {FollowGraph} graph @param {string[]} ids */
-  constructor(graph, ids) {
+  /** @param {FollowGraph} graph @param {string[]} ids @param {{links?: StepLinks|null, attach?: {complete: boolean}|null}} [asked] */
+  constructor(graph, ids, { links = null, attach = null } = {}) {
     const slots = ids.flatMap((id) => {
       const slot = graph.slot.get(id);
       return slot === undefined ? [] : [slot];
@@ -180,11 +189,13 @@ export class EffectsRead {
     const present = slots.length === ids.length;
     this.#graph = graph;
     this.#chosen = [...chosen];
+    this.#only = present && chosen.size === 1 ? this.#chosen[0] ?? -1 : -1;
+    this.#links = links;
+    this.#attach = attach;
     this.kept = graph.starting.length === 1 ? graph.starting[0] ?? null : null;
+    this.under = graph.starting[0] ?? null;
     this.takesEveryStart = graph.starting.length > 0 && graph.starting.every((id) => chosen.has(graph.slot.get(id) ?? -1));
     this.deletable = ids.length > 0 && present && !this.takesEveryStart;
-    const [only = -1] = this.#chosen;
-    this.#marked = present && chosen.size === 1 && graph.done[only] === 1 && graph.tree.index.markedDone[only] === 1;
   }
 
   get follow() {
@@ -205,9 +216,59 @@ export class EffectsRead {
     return followers.sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
   }
 
-  get relocks() { return this.#marked ? this.follow.filter((id) => this.#graph.states.get(id) === 'available') : []; }
+  // Whether the one step holds a complete mark, counted or set aside.
+  get #marked() { return this.#only >= 0 && this.#graph.tree.marks.get(this.#graph.ids[this.#only] ?? '')?.status === 'complete'; }
+
+  // The followers that stand Up next only while the one step stands complete.
+  get #upNextFollowers() { return this.follow.filter((id) => this.#graph.states.get(id) === 'available'); }
+
+  get relocks() {
+    const counted = this.#only >= 0 && this.#graph.done[this.#only] === 1 && this.#graph.tree.index.markedDone[this.#only] === 1;
+    return counted ? this.#upNextFollowers : [];
+  }
+
+  // A complete mark the graph does not count, because the step opens or owns a roadmap that is not complete: the steps
+  // it alone would open, which lock while it stands aside.
+  get setAside() {
+    const only = this.#only;
+    if (!this.#marked || this.#graph.tree.index.markedDone[only] === 1 || this.#graph.done[only] === 1) return null;
+    return this.#graph.unlocksAt(only);
+  }
+
+  // What attaching a roadmap does to the steps after a marked step: a roadmap that is not complete sets the mark aside,
+  // so the steps that stood Up next by the step's completion lock again.
+  get attachRelocks() {
+    if (this.#attach === null || !this.#marked) return null;
+    return this.#attach.complete || this.#graph.done[this.#only] !== 1 ? [] : this.#upNextFollowers;
+  }
+
+  // The present steps a new link of the one step would close a loop with: `requires`, the steps it may not come to
+  // follow, are itself and every step reached onward from the steps it opens; `opens`, the steps it may not come to
+  // lead to, are itself and every step reached back from the steps it requires. Live links are walked through absent
+  // steps, never through the step itself.
+  get loops() {
+    const only = this.#only;
+    if (only < 0) return null;
+    const graph = this.#graph;
+    /** @param {string[]|undefined} sides @param {number[][]} onward */
+    const reached = (sides, onward) => {
+      const passed = new Set([only]);
+      const pending = sides === undefined ? [...(onward[only] ?? [])] : sides.flatMap((side) => {
+        const slot = graph.slot.get(side);
+        return slot === undefined ? [] : [slot];
+      });
+      for (let vertex = pending.pop(); vertex !== undefined; vertex = pending.pop()) {
+        if (passed.has(vertex)) continue;
+        passed.add(vertex);
+        pending.push(...(onward[vertex] ?? []));
+      }
+      return [...passed].filter((vertex) => vertex < graph.ids.length).sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
+    };
+    return { requires: reached(this.#links?.opens, graph.children), opens: reached(this.#links?.requires, graph.parents) };
+  }
 
   result() {
-    return { kept: this.kept, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow, relocks: this.relocks };
+    return { kept: this.kept, under: this.under, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow,
+      relocks: this.relocks, setAside: this.setAside, attachRelocks: this.attachRelocks, loops: this.loops };
   }
 }

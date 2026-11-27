@@ -40,8 +40,8 @@ struct CorpusTests {
       switch operation {
       case "activity": return try account.graph(tree).map { ActivityRead($0, step: try input.optionalString("step")).form } ?? .null
       case "effects":
-        let ids = try input.member("ids").asArray().map { try $0.asString() }
-        return account.graph(tree).map { EffectsRead($0, ids: ids).form } ?? .null
+        let (ids, links, attach) = try EffectsRead.asked(input)
+        return account.graph(tree).map { EffectsRead($0, ids: ids, links: links, attach: attach).form } ?? .null
       case "progress": return account.progress(tree)?.form ?? .null
       case "guides": return .array(account.guides(tree).map(\.form))
       case "openings": return .array(account.openings(of: tree).map(\.form))
@@ -56,7 +56,9 @@ struct CorpusTests {
     case "graph": return FollowGraph(tree).form(subjects: try input.member("subjects").asArray().map { try $0.asString() })
     case "board": return BoardRead(FollowGraph(tree), try BoardQuery(form: input["query"] ?? [:])).form
     case "diagnostics": return Diagnostics(FollowGraph(tree)).form
-    case "effects": return EffectsRead(FollowGraph(tree), ids: try input.member("ids").asArray().map { try $0.asString() }).form
+    case "effects":
+      let (ids, links, attach) = try EffectsRead.asked(input)
+      return EffectsRead(FollowGraph(tree), ids: ids, links: links, attach: attach).form
     case "landing":
       let own = try input.member("edges").asArray().map { link in
         let ends = try link.asArray().map { try $0.asString() }
