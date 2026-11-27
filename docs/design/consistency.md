@@ -2292,21 +2292,13 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
   Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
   allowance sections then.
-- **Who the pricing page says you pay.** `web/public/pricing.html` names Paddle as seller of record and
-  says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
-  says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
-  the page name the store a person will buy through.
 
 ## Marketing and email
 
-- **The public pages not yet rebuilt.** The front page is built in the Instrument look
-  ([marketing site](marketing-site-proposal.md#the-instrument-look)). Pricing and the three room
-  pages are drawn in it and ✅ Ready for dev (sections `284:2508`, `290:2508`, `294:2508`, `293:2508`),
-  and are still built in the older look: Baloo 2 and Nunito (the room landings through
-  `web/src/shell/marketing/landing.css`, pricing in `web/public/pricing.html`), with a live vignette as
-  each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
-  page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
-  Instrument look.
+- **The public pages still in the family look.** The front page, pricing and the three room landings are built in the
+  Instrument look ([marketing site](marketing-site-proposal.md#the-instrument-look)). Connect, the legal pages, support,
+  the changelog, the gallery and 404 are not drawn in it and wear the family look (`web/scripts/staticPageChrome.css`).
+  Brand foundations' Fonts, Logo and moat rule name both looks until each page is rebuilt.
 - **The family template's defects.** The static pages in the family look (`web/scripts/staticPageChrome.css`):
   `connect.html`, `changelog.html`, `gallery.html`, `privacy.html`, `terms.html`, `refunds.html`, `support.html`,
   `404.html` and `pause.html`. By day their footer links measure 3.52:1 against the ground. At 390 the appearance
@@ -2314,6 +2306,12 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   pages give a control on a phone. With scripts off all four header buttons show at once (Sign in, Start your tree, My
   account, My trees), because only a script stamps `data-auth`. Fix them in the template, or as each page moves to
   the Instrument look.
+- **The static pages report nothing.** The pages in `web/public/` load no error reporting. On the pricing page a failed
+  `/instrument.css` leaves the text in the browser's default face with the header unlaid, a failed `/appearance.js` leaves
+  no switch and a failed `/events.js` tells nothing, and none of it reaches Sentry. Give the static pages a failure
+  report, or say which of these the site accepts.
+- **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
+  `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
 - **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
   (three product bands with per-room platform lines), describe the root the front page replaced. Archive
   them (🗄 Archived prefix and tag).
