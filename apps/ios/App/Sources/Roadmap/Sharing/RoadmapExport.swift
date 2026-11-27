@@ -55,7 +55,7 @@ extension RoadmapModel {
   }
 
   // What the exporter came to: the file saved where the person chose, the exporter closed with nothing saved, or a file
-  // the system could not write, which reports with its error's kind alone.
+  // the system could not write, which reports with its error's domain and code as buckets, never its message.
   func exported(_ written: Result<URL, any Error>?) {
     guard let file = exporting else { return }
     exporting = nil
@@ -64,7 +64,7 @@ extension RoadmapModel {
     case nil: telemetry.event("roadmap_export", properties: ["outcome": "cancelled", "door": file.door.rawValue])
     case .failure(let error):
       telemetry.event("roadmap_export", properties: ["outcome": "failed", "door": file.door.rawValue])
-      telemetry.failure("roadmap_export", kind: error is CocoaError ? "storage" : "unexpected")
+      telemetry.failure("roadmap_export", kind: error is CocoaError ? "storage" : "unexpected", properties: NewRoadmapDraft.labels(of: error))
     }
   }
 }

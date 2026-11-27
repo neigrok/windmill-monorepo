@@ -199,8 +199,9 @@ final class PastedRoadmap {
   init(_ tree: String?, room: RoadmapModel) {
     self.tree = tree
     self.room = room
-    sources = room.links?.sources
-    forking = tree.flatMap { tree in room.links.map { RoadmapFork(tree, mode: .instant, sources: $0.sources, telemetry: room.telemetry) } }
+    let sources = room.links?.sources
+    self.sources = sources
+    forking = tree.flatMap { tree in sources.map { RoadmapFork(tree, mode: .attach, sources: $0, telemetry: room.telemetry) } }
     guard let tree, let sources else {
       settle(.unreadable)
       return

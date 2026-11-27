@@ -151,7 +151,7 @@ struct ForkFoot: View {
   }
 
   var line: String? {
-    if !cover.online { return String(localized: "Forking needs a connection.") }
+    if !cover.online || cover.forking.state == .offline { return String(localized: "Forking needs a connection.") }
     if cover.forking.state == .failed { return String(localized: "Couldn’t fork this roadmap. Try again.") }
     return nil
   }

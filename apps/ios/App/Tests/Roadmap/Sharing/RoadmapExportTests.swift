@@ -106,7 +106,9 @@ import SyncTesting
     defer { memory.removePersistentDomain(forName: suite) }
     let sail = try RoadmapFixture.plantLearnToSail(runner)
     let wind = try #require(sail.steps.first { $0.key == "read" }?.id)
-    guard case .committed(let made, _) = try runner.runAct(CreateSubtree(tree: sail.tree, step: wind)) else {
+    guard case .committed(let made, _) = try runner.runAct(CreateSubtree(tree: sail.tree, step: wind)),
+          case .committed = try runner.runAct(CreateStep(tree: made.subtree, step: RoadmapStep.Changes(label: "Watch the telltales"))),
+          case .committed = try runner.runAct(CreateStep(tree: made.subtree, step: RoadmapStep.Changes(label: "Feel the gusts"))) else {
       Issue.record("the subtree was not made")
       return
     }
@@ -134,7 +136,8 @@ import SyncTesting
     #expect(inside.shown?.id == made.subtree)
     inside.export(from: .more)
     let subtree = RoadmapPlan(reading: try String(contentsOf: named, encoding: .utf8), over: [])
-    #expect(subtree.title == "Read the wind" && subtree.nodes.map(\.label) == (inside.shown?.tree.nodes.map(\.label) ?? []))
+    #expect(inside.shown?.tree.index.nodes.map(\.label) == ["Watch the telltales", "Feel the gusts"])
+    #expect(subtree.title == "Read the wind" && subtree.nodes.map(\.label) == ["Watch the telltales", "Feel the gusts"])
     #expect(told(telemetry) == [
       "roadmap_export door=menu step=open", "roadmap_export door=menu outcome=saved",
       "roadmap_export door=more step=open", "roadmap_export door=more outcome=saved",

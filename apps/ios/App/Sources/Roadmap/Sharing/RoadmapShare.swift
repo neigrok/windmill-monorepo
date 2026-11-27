@@ -3,7 +3,7 @@ import UIKit
 import DomainKit
 import RoadmapDomain
 
-// Share (Roadmap on iOS §7.4; Roadmap · iOS 09.1a to 09.2b): one switch on a root, which the title menu's Share… raises over
+// Share (Roadmap on iOS §7.4; Roadmap · iOS 09.1a to 09.2b): one switch on a root, which the title menu's Share raises over
 // the open roadmap. It reads the roadmap's visibility from the phone's copy and writes it by the domain's `SetVisibility`
 // through the room's write door, `public` on and `private` off; the server then writes the reach of the roadmap and of
 // every subtree under it. A link opens for no one until the server holds the change, so the switch waits for an account
@@ -13,6 +13,9 @@ final class ShareSheet: Identifiable {
   unowned let room: RoadmapModel
   // The roadmap the sheet shares, a root of the person's own list.
   let tree: DomainKit.ID<RoadmapEntry>
+  // The visibility the switch last wrote, which it shows until the phone's copy is read again with it, so it never snaps
+  // back.
+  private(set) var turned: Bool?
 
   init(of tree: DomainKit.ID<RoadmapEntry>, room: RoadmapModel) {
     self.room = room
@@ -35,7 +38,15 @@ final class ShareSheet: Identifiable {
     }
   }
 
-  var isPublic: Bool { open?.tree.meta?.visibility == "public" }
+  var isPublic: Bool { turned ?? held }
+
+  // The visibility the phone's copy holds.
+  var held: Bool { open?.tree.meta?.visibility == "public" }
+
+  // The phone's copy was read again: once it holds what the switch wrote, the switch reads it from there.
+  func follow() {
+    if turned == held { turned = nil }
+  }
 
   // A step of the roadmap owns a subtree, which goes public with it (09.1c).
   var subtrees: Bool { open?.rows.values.contains { $0.opening?.owned == true } ?? false }
@@ -58,17 +69,22 @@ final class ShareSheet: Identifiable {
     return String(localized: "Anyone with this link can view and fork this roadmap, and it can appear in the public gallery.")
   }
 
-  // The switch turned: the roadmap's visibility written as any change, with no Undo and nothing to confirm (09.1b). What
-  // the domain refuses, or a commit that fails, leaves the switch where the copy holds it.
-  func turn(public turned: Bool) {
-    guard signedIn, online, open != nil, turned != isPublic else { return }
-    let step = turned ? "publish" : "private"
-    switch room.write(SetVisibility(tree: tree, visibility: turned ? "public" : "private"), as: "visibility") {
+  // The switch turned: the roadmap's visibility written as any change, with no Undo and nothing to confirm (09.1b), and
+  // shown at once. A write that changes nothing tells nothing; what the domain refuses, or a commit that fails, leaves the
+  // switch where the copy holds it.
+  func turn(public wanted: Bool) {
+    guard signedIn, online, open != nil, wanted != isPublic else { return }
+    let step = wanted ? "publish" : "private"
+    switch room.write(SetVisibility(tree: tree, visibility: wanted ? "public" : "private"), as: "visibility") {
     case .committed(_, let receipt):
       room.forget(receipt.gestureId)
+      turned = wanted
+      follow()
       room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": step, "outcome": "ok"])
-    case .unchanged: room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": step, "outcome": "ok"])
-    case .refused, .failed: room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": step, "outcome": "failed"])
+    case .unchanged: turned = nil
+    case .refused, .failed:
+      turned = nil
+      room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": step, "outcome": "failed"])
     }
   }
 
@@ -91,7 +107,7 @@ final class ShareSheet: Identifiable {
 }
 
 extension RoadmapModel {
-  // Share…, in the title menu of the person's own room, whose roadmap is a root; a roadmap gone into has none.
+  // Share, in the title menu of the person's own room, whose roadmap is a root; a roadmap gone into has none.
   func openShare() {
     guard case .owner = role, let shown else { return }
     share = ShareSheet(of: shown.id, room: self)

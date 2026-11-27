@@ -12,8 +12,9 @@ protocol RoadmapSharing {
   // The owner's progress on a roadmap someone else owns, as the server shows it to a reader.
   func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress
   // A copy of the roadmap in the person's own list, which arrives by sync: the copy's id. `request` names the fork, so the
-  // same fork asked again, after an answer that was lost, answers the same copy.
-  func fork(_ tree: String, request: String) async throws(SharingFailure) -> String
+  // same fork asked again, after an answer that was lost, answers the same copy; `mode` is where it was asked, which a
+  // failure's report names.
+  func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String
   // One page of the public gallery in the server's order, from its start or after the page before it.
   func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage
 }
@@ -40,6 +41,8 @@ final class SharingRequests: RoadmapSharing {
   let online: () -> Bool
   let telemetry: any Telemetry
   let session: URLSession
+  // A gallery row the room could not read has been reported this launch.
+  private var unreadReported = false
 
   init(baseURL: URL?, credential: @escaping () -> SessionToken?, online: @escaping () -> Bool, telemetry: any Telemetry,
        session: URLSession = NativeAuth.nativeSession()) {
@@ -56,11 +59,12 @@ final class SharingRequests: RoadmapSharing {
     return progress
   }
 
-  func fork(_ tree: String, request id: String) async throws(SharingFailure) -> String {
+  func fork(_ tree: String, request id: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
     guard let token = credential() else { throw .signedOut }
-    let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", route: "/v1/trees", token: token, body: ["requestId": id])
+    let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", route: "/v1/trees", token: token,
+                                   body: ["requestId": id], told: ["mode": mode.rawValue])
     guard case .string(let copy)? = (try? JSON(parsing: Array(answer)))?["data"]?["id"] else {
-      telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees"])
+      telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees", "mode": mode.rawValue])
       throw .failed
     }
     return copy
@@ -81,13 +85,18 @@ final class SharingRequests: RoadmapSharing {
       telemetry.failure("roadmap_gallery", kind: "decode", properties: ["method": "GET", "route": "/v1/gallery"])
       throw .failed
     }
-    if page.unread > 0 { telemetry.failure("roadmap_gallery", kind: "decode", properties: ["method": "GET", "route": "/v1/gallery"]) }
+    // A row the room cannot read reports once a launch, as a page is read again and again.
+    if page.unread > 0 && !unreadReported {
+      unreadReported = true
+      telemetry.failure("roadmap_gallery", kind: "decode", properties: ["method": "GET", "route": "/v1/gallery"])
+    }
     return page
   }
 
   // One request and its answer's body; a status other than success is the server's refusal where it answers it on purpose.
+  // `told` adds bounded labels to what its failure tells.
   func request(_ path: String, query: [URLQueryItem] = [], method: String, operation: String, route: String, token: SessionToken?,
-               body: [String: String]? = nil) async throws(SharingFailure) -> Data {
+               body: [String: String]? = nil, told: [String: String] = [:]) async throws(SharingFailure) -> Data {
     let started = ContinuousClock.now
     var kind = "offline"
     var status: Int?
@@ -119,7 +128,7 @@ final class SharingRequests: RoadmapSharing {
       }
       let elapsed = started.duration(to: .now).components
       let ms = elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000
-      var properties = ["method": method, "route": route, "operation": operation, "failure_kind": kind]
+      var properties = told.merging(["method": method, "route": route, "operation": operation, "failure_kind": kind]) { _, set in set }
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
       if kind != "offline", status != 503, !ExpectedStatuses.contains(status) { telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms) }

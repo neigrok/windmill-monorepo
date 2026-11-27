@@ -418,6 +418,7 @@ final class RoadmapModel {
       if let draft, draft.open == nil { self.draft = nil }
       if let guide, guide.open == nil { self.guide = nil }
       if share?.gone == true { share = nil }
+      share?.follow()
       if let selected, shown?.step(selected) == nil { self.selected = nil }
       note?.follow()
       guide?.follow()

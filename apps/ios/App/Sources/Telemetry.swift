@@ -114,13 +114,14 @@ nonisolated enum TelemetryPrivacy {
     "above": ["none", "some"],
     "length": ["0", "1-500", "501-2000", "2001-4500", "4501-5000"],
     // A roadmap's link and a shared roadmap's cover: the claimed form the address came in, whether the roadmap it named was
-    // the person's own, and Fork's two ways, the web's instant one on a roadmap's own screen and browse on a gallery row.
+    // the person's own, and Fork's two ways, the web's instant one on a roadmap's own screen and browse on a gallery row;
+    // a failed fork's request names its door, cover, attach or browse.
     // Share, Export and the gallery (§7.3, §7.4): the verb Share's steps are told under, each step of the sheet, a page of
     // the gallery read with what it came to, and Export's door, the root's title menu or a roadmap gone into's … menu,
     // with whether the file was saved.
     "address": ["share", "app"],
     "mine": ["true", "false"],
-    "mode": ["instant", "browse"],
+    "mode": ["instant", "browse", "cover", "attach"],
     "verb": ["share"],
     "legend": ["add", "rename", "describe", "recolor", "remove"],
     "count": ["0", "1", "2-5", "6-20", "21+"],
@@ -152,9 +153,9 @@ nonisolated enum TelemetryPrivacy {
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    // A file New Roadmap could not read: its error's domain, and its code as a bucket.
+    // A file New Roadmap could not read, or Export could not write: its error's domain, and its code as a bucket.
     "error_domain": ["cocoa", "posix", "other"],
-    "error_code": ["missing", "permission", "unreadable", "cancelled", "other"],
+    "error_code": ["missing", "permission", "space", "unreadable", "cancelled", "other"],
     // Why an Undo of an act skipped operations when it settled (`sync_inverse`): the engine's closed list, never a code
     // beyond it.
     "skip_reason": Set(InverseSkipReason.allCases.map(\.rawValue)),

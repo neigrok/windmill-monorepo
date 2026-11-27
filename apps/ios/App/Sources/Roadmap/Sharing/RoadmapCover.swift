@@ -76,7 +76,7 @@ final class RoadmapCover: Identifiable {
     self.links = links
     sources = links.sources
     read = SharedRead(address, sources: links.sources, telemetry: owner.telemetry)
-    forking = RoadmapFork(address.tree, mode: .instant, sources: links.sources, telemetry: owner.telemetry)
+    forking = RoadmapFork(address.tree, mode: .cover, sources: links.sources, telemetry: owner.telemetry)
     room = RoadmapModel(records: owner.records, runner: owner.runner, phone: owner.phone, telemetry: owner.telemetry, wait: owner.wait,
                         graph: RoadmapGraph(telemetry: owner.telemetry), role: .reader(read))
   }

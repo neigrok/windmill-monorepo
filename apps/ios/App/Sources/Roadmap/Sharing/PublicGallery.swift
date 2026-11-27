@@ -7,7 +7,8 @@ import SyncEngine
 // the backend's public roadmaps, read a page at a time as the list scrolls and shown in the order it ranks them. It needs a
 // connection and no account, and it is held by its screen alone, so nothing of it is kept on the phone. A row opens its
 // roadmap as its link does, and offers what the person can do with it: nothing on a roadmap of their own, their copy where
-// the phone holds one, else Fork, which is the cover's.
+// the phone holds one, else Fork, which is the cover's. What a page says of the person is the session's it was read under,
+// so another session reads the gallery again.
 @Observable @MainActor
 final class PublicGallery {
   // The first page being read, the rows read so far, a gallery with no row, or one that could not be reached.
@@ -20,6 +21,12 @@ final class PublicGallery {
     case mine, copy(String), fork
   }
 
+  // The copy a row's fork answered, and whether the person's list has held it.
+  struct Copy {
+    let id: String
+    var arrived = false
+  }
+
   // The person's own room, whose list says which copies they hold and where a row's roadmap and a copy open.
   unowned let room: RoadmapModel
   private(set) var state = State.reading
@@ -29,12 +36,17 @@ final class PublicGallery {
   private(set) var pageFailed = false
   // Each row's fork, made as it is first asked, and the copy each fork has answered.
   private(set) var forks: [String: RoadmapFork] = [:]
-  private(set) var copies: [String: String] = [:]
+  private(set) var copies: [String: Copy] = [:]
   // The row whose fork waits for the sign-in it asked for, which the screen raises, and the session it was asked under.
-  private(set) var signingIn: String?
+  private(set) var signingIn: GalleryPage.Row?
   @ObservationIgnored var askedWith: SessionToken?
-  // Where the next page starts; none once the last is read.
+  // The row a fresh sign-in forks once the gallery is read under that session and the person's list has arrived.
+  @ObservationIgnored var forkOnceRead: GalleryPage.Row?
+  // The session the rows were read under, which says which roadmaps are the person's own.
+  @ObservationIgnored private(set) var readUnder: SessionToken?
+  // Where the next page starts, none once the last is read; and the cursors the server refused, never sent again.
   @ObservationIgnored private(set) var next: String?
+  @ObservationIgnored var refused: Set<String> = []
   @ObservationIgnored var reading: Task<Void, Never>?
 
   init(room: RoadmapModel) {
@@ -42,6 +54,9 @@ final class PublicGallery {
   }
 
   var sources: RoadmapCover.Sources? { room.links?.sources }
+
+  // The session the phone sends as now, none signed out.
+  var session: SessionToken? { sources?.signedIn() == true ? sources?.credential() : nil }
 
   // The screen came up: the first page is read.
   func open() {
@@ -55,36 +70,44 @@ final class PublicGallery {
     read(after: next)
   }
 
-  // Try Again (09.12b), and under a later page that came to nothing.
+  // Try Again (09.12b), and under a later page that came to nothing: the page that failed, or the gallery from its start.
   func retry() {
     room.telemetry.event("roadmap_gallery", properties: ["step": "retry"])
-    guard rows.isEmpty else { return more() }
-    state = .reading
-    read(after: nil)
+    if rows.isEmpty { state = .reading }
+    read(after: rows.isEmpty ? nil : next)
   }
 
-  // One page, told as the web tells it: the first (`load`) or a later one (`page`), with what it came to.
+  // One page, told as the web tells it: the first (`load`) or a later one (`page`), with what it came to. A first page read
+  // over rows on screen keeps them in their order and adds the ones it holds after them. A later page whose cursor the
+  // server no longer knows (`400 unknown-cursor`) is never asked for again: the gallery is read from its start.
   func read(after cursor: String?) {
-    guard let requests = sources?.requests else {
+    guard let sources else {
       state = .unreachable
       return
     }
     let step = cursor == nil ? "load" : "page"
-    (paging, pageFailed) = (cursor != nil, false)
-    reading = Task {
+    (paging, pageFailed) = (!rows.isEmpty, false)
+    readUnder = sources.credential()
+    reading = Task { [requests = sources.requests] in
       do throws(SharingFailure) {
         let page = try await requests.gallery(after: cursor)
         let shown = Set(rows.map(\.id))
         rows += page.rows.filter { !shown.contains($0.id) }
-        next = page.next
+        next = page.next.flatMap { refused.contains($0) ? nil : $0 }
         paging = false
         state = rows.isEmpty ? .empty : .rows
         room.telemetry.event("roadmap_gallery", properties: ["step": step, "outcome": page.rows.isEmpty ? "empty" : "available"])
+        settleFork()
       } catch {
         paging = false
         guard error != .cancelled else { return }
-        if cursor == nil { state = .unreachable } else { pageFailed = true }
         room.telemetry.event("roadmap_gallery", properties: ["step": step, "outcome": "failed"])
+        if let cursor, error == .refused {
+          refused.insert(cursor)
+          next = nil
+          return read(after: nil)
+        }
+        if rows.isEmpty { state = .unreachable } else { pageFailed = true }
       }
     }
   }
@@ -94,12 +117,41 @@ final class PublicGallery {
     reading?.cancel()
   }
 
-  // What a row offers. The person's copy is a roadmap of their list that stands and was forked from the row's roadmap, the
-  // first in the list's order, or the copy a fork from the row has answered.
+  // The phone signed in, out or to another account: the rows read under the session before, which say which roadmaps are
+  // the person's own, and the copies its forks answered go, and the gallery is read again from its start.
+  func sessionChanged() {
+    guard session != readUnder else { return }
+    reading?.cancel()
+    (rows, next, refused, copies, forks, paging, pageFailed) = ([], nil, [], [:], [:], false, false)
+    state = .reading
+    read(after: nil)
+  }
+
+  // The person's list as it now stands: a copy a fork answered has arrived once it holds it, and a fork waiting on a sign-in
+  // may go ahead.
+  func listed() {
+    for (row, copy) in copies where !copy.arrived && room.roadmaps.contains(where: { $0.id.utf8.elementsEqual(copy.id.utf8) }) {
+      copies[row]?.arrived = true
+    }
+    settleFork()
+  }
+
+  // Whether a row's roadmap is the person's own, as the page read under their session says or as the phone holds it,
+  // where it opens in the room.
+  func isOwn(_ row: GalleryPage.Row) -> Bool {
+    row.mine || room.ownRoot(of: row.id) != nil
+  }
+
+  // What a row offers. The person's copy is the one a fork from the row answered, while it stands in their list or has yet
+  // to arrive in it, or else a roadmap of their list forked from the row's roadmap, the first in the list's order. A copy
+  // deleted, or one the phone holds as gone, offers Fork again.
   func offer(for row: GalleryPage.Row) -> Offer {
-    if row.mine { return .mine }
-    if let copy = copies[row.id] ?? held[row.id] { return .copy(copy) }
-    return .fork
+    if isOwn(row) { return .mine }
+    if let copy = copies[row.id] {
+      let listed = room.roadmaps.contains { $0.id.utf8.elementsEqual(copy.id.utf8) }
+      if listed || (!copy.arrived && room.account.location(of: copy.id).standing != .hidden) { return .copy(copy.id) }
+    }
+    return held[row.id].map { .copy($0) } ?? .fork
   }
 
   // The person's copies of public roadmaps, each by the roadmap it was forked from: the first in their list's order.
@@ -112,10 +164,11 @@ final class PublicGallery {
     return held
   }
 
-  // A row tapped: its roadmap opens as its link opens it, the person's own in the room and anyone else's on a cover.
+  // A row tapped: its roadmap opens as its link opens it, the person's own in the room and anyone else's on a cover, which
+  // its event tells.
   func open(_ row: GalleryPage.Row) {
     guard let links = room.links, let address = links.sources.address(of: row.id) else { return }
-    room.telemetry.event("roadmap_gallery", properties: ["step": "row", "mine": row.mine ? "true" : "false"])
+    room.telemetry.event("roadmap_gallery", properties: ["step": "row", "mine": room.ownRoot(of: row.id) != nil ? "true" : "false"])
     links.follow(ClaimedLink(address), in: room, tells: false)
   }
 
@@ -129,9 +182,9 @@ final class PublicGallery {
     forking.run { [self] answer in
       switch answer {
       case .copy(let copy):
-        copies[row.id] = copy
+        copies[row.id] = Copy(id: copy)
         forking.settle()
-      case .signIn(let credential): (signingIn, askedWith) = (row.id, credential)
+      case .signIn(let credential): (signingIn, askedWith) = (row, credential)
       case .nothing:
         if forking.state == .offline { room.show(RoadmapModel.Band(told: .unforked(offline: true))) }
         if forking.state == .failed { room.show(RoadmapModel.Band(told: .unforked(offline: false))) }
@@ -139,16 +192,29 @@ final class PublicGallery {
     }
   }
 
-  // The sign-in a row's fork asked for ended: a fresh session forks that row, and closed with none it ends the fork.
+  // The sign-in a row's fork asked for ended. Closed with no fresh session it ends the fork. A fresh session forks nothing on
+  // what the page said before it: the gallery is read again under it, and the fork goes ahead once that read and the
+  // person's list have come (`settleFork`).
   func signInEnded() {
-    guard let row = signingIn.flatMap({ asked in rows.first { $0.id == asked } }) else { return }
+    guard let row = signingIn else { return }
     signingIn = nil
     guard let fresh = sources?.credential(), fresh != askedWith else { return }
-    fork(row)
+    forkOnceRead = row
+    if readUnder != fresh { sessionChanged() } else { settleFork() }
   }
 
-  // Open Your Copy: the copy on its Board, once the person's list holds it, which a copy just made waits for, as the cover's
-  // Fork waits.
+  // A fork a fresh sign-in asked for, once the gallery is read under the session and the person's list has arrived: a
+  // roadmap that is theirs opens in the room, one they hold a copy of offers it, and any other forks.
+  func settleFork() {
+    guard let asked = forkOnceRead, state != .reading, !paging, readUnder == sources?.credential(), room.listArrived else { return }
+    forkOnceRead = nil
+    let row = rows.first { $0.id == asked.id } ?? asked
+    if isOwn(row) { return open(row) }
+    if offer(for: row) == .fork { fork(row) }
+  }
+
+  // Open Your Copy: the copy on its Board, at once where the person's list holds it, else once it arrives, as the cover's
+  // Fork waits for it.
   func openCopy(_ copy: String) {
     room.telemetry.event("roadmap_gallery", properties: ["step": "copy"])
     if room.roadmaps.contains(where: { $0.id.utf8.elementsEqual(copy.utf8) }) { return room.open(copy, from: .gallery) }
@@ -181,8 +247,10 @@ struct PublicGalleryScreen: View {
         opened.open()
       }
       .onDisappear { if roadmap.path.last != .gallery { gallery?.close() } }
-      .onChange(of: gallery?.signingIn) { _, asked in if asked != nil { app.signIn(for: .fork) } }
+      .onChange(of: gallery?.signingIn?.id) { _, asked in if asked != nil { app.signIn(for: .fork) } }
       .onChange(of: app.sheet == nil) { _, closed in if closed { gallery?.signInEnded() } }
+      .onChange(of: gallery?.session) { _, _ in gallery?.sessionChanged() }
+      .onChange(of: roadmap.roadmaps.map(\.id)) { _, _ in gallery?.listed() }
   }
 
   @ViewBuilder var content: some View {

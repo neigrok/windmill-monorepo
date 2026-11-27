@@ -22,7 +22,7 @@ import SyncTesting
 
   final class Sharing: RoadmapSharing {
     func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress { throw .failed }
-    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String { throw .failed }
+    func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String { throw .failed }
     func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage { throw .failed }
   }
 
@@ -71,8 +71,12 @@ import SyncTesting
     #expect(share.footer == "Only you can view this roadmap.")
     share.copy()
 
+    // The switch shows the choice at once, and turned again before the copy is read again it writes and tells nothing.
     share.turn(public: true)
-    await settle(engine, model) { share.isPublic }
+    #expect(share.isPublic)
+    share.turn(public: true)
+    await settle(engine, model) { share.held }
+    #expect(share.turned == nil)
     let address = "https://windmill.works/t/\(sail.tree)"
     #expect(share.isPublic && share.address?.absoluteString == address)
     #expect(share.footer == "Anyone with this link can view and fork this roadmap, and it can appear in the public gallery.")

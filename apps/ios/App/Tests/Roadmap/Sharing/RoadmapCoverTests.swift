@@ -36,7 +36,7 @@ import SyncTesting
       return try progress.get()
     }
 
-    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
+    func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
       asked.append("fork \(tree) \(request)")
       return try copy.get()
     }
@@ -428,7 +428,7 @@ import SyncTesting
     }
     for (status, expected): (Int, SharingFailure) in [(401, .signedOut), (404, .refused), (503, .busy), (500, .failed)] {
       do throws(SharingFailure) {
-        _ = try await requests("https://status.invalid/\(status)/").fork("t_00000000000000aa", request: "r")
+        _ = try await requests("https://status.invalid/\(status)/").fork("t_00000000000000aa", request: "r", from: .cover)
         Issue.record("a \(status) forked")
       } catch {
         #expect(error == expected)
@@ -443,10 +443,10 @@ import SyncTesting
     }
     #expect(given as? SharingFailure == .cancelled)
     #expect(told(telemetry, ["api_request_failed", "client_error"]) == [
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=401",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=404",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=503",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=500",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=401",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=404",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=503",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=500",
       "client_error failure_kind=http operation=roadmap_fork",
     ])
   }

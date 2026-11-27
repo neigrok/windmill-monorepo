@@ -804,7 +804,7 @@ enum RoadmapFixture {
       }
     }
 
-    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
+    func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
       if ProcessInfo.processInfo.arguments.contains("-fork-held") { try? await Task.sleep(for: .seconds(3_600)) }
       guard let owner, let reader, let sent else { throw .signedOut }
       do {
