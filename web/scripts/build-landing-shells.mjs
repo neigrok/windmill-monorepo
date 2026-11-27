@@ -98,7 +98,7 @@ function renderRootFallback(head) {
         <p style="font-size: 17px; line-height: 26px; margin: 0 0 28px;">${htmlText(tool.line)} <a href="${htmlAttribute(tool.link.href)}" style="color: #211B13; font-weight: 500;">${htmlText(tool.link.label)}</a></p>`);
 
   return `<div id="root">
-      <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif; color: #211B13;">
+      <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #211B13;">
         <h1 style="font-weight: 500; font-size: 40px; line-height: 42px; letter-spacing: -0.022em; margin: 0 0 16px;">${htmlText(page.h1)}</h1>
         <p style="font-size: 22px; line-height: 30px; margin: 0 0 6px;">${htmlText(page.what)}</p>
         <p style="font-size: 16px; line-height: 24px; color: #5C5246; margin: 0 0 40px;">${htmlText(page.stance)}</p>

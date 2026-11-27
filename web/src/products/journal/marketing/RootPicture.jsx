@@ -1,14 +1,12 @@
-// The journal's picture on the brand root: three days of the page with one echo beside it. A still
-// composition on the journal's own night canvas, which it keeps on a day page; the shell frames and
-// labels it.
+// The journal's picture on the brand root: three days of the page and one echo, still, on its own night canvas at any hour.
 
 import React from 'react';
 import { t } from '../i18n/entry/index.js';
 import './journalRootPicture.css';
 
-export function JournalPicture() {
+export function JournalPicture({ stage }) {
   return (
-    <div className="jnPicture" data-brand="journal" data-theme="dark">
+    <div className="jnPicture" data-brand="journal" data-theme="dark" data-stage={stage}>
       <div className="jnPicture-page">
         <p className="jnPicture-day">{t('journal.root.firstDay')}<i /></p>
         <p className="jnPicture-text">{t('journal.root.firstPage')}</p>

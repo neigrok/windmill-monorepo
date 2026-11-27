@@ -623,7 +623,6 @@
   "gym.coach.read.workouts": "{count, plural, one {Read # workout} other {Read # workouts}}",
   "gym.coach.receipt.history": "Read your movement history",
   "gym.coach.receipt.nothing": "Read nothing from your log",
-  "gym.coach.receipt.read": "Read {sessions, plural, one {# workout} other {# workouts}} · {weeks, plural, one {# week} other {# weeks}}",
   "gym.coach.routine.created": "Routine created · {count, plural, one {# movement} other {# movements}}",
   "gym.coach.routine.madeLabel": "Routines Coach created",
   "gym.coach.when": "{day} {time}",

@@ -105,10 +105,10 @@ export const journalRoutes = {
         { title: t('journal.root.pageTitle'), text: t('journal.root.pageText') },
         { title: t('journal.root.gradedTitle'), text: t('journal.root.gradedText') },
       ],
-      // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
+      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
       picture: {
         label: t('journal.root.composed'),
-        reserve: { wide: '476px', narrow: '800px' },
+        stages: [{ name: 'narrow', width: 356, height: 814 }, { name: 'column', width: 632, height: 659 }, { name: 'wide', width: 1033, height: 472 }],
         Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.JournalPicture }))),
       },
     },

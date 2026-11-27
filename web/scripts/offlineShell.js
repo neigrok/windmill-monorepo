@@ -3,8 +3,7 @@ import { join } from 'node:path';
 
 export const PRECACHE_BUDGET = 4 * 1024 * 1024;
 
-// The front page's face stays out of the precache: only that page draws in it, so no other page's worker fetches it,
-// and offline the front page reads in the system's face.
+// The front page's face stays out of the precache, so no other page fetches it; the asset cache keeps it once the page fetches it through the worker.
 const FRONT_PAGE_FACE = /@fontsource-variable\/inter\//;
 
 export function offlineShell() {

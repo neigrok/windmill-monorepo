@@ -85,18 +85,18 @@ test('the landing offers the log itself, and no line on it is dated against the 
 
 test('the brand root is handed gym’s words and its picture, and its door is gym’s landing', () => {
   const { root } = gymRoutes.landing;
-  assert.deepEqual({ kind: root.kind, line: root.line, link: root.link, paragraph: root.paragraph, features: root.features, label: root.picture.label, reserve: root.picture.reserve }, {
-    kind: 'training log',
+  assert.deepEqual({ kind: root.kind, line: root.line, link: root.link, paragraph: root.paragraph, features: root.features, label: root.picture.label, stages: root.picture.stages }, {
+    kind: 'workout log',
     line: 'A coach that answers from your log.',
     link: { href: '/gym', label: 'See Windmill Gym', to: 'landing' },
     paragraph: 'Ask about your training and the answer comes from your own log, with a receipt of what it read. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill’s Coach, or connect your own assistant to the same log.',
     features: [
       { title: 'It remembers last time', text: 'Each set opens with your target, or last session’s weight and reps, already filled in.' },
       { title: 'Honest progress', text: 'Estimated one-rep max per lift over time, with no invented trend.' },
-      { title: 'On your phone', text: 'Sets are logged in the phone app: Android as a direct download, iPhone in\u00A0beta.' },
+      { title: 'On your phone', text: 'Sets are logged in the phone app. It is in beta on Android and iPhone, and not public\u00A0yet.' },
     ],
     label: 'Composed session',
-    reserve: { wide: '506px', narrow: '480px' },
+    stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
   });
   assert.equal(root.link.href, gymRoutes.landing.href);
   assert.equal(typeof root.picture.Picture, 'object');

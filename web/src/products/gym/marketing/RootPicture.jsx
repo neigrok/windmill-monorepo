@@ -1,22 +1,19 @@
-// Gym's picture on the brand root: one Coach turn as the room draws it. The question, the receipt in
-// the room's own sentence, the answer, and the proposal with its two acts. A still composition on the
-// gym ground of the hour; nothing in it is a control. The shell frames and labels it.
+// Gym's picture on the brand root: one Coach turn, its receipt in the room's own sentence, still, on the stage the shell names.
 
 import React from 'react';
+import { BookOpen, ChevronRight } from 'lucide-react';
 import { t } from '../i18n/entry/index.js';
 import './gymRootPicture.css';
 
-const figure = (value) => <span className="gyPicture-figure">{value}</span>;
 const withFigures = (text) => text.split(/(\d+(?:\.\d+)?)/).map((part, index) => (index % 2 ? <span className="gyPicture-figure" key={index}>{part}</span> : part));
 
-export function GymPicture() {
+export function GymPicture({ stage }) {
   return (
-    <div className="gyPicture gym-skin">
+    <div className="gyPicture gym-skin" data-stage={stage}>
       <div className="gyPicture-thread">
         <p className="gyPicture-question">{t('gym.root.question')}</p>
         <p className="gyPicture-receipt">
-          <span>{t('gym.coach.read', { sets: 412, weeks: 14, sessions: 41, setsShown: figure(412), weeksShown: figure(14), sessionsShown: figure(41) })}</span>
-          <span className="gyPicture-steps">{t('gym.coach.stepCount', { count: 3, figure: figure(3) })}<span className="gyPicture-more">›</span></span>
+          <BookOpen size={16} aria-hidden="true" />{t('gym.coach.receipt.read', { sessions: 41, weeks: 14 })}<ChevronRight size={16} aria-hidden="true" />
         </p>
         <p className="gyPicture-answer">{withFigures(t('gym.root.answer'))}</p>
         <div className="gyPicture-proposal">

@@ -136,10 +136,10 @@ export const roadmapRoutes = {
         { title: t('roadmap.root.noAccountTitle'), text: t('roadmap.root.noAccountText') },
         { title: t('roadmap.root.shareTitle'), text: t('roadmap.root.shareText') },
       ],
-      // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
+      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
       picture: {
         label: t('roadmap.scene.composed'),
-        reserve: { wide: '500px', narrow: '360px' },
+        stages: [{ name: 'narrow', width: 356, height: 364 }, { name: 'column', width: 720, height: 584 }, { name: 'row', width: 1080, height: 500 }],
         Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.RoadmapPicture }))),
       },
     },

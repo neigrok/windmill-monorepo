@@ -76,7 +76,7 @@ const SIGNED_OUT_LINKS = [
 
 test('signed out, every link goes where the contract sends it and tells one front_link', async (t) => {
   const page = await frontPage(t, { status: 'ghost', user: null });
-  assert.deepEqual(told(), [{ name: 'front_open', props: { signedIn: false } }]);
+  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
   assert.deepEqual(page.links.map((link) => [link.props.href, link.props['aria-label'] ?? textOf(link)]), SIGNED_OUT_LINKS.map(([href, label]) => [href, label]));
   page.links.forEach((link) => link.props.onClick());
   assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props })));
@@ -112,13 +112,13 @@ test('the page says what Windmill is under one h1, with its headings in order', 
     ['h2', 'Legal'],
   ]);
   assert.deepEqual(page.elements.filter((element) => element.type === 'p').map(textOf), [
-    'An AI-native training log, skill tree and journal.',
+    'An AI-native workout log, skill tree and journal.',
     'The AI guides. The work stays yours. Use your own AI or ours.',
     'skill-tree planner',
     'Tell an AI your goal, get a skill tree.',
     'daily journal',
     'Your own words, echoed back.',
-    'training log',
+    'workout log',
     'A coach that answers from your log.',
     'Describe what you want to learn or build. Your own assistant, connected to your Windmill account, writes the plan as a tree of steps. You edit it, and you do the steps.',
     'Steps have real prerequisites, so the tree shows what you can work on now.',
@@ -131,11 +131,11 @@ test('the page says what Windmill is under one h1, with its headings in order', 
     'Ask about your training and the answer comes from your own log, with a receipt of what it read. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill’s Coach, or connect your own assistant to the same log.',
     'Each set opens with your target, or last session’s weight and reps, already filled in.',
     'Estimated one-rep max per lift over time, with no invented trend.',
-    'Sets are logged in the phone app: Android as a direct download, iPhone in beta.',
+    'Sets are logged in the phone app. It is in beta on Android and iPhone, and not public yet.',
     'Either way the AI guides, and the work stays yours.',
     'Connect the assistant you already have to Roadmap and Gym. It asks for the access it needs, and you approve it.',
     'Windmill’s own AI is built in, and a free account includes some of it each month. Windmill One raises the ceiling for one price. It is not on sale yet.',
-    'Web: Roadmap, Gym and Journal. Android: Gym. iPhone: Journal and Gym, in beta.',
+    'Web: Roadmap, Gym and Journal. The phone apps are in beta and not public yet.',
   ]);
 });
 
@@ -143,24 +143,42 @@ test('no line on the page promises what the product does not do, names a price o
   const page = await frontPage(t, { status: 'ghost', user: null });
   told();
   const words = page.elements.filter((element) => typeof element.type === 'string').map(textOf).join('  ');
-  for (const refused of ['works for you', 'working for you', 'does it for you', 'About', 'or Windmill’s, writes', 'As you write', 'has read every set', 'your whole log', 'the same rules', 'two taps', 'Android today', 'Open the log', 'free allowance']) {
+  for (const refused of ['works for you', 'working for you', 'does it for you', 'About', 'or Windmill’s, writes', 'As you write', 'has read every set', 'your whole log', 'the same rules', 'two taps', 'Android today', 'Open the log', 'free allowance', 'training log', 'direct download', 'Android: Gym']) {
     assert.equal(words.includes(refused), false, refused);
   }
   assert.doesNotMatch(words, /[$€£]\s?\d|\d+\s?(USD|dollars)/);
 });
 
-test('each picture is framed, labelled as composed, and kept from the keyboard and the screen reader', async (t) => {
+test('each room hands the frame its picture, labelled as composed, with the stages it is drawn at', async (t) => {
   const page = await frontPage(t, { status: 'ghost', user: null });
   told();
-  const figures = page.elements.filter((element) => element.type === 'figure');
-  assert.deepEqual(figures.map((figure) => {
-    const [caption, body] = [].concat(figure.props.children).filter((child) => typeof child?.type === 'string');
-    return [caption.type, textOf(caption), body.props['aria-hidden'], body.props.inert, body.props['data-brand'], body.props['data-theme']];
-  }), [
-    ['figcaption', 'Composed tree', 'true', '', 'roadmap', 'light'],
-    ['figcaption', 'Composed page', 'true', '', 'journal', 'light'],
-    ['figcaption', 'Composed session', 'true', '', 'gym', 'light'],
+  const frames = page.elements.filter((element) => element.type?.name === 'PictureFrame');
+  assert.deepEqual(frames.map(({ props }) => [props.id, props.picture.label, props.theme, props.picture.stages.map((stage) => stage.name)]), [
+    ['roadmap', 'Composed tree', 'light', ['narrow', 'column', 'row']],
+    ['journal', 'Composed page', 'light', ['narrow', 'column', 'wide']],
+    ['gym', 'Composed session', 'light', ['narrow', 'wide']],
   ]);
+});
+
+test('while auth is unanswered a stranger already sees Sign in and the pill, and the page has told its opening', async (t) => {
+  const page = await frontPage(t, { status: 'loading', user: null });
+  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
+  assert.deepEqual(page.buttons.map(textOf), ['Sign in', 'Feedback']);
+  assert.equal(page.named('AccountSeat'), undefined);
+  assert.equal(page.links.find((link) => textOf(link) === 'Open Windmill').props.href, '/app');
+  assert.equal(page.elements.some((element) => element.props?.style?.visibility === 'hidden'), false);
+});
+
+test('a link already sent is a reminder that reopens the door on its wait, and tells link_sent', async (t) => {
+  const record = JSON.stringify({ email: 'ada@example.com', at: Date.now() });
+  globalThis.sessionStorage = { getItem: (key) => (key === 'windmill:link-sent' ? record : null), setItem() {}, removeItem() {} };
+  const page = await frontPage(t, { status: 'ghost', user: null });
+  told();
+  assert.deepEqual(page.buttons.map(textOf), ['Link sent — check your emailLink sent', 'Feedback']);
+  page.buttons[0].props.onClick();
+  assert.equal(page.doors[0].resume.email, 'ada@example.com');
+  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'link_sent' } }]);
+  delete globalThis.sessionStorage;
 });
 
 test('signed out, Sign in opens the door in place, and each control tells one front_control', async (t) => {
@@ -190,13 +208,12 @@ test('the switch offers Auto, Light and Dark, starts on Auto and stores what is 
   assert.deepEqual(bar.props.options.map((option) => [option.value, option.label, option.icon]), [['system', 'Auto', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']]);
   assert.equal(bar.props.value, 'system');
 
-  bar.props.onChange('dark');
   bar.props.onChange('system');
-  assert.equal(disk.get('windmill:appearance'), 'system');
-  assert.deepEqual(told(), [
-    { name: 'front_control', props: { control: 'appearance', choice: 'dark' } },
-    { name: 'front_control', props: { control: 'appearance', choice: 'auto' } },
-  ]);
+  assert.equal(disk.has('windmill:appearance'), false, 'the segment already in use stores nothing');
+  assert.deepEqual(told(), [], 'the segment already in use tells nothing');
+  bar.props.onChange('dark');
+  assert.equal(disk.get('windmill:appearance'), 'dark');
+  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'appearance', choice: 'dark' } }]);
   delete globalThis.localStorage;
 });
 
@@ -204,14 +221,19 @@ test('signed in, the seat stands where Sign in stood and the pill opens the last
   const { homeHash } = await loadScreen('shell/products.js');
   const user = { name: 'Ada', email: 'ada@example.com' };
   const page = await frontPage(t, { status: 'signed-in', user });
-  assert.deepEqual(told(), [{ name: 'front_open', props: { signedIn: true } }]);
+  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
   assert.deepEqual(page.buttons.map(textOf), ['Feedback']);
   const seat = page.named('AccountSeat');
   assert.deepEqual([seat.props.user, seat.props.size, seat.props.display, seat.props.appearance], [user, 28, 'glyph', false]);
-  const pill = page.links.find((link) => textOf(link) === 'Open Windmill');
-  assert.equal(pill.props.href, homeHash());
+  const signedInLinks = SIGNED_OUT_LINKS.map(([href, label]) => [label === 'Open Windmill' ? homeHash() : href, label]);
+  assert.deepEqual(page.links.map((link) => [link.props.href, link.props['aria-label'] ?? textOf(link)]), signedInLinks);
+  page.links.forEach((link) => link.props.onClick());
+  assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props })));
 
+  seat.props.onSettings();
+  assert.equal(window.location.hash, '#/settings');
   seat.props.onSignOut();
   assert.deepEqual(page.doors, ['sign-out']);
-  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'sign_out' } }]);
+  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'settings' } }, { name: 'front_control', props: { control: 'sign_out' } }]);
+  window.location.hash = '';
 });

@@ -104,10 +104,10 @@ export const gymRoutes = {
         { title: t('gym.root.progressTitle'), text: t('gym.root.progressText') },
         { title: t('gym.root.phoneTitle'), text: t('gym.root.phoneText') },
       ],
-      // The picture arrives in this product's chunk, so the shell holds its height from the first paint.
+      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
       picture: {
         label: t('gym.root.composed'),
-        reserve: { wide: '506px', narrow: '480px' },
+        stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
         Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.GymPicture }))),
       },
     },

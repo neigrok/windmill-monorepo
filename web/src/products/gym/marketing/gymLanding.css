@@ -90,9 +90,7 @@
   padding: 16px 18px;
   text-align: left;
 }
-/* The answer that landed: the brand's wash over the card's own night ground, never over the page, whose
-   day ground would leave night ink on a pale tint. As specific as the night page's island rule
-   (gymIslands.css), which it follows, so the card keeps its wash on both pages. */
+/* The answer that landed: the brand's wash over the card's own night ground, as specific as the island rule it follows. */
 .landing .gyw.gycard-landed {
   border-color: var(--color-brand);
   background: linear-gradient(var(--color-brand-soft), var(--color-brand-soft)), var(--gym-canvas);

@@ -1,5 +1,4 @@
-// Roadmap's picture on the brand root: the request beside the tree it became. A still composition in
-// the landing's node vocabulary, hand-placed like its other worlds; the shell frames and labels it.
+// Roadmap's picture on the brand root: the request and the tree it became, still, on the stage the shell names.
 
 import React from 'react';
 import { Icon } from '../../../design-system';
@@ -9,23 +8,23 @@ import './roadmapLanding.css';
 import './roadmapRootPicture.css';
 
 const STEPS = {
-  root:     { name: t('roadmap.scene.learnToSail'), kind: 'terracotta', state: 'done' },
-  knots:    { name: t('roadmap.scene.knotsLines'), kind: 'gold', state: 'done' },
-  rig:      { name: t('roadmap.scene.rigMast'), kind: 'terracotta', state: 'done' },
-  wind:     { name: t('roadmap.scene.readWind'), kind: 'sky', state: 'done' },
-  docking:  { name: t('roadmap.scene.docking'), kind: 'olive', state: 'avail' },
-  capsize:  { name: t('roadmap.scene.capsizeDrill'), kind: 'plum', state: 'avail' },
-  whipping: { name: t('roadmap.scene.whippingSplicing'), kind: 'gold', state: 'avail' },
-  cleats:   { name: t('roadmap.scene.cleatsHitches'), kind: 'gold', state: 'done' },
-  trim:     { name: t('roadmap.scene.sailTrim'), kind: 'terracotta', state: 'done' },
-  points:   { name: t('roadmap.scene.pointsOfSail'), kind: 'sky', state: 'avail' },
-  weather:  { name: t('roadmap.scene.weatherWindows'), kind: 'sky', state: 'dim' },
-  night:    { name: t('roadmap.scene.nightDocking'), kind: 'olive', state: 'dim' },
-  overboard: { name: t('roadmap.scene.manOverboard'), kind: 'terracotta', state: 'dim' },
-  reefing:  { name: t('roadmap.scene.reefing'), kind: 'terracotta', state: 'dim' },
-  tides:    { name: t('roadmap.scene.tidesCurrents'), kind: 'sky', state: 'dim' },
-  firstAid: { name: t('roadmap.scene.firstAidAfloat'), kind: 'plum', state: 'dim' },
-  solo:     { name: t('roadmap.scene.firstSoloSail'), kind: 'plum', state: 'dim' },
+  root:     { name: t('roadmap.scene.learnToSail'), kind: 'terracotta', done: true },
+  knots:    { name: t('roadmap.scene.knotsLines'), kind: 'gold', done: true },
+  rig:      { name: t('roadmap.scene.rigMast'), kind: 'terracotta', done: true },
+  wind:     { name: t('roadmap.scene.readWind'), kind: 'sky', done: true },
+  docking:  { name: t('roadmap.scene.docking'), kind: 'olive' },
+  capsize:  { name: t('roadmap.scene.capsizeDrill'), kind: 'plum' },
+  whipping: { name: t('roadmap.scene.whippingSplicing'), kind: 'gold' },
+  cleats:   { name: t('roadmap.scene.cleatsHitches'), kind: 'gold', done: true },
+  trim:     { name: t('roadmap.scene.sailTrim'), kind: 'terracotta', done: true },
+  points:   { name: t('roadmap.scene.pointsOfSail'), kind: 'sky' },
+  weather:  { name: t('roadmap.scene.weatherWindows'), kind: 'sky' },
+  night:    { name: t('roadmap.scene.nightDocking'), kind: 'olive' },
+  overboard: { name: t('roadmap.scene.manOverboard'), kind: 'terracotta' },
+  reefing:  { name: t('roadmap.scene.reefing'), kind: 'terracotta' },
+  tides:    { name: t('roadmap.scene.tidesCurrents'), kind: 'sky' },
+  firstAid: { name: t('roadmap.scene.firstAidAfloat'), kind: 'plum' },
+  solo:     { name: t('roadmap.scene.firstSoloSail'), kind: 'plum' },
 };
 
 const WIDE = {
@@ -56,18 +55,22 @@ const NARROW = {
   ],
 };
 
-const DONE = Object.values(STEPS).filter((step) => step.state === 'done').length;
+// The product's own rule over the whole tree: a step not done is open once every step it needs is done, and locked before.
+const NEEDS = Object.fromEntries(Object.keys(STEPS).map((id) => [id, WIDE.edges.filter(([, to]) => to === id).map(([from]) => from)]));
+const STATE = Object.fromEntries(Object.entries(STEPS).map(([id, step]) => [id,
+  step.done ? 'done' : NEEDS[id].every((need) => STEPS[need].done) ? 'avail' : 'dim']));
+const DONE = Object.values(STEPS).filter((step) => step.done).length;
 
-function Tree({ world, className }) {
+function Tree({ world }) {
   const { width, height, seats, edges, plaque, size } = world;
   return (
-    <div className={`rmPicture-tree ${className}`} style={{ width, height }}>
+    <div className="rmPicture-tree" style={{ width, height }}>
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
         {edges.map(([from, to]) => {
           const [x1, y1] = seats[from];
           const [x2, y2] = seats[to];
           const bend = (x1 + x2) / 2;
-          return <path key={`${from}-${to}`} className={STEPS[to].state === 'dim' ? 'rmPicture-edge' : 'rmPicture-edge is-lit'} d={`M${x1},${y1} C${bend},${y1} ${bend},${y2} ${x2},${y2}`} />;
+          return <path key={`${from}-${to}`} className={STATE[to] === 'dim' ? 'rmPicture-edge' : 'rmPicture-edge is-lit'} d={`M${x1},${y1} C${bend},${y1} ${bend},${y2} ${x2},${y2}`} />;
         })}
       </svg>
       {plaque && (
@@ -80,7 +83,8 @@ function Tree({ world, className }) {
         </div>
       )}
       {Object.entries(seats).map(([id, [x, y]]) => {
-        const { name, kind, state } = STEPS[id];
+        const { name, kind } = STEPS[id];
+        const state = STATE[id];
         const hue = KIND_CSS[kind];
         return (
           <React.Fragment key={id}>
@@ -94,16 +98,15 @@ function Tree({ world, className }) {
   );
 }
 
-export function RoadmapPicture() {
+export function RoadmapPicture({ stage }) {
   return (
-    <div className="rmPicture">
+    <div className="rmPicture" data-stage={stage}>
       <div className="rmPicture-request">
         <span className="rmPicture-label">{t('roadmap.root.request')}</span>
         <span className="rmPicture-bubble">{t('roadmap.root.requestText')}</span>
       </div>
       <span className="rmPicture-arrow"><Icon name="arrow-right" size={20} strokeWidth={1.6} /></span>
-      <Tree world={WIDE} className="rmPicture-tree--wide" />
-      <Tree world={NARROW} className="rmPicture-tree--narrow" />
+      <Tree world={stage === 'narrow' ? NARROW : WIDE} />
     </div>
   );
 }

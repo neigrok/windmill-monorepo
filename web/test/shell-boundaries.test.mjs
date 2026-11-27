@@ -251,6 +251,9 @@ test('every product answers its landing on one pathname — shell.landingHref is
 const isComponent = (value) => typeof value === 'function'
   || (typeof value === 'object' && value !== null && typeof value.$$typeof === 'symbol');
 const isText = (value) => typeof value === 'string' && value.length > 0;
+const isSize = (value) => Number.isInteger(value) && value > 0;
+const stagesHold = (stages) => Array.isArray(stages) && stages.length > 0
+  && stages.every((stage, index) => isText(stage?.name) && isSize(stage.width) && isSize(stage.height) && (index === 0 || stages[index - 1].width < stage.width));
 const OPEN = PRODUCTS.filter((product) => product.shell.status === 'open');
 
 function rootSeamGaps(product) {
@@ -267,7 +270,7 @@ function rootSeamGaps(product) {
     ...(isText(root.paragraph) ? [] : ['root.paragraph']),
     ...(features.length === 3 && features.every((feature) => isText(feature?.title) && isText(feature?.text)) ? [] : ['root.features (exactly three {title, text})']),
     ...(isText(root.picture?.label) ? [] : ['root.picture.label']),
-    ...(isText(root.picture?.reserve?.wide) && isText(root.picture?.reserve?.narrow) ? [] : ['root.picture.reserve (wide and narrow)']),
+    ...(stagesHold(root.picture?.stages) ? [] : ['root.picture.stages (named sizes, narrowest first)']),
     ...(isComponent(root.picture?.Picture) ? [] : ['root.picture.Picture']),
   ];
 }
@@ -284,17 +287,6 @@ test('every open product brings the words and the picture its row and section on
 });
 
 const BRAND_LANDING = fs.readFileSync(path.join(SRC, 'shell', 'marketing', 'BrandLanding.jsx'), 'utf8');
-
-// A picture arrives in its product's chunk, so the sheet that draws it cannot hold the space it is about
-// to take: the product states that height as `landing.root.picture.reserve` and the shell's own sheet,
-// which ships with the shell, holds it from the first paint.
-const BRAND_LANDING_CSS = fs.readFileSync(path.join(SRC, 'shell', 'marketing', 'brandLanding.css'), 'utf8');
-
-test('the shell holds the space a picture will take out of the height its product states', () => {
-  assert.match(BRAND_LANDING, /style=\{\{ '--front-picture-wide': picture\.reserve\.wide, '--front-picture-narrow': picture\.reserve\.narrow \}\}/);
-  assert.match(BRAND_LANDING_CSS, /\.front-picture-body \{ min-height: var\(--front-picture-wide\); \}/);
-  assert.match(BRAND_LANDING_CSS, /\.front-picture-body \{ min-height: var\(--front-picture-narrow\); \}/);
-});
 
 test('the brand root composes a row and a section for the open products only', () => {
   assert.match(BRAND_LANDING, /const open = PRODUCTS\.filter\(\(product\) => product\.shell\.status === 'open'\);/);
@@ -388,12 +380,12 @@ test('the brand root says one title and one description everywhere, and marks up
   assert.deepEqual(
     { title: ROOT_HEAD.title, ogTitle: ROOT_HEAD.ogTitle, twitterTitle: ROOT_HEAD.twitterTitle, description: ROOT_HEAD.description, ogDescription: ROOT_HEAD.ogDescription, twitterDescription: ROOT_HEAD.twitterDescription, schema: ROOT_HEAD.schema },
     {
-      title: 'Windmill — a skill tree, a training log and a journal',
-      ogTitle: 'Windmill — a skill tree, a training log and a journal',
-      twitterTitle: 'Windmill — a skill tree, a training log and a journal',
-      description: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
-      ogDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
-      twitterDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours.',
+      title: 'Windmill — a skill tree, a workout log and a journal',
+      ogTitle: 'Windmill — a skill tree, a workout log and a journal',
+      twitterTitle: 'Windmill — a skill tree, a workout log and a journal',
+      description: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native workout log, skill tree and journal. Use your own AI or ours.',
+      ogDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native workout log, skill tree and journal. Use your own AI or ours.',
+      twitterDescription: 'Windmill is where a person keeps growing in body, skill and mind. An AI-native workout log, skill tree and journal. Use your own AI or ours.',
       schema: [],
     },
   );

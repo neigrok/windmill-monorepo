@@ -4,8 +4,8 @@
 // no section but keeps its place in the header and the footer. Every link and control tells one
 // event, and nothing inside a picture frame is live.
 
-import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { Icon, SegmentedControl } from '../../design-system';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ErrorBoundary, Icon, SegmentedControl } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
 import { useSignInDoor } from '../auth/SignInDoor.jsx';
@@ -14,6 +14,7 @@ import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
 import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { track } from '../../telemetry/beacon.js';
+import { captureError } from '../../telemetry/sentry.js';
 import { LandingFrame, usePendingMagicLink } from './LandingChrome.jsx';
 import { t } from '../i18n/entry/index.js';
 import './brandLanding.css';
@@ -47,10 +48,13 @@ const APPEARANCE_LABEL = { system: 'auto', light: 'light', dark: 'dark' };
 const followed = (area, to, product) => () => track('front_link', { area, to, ...(product ? { product } : {}) });
 const used = (control, props) => track('front_control', { control, ...props });
 
+// The night mark that does not load gives way to the day mark, so the word never stands beside an empty box.
 function Brand({ night }) {
+  const [nightMissing, setNightMissing] = useState(false);
+  const mark = night && !nightMissing ? '/brand-mark-night.svg' : '/brand-mark.svg';
   return (
     <>
-      <img src={night ? '/brand-mark-night.svg' : '/brand-mark.svg'} alt="" width={24} height={24} />
+      <img src={mark} alt="" width={24} height={24} onError={night ? () => setNightMissing(true) : undefined} />
       <span>Windmill</span>
     </>
   );
@@ -69,6 +73,7 @@ function Header({ night }) {
   const { user, status, signOut } = useAuth();
   const openSignInDoor = useSignInDoor();
   const [pendingLink, noteLinkSent] = usePendingMagicLink(status);
+  // Sign in and the pill stand from the first paint; the seat takes Sign in's place once auth answers for an account.
   const signedIn = status === 'signed-in' && Boolean(user);
 
   return (
@@ -79,8 +84,7 @@ function Header({ night }) {
           {ROOMS.map((product) => <a key={product.id} href={product.landing.href} onClick={followed('header', 'landing', product.id)}>{product.label}</a>)}
           <a href="/pricing.html" onClick={followed('header', 'pricing')}>{t('shell.site.pricing')}</a>
         </nav>
-        {/* While auth is unanswered the cluster keeps its box and shows nothing, so neither state flashes. */}
-        <div className="front-cluster" style={status === 'loading' ? { visibility: 'hidden' } : undefined}>
+        <div className="front-cluster">
           {signedIn ? (
             <span className="front-seat">
               <AccountSeat
@@ -95,7 +99,8 @@ function Header({ night }) {
             </span>
           ) : pendingLink ? (
             <button type="button" className="front-signin" onClick={() => { used('link_sent'); openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent }); }}>
-              {t('shell.landing.linkSent')}
+              <span className="front-signin-long">{t('shell.landing.linkSent')}</span>
+              <span className="front-signin-short">{t('shell.brandLanding.linkSentShort')}</span>
             </button>
           ) : (
             <button type="button" className="front-signin" onClick={() => { used('sign_in'); openSignInDoor({ onSent: noteLinkSent }); }}>
@@ -112,7 +117,11 @@ function Header({ night }) {
 function Footer({ night }) {
   const { choice, set } = useAppearance();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const choose = (next) => { used('appearance', { choice: APPEARANCE_LABEL[next] }); set(next); };
+  const choose = (next) => {
+    if (next === choice) return;
+    used('appearance', { choice: APPEARANCE_LABEL[next] });
+    set(next);
+  };
 
   return (
     <>
@@ -142,18 +151,52 @@ function Footer({ night }) {
   );
 }
 
+// The widest stage the frame holds, or the narrowest scaled down to it: the frame's height needs no picture chunk.
+function stageFor(stages, width) {
+  const stage = [...stages].reverse().find((each) => each.width <= width) ?? stages[0];
+  return { stage, width, scale: Math.min(1, width / stage.width) };
+}
+
+function PictureFrame({ id, picture, theme }) {
+  const body = useRef(null);
+  const [fit, setFit] = useState(null);
+
+  useLayoutEffect(() => {
+    const measure = () => setFit((was) => {
+      const next = stageFor(picture.stages, body.current.clientWidth);
+      return was && was.width === next.width ? was : next;
+    });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(body.current);
+    return () => observer.disconnect();
+  }, [picture.stages]);
+
+  return (
+    <figure className="front-picture">
+      <figcaption className="front-picture-bar">{picture.label}</figcaption>
+      {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it. */}
+      <div ref={body} className="front-picture-body" aria-hidden="true" inert="" data-brand={id} data-theme={theme}
+        style={fit ? { height: fit.stage.height * fit.scale } : undefined}>
+        {fit && (
+          <div className="front-picture-stage"
+            style={{ width: fit.width / fit.scale, height: fit.stage.height, transform: fit.scale < 1 ? `scale(${fit.scale})` : undefined }}>
+            <ErrorBoundary fallback={null} onCrash={() => captureError('render', `front-picture-${id}`, '', '/')}>
+              <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /></Suspense>
+            </ErrorBoundary>
+          </div>
+        )}
+      </div>
+    </figure>
+  );
+}
+
 export function BrandLanding() {
   const { resolved: theme } = useAppearance();
-  const { status } = useAuth();
-  const opened = useRef(false);
   const night = theme === 'dark';
   const open = PRODUCTS.filter((product) => product.shell.status === 'open');
 
-  useEffect(() => {
-    if (status === 'loading' || opened.current) return;
-    opened.current = true;
-    track('front_open', { signedIn: status === 'signed-in' });
-  }, [status]);
+  useEffect(() => { track('front_open'); }, []);
 
   return (
     <LandingFrame path="/" look="instrument" header={<Header night={night} />} footer={<Footer night={night} />}>
@@ -188,15 +231,7 @@ export function BrandLanding() {
                 <ArrowLink href={link.href} onFollow={followed('room', link.to, id)}>{link.label}</ArrowLink>
               </div>
             </div>
-            <figure className="front-picture">
-              <figcaption className="front-picture-bar">{picture.label}</figcaption>
-              {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it.
-                  It stands on its own product's ground at the page's hour. */}
-              <div className="front-picture-body" aria-hidden="true" inert="" data-brand={id} data-theme={theme}
-                style={{ '--front-picture-wide': picture.reserve.wide, '--front-picture-narrow': picture.reserve.narrow }}>
-                <Suspense fallback={null}><picture.Picture /></Suspense>
-              </div>
-            </figure>
+            <PictureFrame id={id} picture={picture} theme={theme} />
             <ul className="front-features">
               {features.map((feature) => (
                 <li key={feature.title}>
