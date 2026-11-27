@@ -337,7 +337,7 @@ export function KindLegend({
             )}
 
             {!editing && hover && (
-              k.count > 0 ? (
+              !k.removable ? (
                 <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
                   {k.count}
                 </span>

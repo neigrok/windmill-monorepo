@@ -1016,7 +1016,10 @@ it, the domain's `EffectsRead.follow` (`readEffects`, `model/domainReads.js`). C
 `HeldDelete`, with no structural write yet. For its nine-second Undo window every Board surface reads the held
 projection: cards, counts, identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold
 and projects it into the Graph. The projection is the domain's reading of the delete (`standingWithout`): the held
-steps are absent, so a step that followed one follows what it followed (D-5), as the delete reads once it is written.
+steps are absent, so a step that followed one follows what it followed (D-5). Where the room reads the device's copy,
+that is how the delete reads once it is written. Where it reads roadmap's own sync (the switch off), the commit
+(`BulkDelete` in `sync/materialize.js`) re-links a step only where every step it followed goes, so a step that also
+followed another stands on it alone once the hold ends; that reading goes with roadmap's own sync.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or

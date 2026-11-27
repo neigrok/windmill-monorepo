@@ -34,17 +34,16 @@ export class StepDraft {
     return new StepDraft({ ...this, prerequisites });
   }
 
+  // Where the draft lands, read from the room's reading of the roadmap: Done where the step it edits stands complete,
+  // else Locked while a step it requires is not.
   placement(tree, completed) {
     const draft = this.reconcile(tree);
-    // The draft stands in for the step it edits, which keeps the roadmap it opens.
-    const drafted = { id: draft.id, prerequisites: draft.prerequisites, opening: tree.nodesById.get(draft.id)?.opening };
-    const nodes = [...tree.nodes.filter((step) => step.id !== draft.id), drafted];
-    const { states } = domainReading({ nodes }, { completed });
+    const reading = domainReading(tree, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
-    const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
+    const unmet = prerequisites.filter((step) => reading.states.get(step.id) !== 'complete');
     const unmetLabels = unmet.map((step) => step.label?.trim() ? step.label : STEP_DETAIL.unnamed);
     const preview = placementPreview({ prerequisites, unmet: unmetLabels });
-    const column = COLUMN_OF_STATE[states.get(draft.id)];
+    const column = reading.completed.has(draft.id) ? 'done' : unmet.length ? 'locked' : 'upNext';
     return { column, body: column === 'done' ? null : preview.body };
   }
 

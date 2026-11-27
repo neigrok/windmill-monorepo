@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { domainReading, readEffects, standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
+import { Board } from '../../../../src/products/roadmap/board/Board.js';
 
 test('delete cost names a step keeping another prerequisite, and a step following two of the steps once', () => {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
@@ -88,4 +89,16 @@ test('what attaching a tree does to a hand’s mark: the steps it alone held up 
   const done = new Opening({ treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12 });
   assert.deepEqual([attach(moving(open), ['plan', 'sail'], false), attach(moving(done), ['plan', 'sail'], false), attach(moving(done), ['plan'], false)],
     [[], ['coast', 'maya'], null]);
+});
+
+test('a roadmap under one set of marks is read once for every caller: dated or not, the Board, a state, a step page and a reveal', () => {
+  const t = tree([node('plan', []), node('sail', ['plan']), node('coast', ['sail'])]);
+  const progress = { completed: new Set(['plan']), completedAt: { plan: 5 } };
+  const dated = domainReading(t, progress);
+  assert.equal(domainReading(t, progress).graph, dated.graph);
+  assert.equal(domainReading(t, { completed: progress.completed }).graph, dated.graph, 'a caller with no dates reads the graph already read');
+  assert.equal(readEffects(t, ['sail'], progress).relocks.length, 0);
+  assert.deepEqual(new Board(t, progress, { search: 'coast' }).overall, { done: 1, total: 3 });
+  assert.equal(domainReading(t, progress).graph, dated.graph, 'a Board query reads no other');
+  assert.notEqual(domainReading(t, { completed: new Set(['plan', 'sail']), completedAt: {} }).graph, dated.graph, 'other marks are another reading');
 });

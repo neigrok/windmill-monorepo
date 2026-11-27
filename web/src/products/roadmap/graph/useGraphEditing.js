@@ -196,8 +196,9 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!nodes || !session) return;
     const selected = selectedIdRef.current;
     const anchored = selected && nodes.some((node) => node.id === selected);
-    // Under the step selected, else where the domain lands a paste: the roadmap's first starting step.
-    const targetId = (anchored ? selected : readEffects(treeRef.current, [])?.under) ?? null;
+    // Under the step selected, else where the domain lands a paste: the first starting step of the roadmap the room holds,
+    // its loops kept, which the picture drops to draw it.
+    const targetId = (anchored ? selected : readEffects(projectionRef.current, [])?.under) ?? null;
 
     const graft = graftPlan({
       parse,

@@ -21,9 +21,8 @@ function room(t) {
   const session = new SyncSession({ treeId: 'sail', registry: null, store: { save: () => Promise.resolve() }, reportFailure: () => {} });
   session.seed(SAIL);
   const projectionRef = { current: session.lattice.toTreeData() };
-  // The room's tree follows its projection, as the room's structure keeps it.
-  const treeRef = { current: new SkillTree(projectionRef.current) };
-  session.onTreeChanged((data) => { projectionRef.current = data; treeRef.current = new SkillTree(data); });
+  session.onTreeChanged((data) => { projectionRef.current = data; });
+  const treeRef = { current: null };
   const standingTreeRef = { current: null };
   const toasts = [];
   const selectedIdRef = { current: null };

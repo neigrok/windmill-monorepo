@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../../../telemetry/beacon.js';
 import { LegendStore } from '../../persistence/LegendStore.js';
-import { deriveLegend, withCounts, freeHue, addKind, recolorKind } from '../../model/Legend.js';
+import { deriveLegend, freeHue, addKind, recolorKind } from '../../model/Legend.js';
+import { readLegend } from '../../model/domainReads.js';
 import { onceLanded } from '../../board/acts.js';
 
 const legendStore = new LegendStore();
@@ -78,11 +79,11 @@ export function useLegend({ seedRef, sessionRef, projectionRef, sceneRef }) {
     saved(session.dispatch({ kind: 'AddKind', id: added.id, hue: added.hue }), 'add');
   }, [sessionRef]);
 
-  // Remove is offered only for a kind no node wears; read the editor's live nodes against a stale click.
+  // Remove is offered only for a kind the domain lets go (`LegendRead.removable`, none a node wears); read the editor's
+  // live nodes against a stale click.
   const onRemoveKind = useCallback((id) => {
     const nodes = projectionRef.current?.nodes ?? [];
-    const target = withCounts(legendRef.current, nodes).find((kind) => kind.id === id);
-    if (!target || target.count > 0) return;
+    if (!readLegend(legendRef.current, nodes).removable.some((kind) => kind.id === id)) return;
     const session = sessionRef.current;
     if (!session) return;
     saved(session.dispatch({ kind: 'RemoveKind', id }), 'remove');

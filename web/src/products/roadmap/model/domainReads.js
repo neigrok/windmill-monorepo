@@ -7,7 +7,7 @@
 import { completedOf } from '../domain/account.js';
 import { FollowGraph } from '../domain/graph.js';
 import { BoardRead, EffectsRead, LegendRead } from '../domain/reads.js';
-import { RoadmapTree } from '../domain/records.js';
+import { Kind, RoadmapTree } from '../domain/records.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { SkillTree } from './SkillTree.js';
 
@@ -16,7 +16,6 @@ export const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete
 
 // No step: none marked, none absent.
 const NONE = new Set();
-const UNDATED = {};
 
 // The roadmap's records as the domain reads them: its steps in the room's order, `absent` ones deleted, each linked from
 // the steps it follows, the person's complete marks, and a pointer for each step that opens a roadmap.
@@ -34,54 +33,89 @@ function recordsOf(tree, completed, absent = NONE) {
   });
 }
 
-// One roadmap under one set of marks: the domain's graph, complete as each step's opening or mark makes it, and dated
-// as `progress.completedAt` dates it.
+// One roadmap under one set of marks, read once: its records, what stands complete as each step's opening or mark makes
+// it, and the domain's graph of them for each set of dates the room gives, built when first asked.
 class RoomReading {
+  #graphs = new WeakMap();
+  #undated = null;
   #states = null;
-  #completed = null;
 
-  constructor(tree, completed, completedAt) {
+  constructor(tree, completed) {
     const openings = new Map(tree.nodes.flatMap((step) => (step.opening ? [[step.id, step.opening]] : [])));
-    const records = recordsOf(tree, completed);
-    this.graph = new FollowGraph(records, completedOf(records, (id) => openings.get(id)), new Map(Object.entries(completedAt)));
+    this.marks = completed;
+    this.records = recordsOf(tree, completed);
+    this.completed = completedOf(this.records, (id) => openings.get(id));
     Object.freeze(this);
   }
 
-  // Each step's state, by id.
-  get states() {
-    this.#states ??= new Map(this.graph.states);
-    return this.#states;
+  // The graph dated as `completedAt` dates the marks; asked with no dates, the first already read, since only the dates
+  // differ between them.
+  graph(completedAt = null) {
+    if (completedAt === null) {
+      this.#undated ??= new FollowGraph(this.records, this.completed, new Map());
+      return this.#undated;
+    }
+    if (!this.#graphs.has(completedAt)) {
+      const graph = new FollowGraph(this.records, this.completed, new Map(Object.entries(completedAt)));
+      this.#graphs.set(completedAt, graph);
+      this.#undated ??= graph;
+    }
+    return this.#graphs.get(completedAt);
   }
 
-  // The steps that stand complete.
-  get completed() {
-    this.#completed ??= new Set(this.graph.ids.filter((_, slot) => this.graph.done[slot] === 1));
-    return this.#completed;
+  // Each step's state, by id, which no date changes.
+  get states() {
+    this.#states ??= new Map(this.graph().states);
+    return this.#states;
   }
 }
 
-// tree → completed → completedAt → its reading, so each change of the roadmap or the marks reads it once.
+// tree → completed → its reading, so each change of the roadmap or the marks reads it once; and the latest reading of
+// each tree, which marks the same as it hold read again, and whose structure answers what no mark changes.
 const readings = new WeakMap();
+const latest = new WeakMap();
+
+/** @param {Set<string>} a @param {Set<string>} b */
+function sameMarks(a, b) {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
 
 function cached(map, key, make) {
   if (!map.has(key)) map.set(key, make());
   return map.get(key);
 }
 
-// The domain's reading of the room's roadmap under `progress` (`{completed, completedAt?}`), none marked where it is null.
+function readingOf(tree, completed) {
+  const last = latest.get(tree);
+  const reading = last && sameMarks(last.marks, completed) ? last
+    : cached(cached(readings, tree, () => new WeakMap()), completed, () => new RoomReading(tree, completed));
+  latest.set(tree, reading);
+  return reading;
+}
+
+// The domain's graph of what no mark changes, what each step follows and what follows it, its kind and its words: the
+// room's latest reading of the roadmap, else one unmarked.
+function structureOf(tree) {
+  return (latest.get(tree) ?? readingOf(tree, NONE)).graph();
+}
+
+// The domain's reading of the room's roadmap under `progress` (`{completed, completedAt?}`), none marked where it is
+// null: its graph dated as the progress dates it, each step's state and the steps that stand complete.
 export function domainReading(tree, progress = null) {
-  const completed = progress?.completed ?? NONE;
-  const completedAt = progress?.completedAt ?? UNDATED;
-  const byMarks = cached(readings, tree, () => new WeakMap());
-  const byDates = cached(byMarks, completed, () => new WeakMap());
-  return cached(byDates, completedAt, () => new RoomReading(tree, completed, completedAt));
+  const reading = readingOf(tree, progress?.completed ?? NONE);
+  const graph = reading.graph(progress?.completedAt ?? null);
+  return { graph, get states() { return reading.states; }, completed: reading.completed };
 }
 
 // The domain's `EffectsRead` of `ids` over the room's roadmap: what a delete, a Reset, an attach or a new link would do.
-// `asked` names a draft's sides (`links`) or a roadmap attached (`attach: {complete}`).
+// `asked` names a draft's sides (`links`) or a roadmap attached (`attach: {complete}`). With no `progress`, only what no
+// mark changes is asked, read from the room's latest reading: what follows, the starting steps, the loops.
 export function readEffects(tree, ids, progress = null, asked = {}) {
   if (!tree) return null;
-  return new EffectsRead(domainReading(tree, progress).graph, ids, asked);
+  return new EffectsRead(progress === null ? structureOf(tree) : domainReading(tree, progress).graph, ids, asked);
 }
 
 // The domain's Board of the room's roadmap under `progress`, narrowed and ordered by `query`.
@@ -89,19 +123,36 @@ export function readBoard(tree, progress, query) {
   return new BoardRead(domainReading(tree, progress).graph, query);
 }
 
+// The parts of a Board's query that alone hide the step it reveals (`query.reveal`): what a step follows, its kind and its
+// words, which no mark changes, read from the room's latest reading of the roadmap.
+export function readRevealing(tree, query) {
+  return BoardRead.revealing(structureOf(tree), query);
+}
+
+// What a step follows, as the domain reads it: present steps, in authored order, which no mark changes.
+export function readFollowed(tree, id) {
+  return structureOf(tree).followed(id).map((followed) => followed.id);
+}
+
 // The domain's legend of the room's kinds (`{id?, hue, label?, description?}`, in the room's order, each born in it, one
 // with no id known by its hue) and of the steps wearing their colours: what it shows, the kinds a step may wear, the
-// free hue and the Board's filter.
-export function readLegend(legend, nodes = []) {
-  const width = String(Math.max(legend.length, nodes.length)).length;
-  const ord = (place) => String(place).padStart(width, '0');
-  const idOf = (kind) => kind.id ?? kind.hue;
-  const kinds = legend.filter((kind, place) => legend.findIndex((other) => idOf(other) === idOf(kind)) === place);
-  return new LegendRead(new RoadmapTree({
-    id: '',
-    kinds: kinds.map((kind, place) => ({ id: idOf(kind), hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '', ord: ord(place), born: `${place + 1}:0:room` })),
-    nodes: nodes.map((step, place) => ({ id: step.id, color: step.color ?? DEFAULT_NODE_COLOR, ord: ord(place) })),
-  }));
+// free hue, the Board's filter and the kinds that may be removed. One read for each legend and set of steps the room
+// holds, which every surface that asks shares.
+const legends = new WeakMap();
+const NO_STEPS = Object.freeze([]);
+// steps → the colours they wear, as the legend reads them, once for each set of steps.
+const wearing = new WeakMap();
+
+export function readLegend(legend, nodes = NO_STEPS) {
+  return cached(cached(legends, legend, () => new WeakMap()), nodes, () => {
+    const idOf = (kind) => kind.id ?? kind.hue;
+    const kinds = legend.filter((kind, place) => legend.findIndex((other) => idOf(other) === idOf(kind)) === place);
+    const ord = (place) => String(place).padStart(String(kinds.length).length, '0');
+    return new LegendRead({
+      kinds: kinds.map((kind, place) => new Kind({ id: idOf(kind), hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '', ord: ord(place), born: `${place + 1}:0:room` })),
+      nodes: cached(wearing, nodes, () => nodes.map((step) => ({ present: true, color: step.color ?? DEFAULT_NODE_COLOR }))),
+    });
+  });
 }
 
 // tree → the ids a hold names → the roadmap it leaves standing.

@@ -1,7 +1,7 @@
 // Three columns of the domain's Board (`BoardRead`): filter, search and branch narrow the cards, never the states or
 // progress.
 
-import { COLUMN_OF_STATE, domainReading, readBoard } from '../model/domainReads.js';
+import { COLUMN_OF_STATE, domainReading, readBoard, readRevealing } from '../model/domainReads.js';
 
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
 export const DONE_RECENT_LIMIT = 12;
@@ -61,7 +61,7 @@ export class BoardQuery {
 
   // The query with each part that alone hides `step` cleared, as the domain reads them; itself where none does.
   revealing(step, tree) {
-    const cleared = readBoard(tree, null, { ...this, reveal: step.id }).revealing ?? {};
+    const cleared = readRevealing(tree, { ...this, reveal: step.id }) ?? {};
     if (Object.keys(cleared).length === 0) return this;
     return this.with(cleared);
   }

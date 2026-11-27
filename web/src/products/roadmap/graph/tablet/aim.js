@@ -2,11 +2,11 @@
 // A link that closes a loop, as the domain reads its loops, or repeats one the source already has is illegal; multiple
 // parents are fine.
 
-import { domainReading, readEffects } from '../../model/domainReads.js';
+import { readEffects, readFollowed } from '../../model/domainReads.js';
 
 export function illegalTargets(tree, sourceId, direction) {
   const effects = readEffects(tree, [sourceId]);
-  if (direction === 'needs') return new Set([...effects.loops.requires, ...domainReading(tree).graph.followed(sourceId).map((followed) => followed.id)]);
+  if (direction === 'needs') return new Set([...effects.loops.requires, ...readFollowed(tree, sourceId)]);
   return new Set([...effects.loops.opens, ...effects.follow]);
 }
 

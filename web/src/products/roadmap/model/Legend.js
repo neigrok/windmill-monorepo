@@ -20,10 +20,12 @@ export function deriveLegend(nodes, saved) {
   return [...kinds, ...readLegend(kinds, nodes).shown.filter((entry) => entry.kind === null).map((entry) => unlabeledKind(entry.hue))];
 }
 
-// Each kind with how many steps wear its hue, as the domain counts its legend.
+// Each kind with how many steps wear its hue and whether it may be removed, as the domain reads its legend.
 export function withCounts(legend, nodes) {
-  const steps = new Map(readLegend(legend, nodes).shown.map((entry) => [entry.hue, entry.steps]));
-  return legend.map((kind) => ({ ...kind, count: steps.get(kind.hue) ?? 0 }));
+  const read = readLegend(legend, nodes);
+  const steps = new Map(read.shown.map((entry) => [entry.hue, entry.steps]));
+  const removable = new Set(read.removable.map((kind) => kind.id));
+  return legend.map((kind) => ({ ...kind, count: steps.get(kind.hue) ?? 0, removable: removable.has(kind.id ?? kind.hue) }));
 }
 
 export function inUseCount(legend, nodes) {

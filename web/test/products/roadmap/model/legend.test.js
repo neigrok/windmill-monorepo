@@ -115,7 +115,7 @@ test('an empty saved legend is still the saved branch — the seed does not come
   );
 });
 
-test('withCounts tallies a colourless node as the default hue and marks unworn kinds zero', () => {
+test('withCounts tallies a colourless node as the default hue, marks unworn kinds zero and lets them be removed', () => {
   const legend = savedLegend();
   const before = structuredClone(legend);
   const nodes = [
@@ -129,9 +129,9 @@ test('withCounts tallies a colourless node as the default hue and marks unworn k
   const counted = withCounts(legend, nodes);
 
   assert.deepEqual(counted, [
-    { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make', count: 2 },
-    { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out', count: 0 },
-    { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter', count: 2 },
+    { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make', count: 2, removable: false },
+    { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out', count: 0, removable: true },
+    { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter', count: 2, removable: false },
   ]);
   pure(before, legend, counted);
 });

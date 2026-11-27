@@ -161,7 +161,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const desktopEditor = placeKept && !demotion && !knownReader;
   desktopEditorRef.current = desktopEditor;
   useEffect(() => { if (knownReader) sceneRef.current?.setReadOnly?.(); }, [knownReader, scene]);
-  const states = useMemo(() => (tree ? domainReading(tree, { completed }).states : new Map()), [tree, completed]);
+  const states = useMemo(() => (tree ? domainReading(tree, progress).states : new Map()), [tree, progress]);
   useEffect(() => { sceneRef.current?.applyStates(states); }, [states]);
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
   const nodesById = tree?.nodesById ?? new Map();
@@ -305,8 +305,8 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const heldGraphModel = useMemo(() => {
     if (!canvasView || !boardHeld || !boardTree || !renderModel) return renderModel;
     const positions = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
-    return boardTree.toRenderModel(positions, domainReading(boardTree, { completed }).states);
-  }, [canvasView, boardHeld, boardTree, renderModel, completed]);
+    return boardTree.toRenderModel(positions, domainReading(boardTree, progress).states);
+  }, [canvasView, boardHeld, boardTree, renderModel, progress]);
   const graphHeldRef = useRef(false);
   useEffect(() => {
     const held = canvasView && boardHeld !== null;
@@ -314,7 +314,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     graphHeldRef.current = held;
     if (heldGraphModel) sceneRef.current?.applyModel(heldGraphModel);
   }, [canvasView, boardHeld, heldGraphModel]);
-  const boardStats = useMemo(() => (boardTree ? ShareStats.from(boardTree, domainReading(boardTree, { completed }).states) : null), [boardTree, completed]);
+  const boardStats = useMemo(() => (boardTree ? ShareStats.from(boardTree, domainReading(boardTree, progress).states) : null), [boardTree, progress]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
 
   // A step open over either view, and the composer that writes one.
