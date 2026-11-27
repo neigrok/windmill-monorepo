@@ -340,5 +340,69 @@
       "states": [{"id": "p", "state": "available"}],
       "steps": [{"id": "p", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []}]
     }
+  },
+  {
+    "name": "A step deleted beside a surviving parent is read through: its follower still owes what it followed, and completing that opens the follower",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "plan", "present": true, "born": null, "rc": null, "ru": null, "label": "plan", "icon": "x", "color": "terracotta", "ord": "a0", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "rig", "present": true, "born": null, "rc": null, "ru": null, "label": "rig", "icon": "x", "color": "terracotta", "ord": "a1", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "sail", "present": false, "born": null, "rc": null, "ru": null, "label": "sail", "icon": "x", "color": "terracotta", "ord": "a2", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "race", "present": true, "born": null, "rc": null, "ru": null, "label": "race", "icon": "x", "color": "terracotta", "ord": "a3", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "plan", "to": "race", "present": true}, {"from": "sail", "to": "race", "present": true}, {"from": "rig", "to": "sail", "present": true}],
+        "kinds": [],
+        "marks": [{"node": "plan", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1000}],
+        "pointers": []
+      },
+      "subjects": ["race", "rig"]
+    },
+    "expect": {
+      "presentIds": ["plan", "rig", "race"],
+      "states": [{"id": "plan", "state": "complete"}, {"id": "rig", "state": "available"}, {"id": "race", "state": "locked"}],
+      "steps": [
+        {"id": "race", "followed": [{"id": "plan", "incoming": [["plan", "race"]], "throughAbsent": false}, {"id": "rig", "incoming": [["sail", "race"]], "throughAbsent": true}], "unmet": ["rig"], "owed": ["rig"], "owedCount": 1, "unlocks": []},
+        {"id": "rig", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": ["race"]}
+      ]
+    }
+  },
+  {
+    "name": "Completing one of two steps an absent step followed opens nothing: the follower still owes the other through it",
+    "input": {
+      "operation": "graph",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "a0", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "a1", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "gone", "present": false, "born": null, "rc": null, "ru": null, "label": "gone", "icon": "x", "color": "terracotta", "ord": "a2", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "a3", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [{"from": "a", "to": "gone", "present": true}, {"from": "b", "to": "gone", "present": true}, {"from": "gone", "to": "c", "present": true}],
+        "kinds": [],
+        "marks": [],
+        "pointers": []
+      },
+      "subjects": ["a", "c"]
+    },
+    "expect": {
+      "presentIds": ["a", "b", "c"],
+      "states": [{"id": "a", "state": "available"}, {"id": "b", "state": "available"}, {"id": "c", "state": "locked"}],
+      "steps": [
+        {"id": "a", "followed": [], "unmet": [], "owed": [], "owedCount": 0, "unlocks": []},
+        {"id": "c", "followed": [{"id": "a", "incoming": [["gone", "c"]], "throughAbsent": true}, {"id": "b", "incoming": [["gone", "c"]], "throughAbsent": true}], "unmet": ["a", "b"], "owed": ["a", "b"], "owedCount": 2, "unlocks": []}
+      ]
+    }
   }
 ]
