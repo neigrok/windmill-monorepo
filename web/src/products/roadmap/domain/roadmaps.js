@@ -267,7 +267,7 @@ export class DeleteRoadmap {
       }
       // The drawn Coach records of a type about the roadmap or a subtree under it, in id order. A record this build cannot
       // read names no roadmap it can tell, so the delete leaves it to the server's rule (engine A.1) and goes on.
-      /** @param {EntityType<{ id: Id<any>, treeId: string | null }, string>} type */
+      /** @template {{ id: Id<any>, treeId: string | null }} E @param {EntityType<E, string>} type */
       const about = (type) => account.views.visible('drawn', type.type).flatMap((record) => {
         try {
           const value = type.decode(Fields.record(record));
