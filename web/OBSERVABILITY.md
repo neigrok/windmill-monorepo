@@ -328,7 +328,7 @@ unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismi
 the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
 to say, so the room voices no notice and tells no `refusal` step for it.
 
-## Front page and product landings
+## Front page, product landings and the pricing page
 
 The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) and each product's landing (`/roadmap`, `/journal`, `/gym`,
 `src/shell/marketing/ProductLanding.jsx` drawing the page its product supplies) wear one chrome
@@ -339,11 +339,22 @@ product's registry id. Nothing inside a picture frame is a control, so a picture
 `test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js` drive every link and
 control, signed out, signed in and with a link already sent, and hold the events to this table.
 
+The pricing page (`public/pricing.html`) is a static page in the same look and tells the same three events as `page:
+pricing`, through `/events.js` (`scripts/staticEvents.js`), which the build makes every static page in that look link
+under a page it names on `<html data-page>`. It sends each event as it happens, one beacon each, or one keepalive request
+where the browser refuses the beacon; a failed send is dropped and never tried again. It reads the session key `beacon.js`
+keeps, minting it there when none is stored, and is muted on localhost as `beacon.js` is. A link tells `front_link` from
+the `data-to` and `data-product` it carries and the `data-area` around it, each checked against the file's fixed lists; a
+link without them, the skip link, tells nothing. The page's links are links, not controls: Sign in (`sign_in`, the brand
+root's door), the account seat (`settings`) and Feedback (`feedback`, the mail address) each tell `front_link`. The
+switch tells `front_control` when `/appearance.js` announces a pick that moves the check. `test/scripts/staticEvents.test.mjs`
+drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on the page to the labels it tells.
+
 | Step | Event | Allowlisted props |
 |---|---|---|
-| The page opened, once per mount, at its first paint without waiting on the network; the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym` |
-| A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page | `front_link` | `page: front/roadmap/journal/gym`, `area: header/tools/room/ai/sitemap/first/section/feature/closing`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds`, `product?: roadmap/journal/gym` |
-| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+| The page opened, once per mount, at its first paint without waiting on the network (on the pricing page, once per load); the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym/pricing` |
+| A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page. On the pricing page `area` is also its three ways (`ways`) or the footer's last row (`footer`), and `to` also the sign-in door, account settings or the feedback address | `front_link` | `page: front/roadmap/journal/gym/pricing`, `area: header/tools/room/ai/sitemap/first/section/feature/closing/ways/footer`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds/sign_in/settings/feedback`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
 
 A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
 `front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route: once on the

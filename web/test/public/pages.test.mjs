@@ -33,18 +33,23 @@ test('every family page links Support from its footer row, and the 404 lists it'
 });
 
 // A page in the instrument look writes the site's footer by hand; it is the one the front page and the landings draw
-// (SiteChrome.jsx), column by column and link by link, so the two cannot drift.
-test('every instrument page\'s footer has the shared footer\'s columns and links, in its order', async () => {
+// (SiteChrome.jsx), column by column and link by link, each link telling what the shared one tells, so the two cannot drift.
+test('every instrument page\'s footer has the shared footer\'s columns, links and event labels, in its order', async () => {
   const { SITEMAP } = await loadScreen('shell/marketing/SiteChrome.jsx');
   const instrument = pages.filter((name) => /<html\b[^>]*\sdata-look="instrument"/.test(read(name)));
   assert.deepEqual(instrument, ['pricing.html']);
-  const shared = SITEMAP.map(({ title, links }) => ({ title, links: links.map(({ href, label }) => ({ href, label })) }));
+  const shared = SITEMAP.map(({ title, links }) => ({
+    title,
+    links: links.map(({ href, label, to, product }) => ({ href, label, to, ...(product ? { product } : {}) })),
+  }));
   for (const name of instrument) {
     const html = read(name);
     const footer = html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
+    assert.ok(footer.includes('<nav class="site-sitemap-columns" aria-label="Site" data-area="sitemap">'), name);
     const columns = [...footer.matchAll(/<h2 class="site-sitemap-title">([^<]*)<\/h2>\s*<ul>([\s\S]*?)<\/ul>/g)].map(([, title, list]) => ({
       title,
-      links: [...list.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(([, href, label]) => ({ href, label })),
+      links: [...list.matchAll(/<a href="([^"]+)" data-to="([^"]+)"(?: data-product="([^"]+)")?>([^<]*)<\/a>/g)]
+        .map(([, href, to, product, label]) => ({ href, label, to, ...(product ? { product } : {}) })),
     }));
     assert.deepEqual(columns, shared, name);
   }

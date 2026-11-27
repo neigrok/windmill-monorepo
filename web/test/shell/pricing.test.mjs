@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LABELS } from '../../scripts/staticEvents.js';
 
 const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const pricing = fs.readFileSync(path.join(WEB, 'public', 'pricing.html'), 'utf8');
@@ -55,6 +56,36 @@ test('the visible questions and the FAQ data are one list, and the page carries 
   const shown = [...body.matchAll(/<div><dt>([^<]*)<\/dt><dd>([^<]*)<\/dd><\/div>/g)].map(([, question, answer]) => [question, answer]);
   assert.equal(shown.length, 8);
   assert.deepEqual(data.mainEntity, shown.map(([name, answer]) => ({ '@type': 'Question', name, acceptedAnswer: { '@type': 'Answer', text: answer } })));
+});
+
+// /events.js tells a link by the labels it carries and the area around it; the skip link alone tells nothing. Read in
+// document order, an area holds the links up to the next one, which is how this page nests them.
+test('every link but the skip link carries the labels of the one event it tells, from the lists /events.js sends', () => {
+  assert.ok(pricing.includes('<html lang="en" data-look="instrument" data-page="pricing">'));
+  let area = null;
+  const links = [...body.matchAll(/<(\w+)\b[^>]*>/g)].flatMap(([tag, name]) => {
+    const attribute = (key) => new RegExp(`\\s${key}="([^"]+)"`).exec(tag)?.[1] ?? null;
+    area = attribute('data-area') ?? area;
+    if (name !== 'a') return [];
+    return [[attribute('href'), attribute('data-to') && area, attribute('data-to'), attribute('data-product')]];
+  });
+  assert.deepEqual(links, [
+    ['#content', null, null, null],
+    ['/', 'header', 'home', null],
+    ['/roadmap', 'header', 'landing', 'roadmap'], ['/gym', 'header', 'landing', 'gym'], ['/journal', 'header', 'landing', 'journal'],
+    ['/pricing.html', 'header', 'pricing', null],
+    ['/?signin', 'header', 'sign_in', null], ['/app/settings', 'header', 'settings', null], ['/app', 'header', 'app', null],
+    ['/connect.html', 'ways', 'connect', null],
+    ['/roadmap', 'sitemap', 'landing', 'roadmap'], ['/gym', 'sitemap', 'landing', 'gym'], ['/journal', 'sitemap', 'landing', 'journal'],
+    ['/connect.html', 'sitemap', 'connect', null],
+    ['/pricing.html', 'sitemap', 'pricing', null], ['/changelog.html', 'sitemap', 'changelog', null],
+    ['/gallery', 'sitemap', 'gallery', null], ['/support.html', 'sitemap', 'support', null],
+    ['/privacy.html', 'sitemap', 'privacy', null], ['/terms.html', 'sitemap', 'terms', null], ['/refunds.html', 'sitemap', 'refunds', null],
+    ['mailto:hello@windmill.works', 'footer', 'feedback', null],
+  ]);
+  for (const [, area, to, product] of links.slice(1)) {
+    assert.ok(LABELS.area.includes(area) && LABELS.to.includes(to) && (product === null || LABELS.product.includes(product)), `${area} ${to} ${product}`);
+  }
 });
 
 // The footer's sitemap is held to the shared one in test/public/pages.test.mjs; its last row writes to the feedback address.

@@ -260,8 +260,10 @@ source sitemap to edit. `staticPageAssets.js` checks canonical, Open Graph and T
 and supplies shared fonts, chrome, boot and appearance assets. A page in `public/` names its look on
 `<html data-look>`: with none it wears the family look (`/fonts.css`, `/chrome.css`); `instrument`,
 the pricing page's, links `/instrument.css`, which holds Inter, the brand root's look tokens resolved from
-`styles/tokens/looks.css` and `scripts/staticInstrument.css`. The build fails a page that misses its look's
-links or the box `/appearance.js` fills. Missing landing modules or fallback bodies fail the build.
+`styles/tokens/looks.css` and `scripts/staticInstrument.css`, and `/events.js` (`scripts/staticEvents.js`), which tells
+the site's events under the page it names on `<html data-page>` ([observability](OBSERVABILITY.md)). The build fails a
+page that misses its look's links, the box `/appearance.js` fills or, in the instrument look, `/events.js` and a page it
+knows. Missing landing modules or fallback bodies fail the build.
 
 Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
 association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.

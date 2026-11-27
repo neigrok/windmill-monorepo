@@ -10,7 +10,8 @@ import { resolveTheme } from './appBoot.js';
 // pick holds for this page where storage refuses it, until another tab's choice arrives),
 // stamps or clears `data-theme="dark"` on <html> the way /boot.js does, and repaints the browser's
 // own chrome the way src/shell/appearance.js paintBrowserChrome does — the ground read off
-// `--surface-canvas` after the stamp, never a literal.
+// `--surface-canvas` after the stamp, never a literal. A pick that moves the check is announced as a
+// bubbling `wm-appearance` event carrying the stored value, for /events.js to tell.
 const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
 
 // Every choice a switch can offer, in the order it offers them: the value src/shell/appearance.js
@@ -36,7 +37,8 @@ for(var i=0;i<P.length;i++){var m=document.querySelector('meta[name="'+P[i][0]+'
 if(!m.getAttribute('data-was'))m.setAttribute('data-was',m.getAttribute('content'));m.setAttribute('content',P[i][1])}}
 function render(){var t=resolved(),v=withAuto?chosen():t;group.setAttribute('data-resolved',t);for(var i=0;i<radios.length;i++){var on=S[i][0]===v;radios[i].setAttribute('aria-checked',on?'true':'false');radios[i].setAttribute('tabindex',on?'0':'-1')}}
 function apply(){paint(resolved());render()}
-function choose(v){picked=v;try{localStorage.setItem(KEY,v)}catch(e){}apply()}
+function choose(v){var was=withAuto?chosen():resolved();picked=v;try{localStorage.setItem(KEY,v)}catch(e){}apply();
+if(v!==was&&typeof CustomEvent==='function')group.dispatchEvent(new CustomEvent('wm-appearance',{bubbles:true,detail:v}))}
 group.removeAttribute('aria-hidden');group.setAttribute('role','radiogroup');group.setAttribute('aria-label','Appearance');
 var thumb=document.createElement('span');thumb.className='wm-appearance-thumb';thumb.setAttribute('aria-hidden','true');group.appendChild(thumb);
 for(var n=0;n<S.length;n++){(function(n,value,label,icon){var b=document.createElement('button');b.type='button';b.className='wm-appearance-segment';

@@ -2,13 +2,14 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { declarations, readGrounds, staticBootScript } from './appBoot.js';
 import { staticAppearanceScript } from './staticAppearance.js';
+import { LABELS, staticEventsScript } from './staticEvents.js';
 import { KEY } from '../src/shell/appearance.js';
 
 const require = createRequire(import.meta.url);
 
 // Serves what the plain HTML pages in public/ link — each look's sheets with the faces they name under /fonts/,
-// /boot.js, the theme stamp, and /appearance.js, the appearance switch — by middleware in dev and emitted into dist
-// at build.
+// /boot.js, the theme stamp, /appearance.js, the appearance switch, and /events.js, the instrument look's events — by
+// middleware in dev and emitted into dist at build.
 
 // A face is the package sheet that declares it (the aggregate one: per-subset entry files omit unicode-range) and
 // the woff2 file it names there.
@@ -24,8 +25,8 @@ const INSTRUMENT_FACES = ['latin-ext', 'latin'].map((subset) => (
   { sheet: '@fontsource-variable/inter/index.css', file: `inter-${subset}-wght-normal.woff2` }));
 
 // The looks a page in public/ can wear, named on its <html data-look> (a page that names none wears the family look):
-// the files it must link, and the empty box /appearance.js fills, reserved in the HTML so the deferred mount moves
-// nothing.
+// the files it must link, the empty box /appearance.js fills, reserved in the HTML so the deferred mount moves
+// nothing, and whether it tells the site's events, as the front page in that look does.
 const FAMILY_BOX = '<span class="wm-appearance" aria-hidden="true"></span>';
 const INSTRUMENT_BOX = '<span class="wm-appearance" data-choices="system light dark" aria-hidden="true"></span>';
 const LOOKS = {
@@ -38,6 +39,7 @@ const LOOKS = {
     links: ['instrument.css', 'boot.js', 'appearance.js'],
     box: new RegExp(`<div class="site-switch">\\s*${INSTRUMENT_BOX}\\s*</div>`),
     boxPlace: `hold ${INSTRUMENT_BOX} alone in .site-switch`,
+    tellsEvents: true,
   },
 };
 
@@ -58,6 +60,10 @@ export function checkStaticPage(page, html) {
   }
   if (!look.box.test(html)) {
     throw new Error(`public/${page} does not ${look.boxPlace} — /appearance.js mounts into that box, and reserving it in the HTML is what keeps the page from sliding when the script lands`);
+  }
+  const named = /<html\b[^>]*\sdata-page="([^"]*)"/.exec(html)?.[1];
+  if (look.tellsEvents && !(LABELS.page.includes(named) && html.includes('<script defer src="/events.js"></script>'))) {
+    throw new Error(`public/${page} wears the ${lookName} look but does not name its page on <html data-page> (${LABELS.page.join(' or ')}) and link /events.js deferred — it would tell none of the site's events`);
   }
 
   const canonical = /<link rel="canonical" href="([^"]+)"/.exec(html)?.[1];
@@ -143,6 +149,7 @@ export function staticPageAssets() {
     ].join('\n\n')],
     ['boot.js', staticBootScript(grounds, KEY)],
     ['appearance.js', staticAppearanceScript(KEY)],
+    ['events.js', staticEventsScript()],
   ]);
 
   for (const page of fs.readdirSync(PAGES).filter((name) => name.endsWith('.html'))) {

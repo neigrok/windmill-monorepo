@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-look="instrument">
+<html lang="en" data-look="instrument" data-page="pricing">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -155,23 +155,24 @@
 <script>try{var h=JSON.parse(localStorage.getItem("windmill:auth-hint")||"null");document.documentElement.setAttribute("data-auth",h&&h.status==="signed-in"&&h.user?"in":"out")}catch(e){document.documentElement.setAttribute("data-auth","out")}</script>
 <script defer src="/nav-auth.js"></script>
 <script defer src="/appearance.js"></script>
+<script defer src="/events.js"></script>
 </head>
 <body>
 <a class="site-skip" href="#content">Skip to content</a>
 
-<header class="site-header">
+<header class="site-header" data-area="header">
   <div class="site-wrap site-header-row">
-    <a class="site-brand" href="/" aria-label="Windmill, home"><img class="site-mark-day" src="/brand-mark.svg" alt="" width="24" height="24"><img class="site-mark-night" src="/brand-mark-night.svg" alt="" width="24" height="24"><span>Windmill</span></a>
+    <a class="site-brand" href="/" aria-label="Windmill, home" data-to="home"><img class="site-mark-day" src="/brand-mark.svg" alt="" width="24" height="24"><img class="site-mark-night" src="/brand-mark-night.svg" alt="" width="24" height="24"><span>Windmill</span></a>
     <nav class="site-nav" aria-label="Primary">
-      <a href="/roadmap">Roadmap</a>
-      <a href="/gym">Gym</a>
-      <a href="/journal">Journal</a>
-      <a href="/pricing.html" aria-current="page">Pricing</a>
+      <a href="/roadmap" data-to="landing" data-product="roadmap">Roadmap</a>
+      <a href="/gym" data-to="landing" data-product="gym">Gym</a>
+      <a href="/journal" data-to="landing" data-product="journal">Journal</a>
+      <a href="/pricing.html" aria-current="page" data-to="pricing">Pricing</a>
     </nav>
     <div class="site-cluster">
-      <a class="site-signin au-out" href="/?signin">Sign in</a>
-      <a class="site-seat au-in" href="/app/settings" aria-label="Account settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c0-4 3.4-6.4 7.5-6.4S19.5 16 19.5 20"/></svg></a>
-      <a class="site-pill" href="/app">Open Windmill</a>
+      <a class="site-signin au-out" href="/?signin" data-to="sign_in">Sign in</a>
+      <a class="site-seat au-in" href="/app/settings" aria-label="Account settings" data-to="settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c0-4 3.4-6.4 7.5-6.4S19.5 16 19.5 20"/></svg></a>
+      <a class="site-pill" href="/app" data-to="app">Open Windmill</a>
     </div>
   </div>
 </header>
@@ -185,7 +186,7 @@
   </section>
 
   <section aria-label="Three ways to use Windmill">
-    <ul class="site-wrap site-rule price-ways">
+    <ul class="site-wrap site-rule price-ways" data-area="ways">
       <li>
         <h2>By hand</h2>
         <p class="price-tier">Free</p>
@@ -195,7 +196,7 @@
         <h2>With your own AI</h2>
         <p class="price-tier">Free here</p>
         <p class="price-text">Connect the assistant you already have to Roadmap and Gym. You pay whoever provides it. Windmill charges nothing.</p>
-        <a class="site-link" href="/connect.html">How to connect<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
+        <a class="site-link" href="/connect.html" data-to="connect">How to connect<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
       </li>
       <li>
         <h2>With Windmill’s AI</h2>
@@ -267,27 +268,27 @@
 <footer>
   <div class="site-wrap site-rule site-sitemap">
     <div class="site-brand"><img class="site-mark-day" src="/brand-mark.svg" alt="" width="24" height="24"><img class="site-mark-night" src="/brand-mark-night.svg" alt="" width="24" height="24"><span>Windmill</span></div>
-    <nav class="site-sitemap-columns" aria-label="Site">
+    <nav class="site-sitemap-columns" aria-label="Site" data-area="sitemap">
       <div>
         <h2 class="site-sitemap-title">Rooms</h2>
-        <ul><li><a href="/roadmap">Roadmap</a></li><li><a href="/gym">Gym</a></li><li><a href="/journal">Journal</a></li></ul>
+        <ul><li><a href="/roadmap" data-to="landing" data-product="roadmap">Roadmap</a></li><li><a href="/gym" data-to="landing" data-product="gym">Gym</a></li><li><a href="/journal" data-to="landing" data-product="journal">Journal</a></li></ul>
       </div>
       <div>
         <h2 class="site-sitemap-title">Your own assistant</h2>
-        <ul><li><a href="/connect.html">Connect</a></li></ul>
+        <ul><li><a href="/connect.html" data-to="connect">Connect</a></li></ul>
       </div>
       <div>
         <h2 class="site-sitemap-title">Windmill</h2>
-        <ul><li><a href="/pricing.html">Pricing</a></li><li><a href="/changelog.html">Changelog</a></li><li><a href="/gallery">Gallery</a></li><li><a href="/support.html">Support</a></li></ul>
+        <ul><li><a href="/pricing.html" data-to="pricing">Pricing</a></li><li><a href="/changelog.html" data-to="changelog">Changelog</a></li><li><a href="/gallery" data-to="gallery">Gallery</a></li><li><a href="/support.html" data-to="support">Support</a></li></ul>
       </div>
       <div>
         <h2 class="site-sitemap-title">Legal</h2>
-        <ul><li><a href="/privacy.html">Privacy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/refunds.html">Refunds</a></li></ul>
+        <ul><li><a href="/privacy.html" data-to="privacy">Privacy</a></li><li><a href="/terms.html" data-to="terms">Terms</a></li><li><a href="/refunds.html" data-to="refunds">Refunds</a></li></ul>
       </div>
     </nav>
   </div>
-  <div class="site-wrap site-foot">
-    <a class="site-feedback" href="mailto:hello@windmill.works">Feedback</a>
+  <div class="site-wrap site-foot" data-area="footer">
+    <a class="site-feedback" href="mailto:hello@windmill.works" data-to="feedback">Feedback</a>
     <div class="site-switch">
       <span class="wm-appearance" data-choices="system light dark" aria-hidden="true"></span>
     </div>

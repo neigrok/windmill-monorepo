@@ -36,12 +36,13 @@ function element(tag, page) {
     get firstChild() { return this.children[0] ?? null; },
     addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); },
     fire(type, event = {}) { for (const fn of this.listeners[type] ?? []) fn(event); },
+    dispatchEvent(event) { page.announced.push(event); return true; },
     focus() { page.focused = this; },
   };
 }
 
 function page({ stored = null, prefersDark = false, storageThrows = false, box = true, choices = null } = {}) {
-  const state = { focused: null, storage: new Map(stored === null ? [] : [[KEY, stored]]) };
+  const state = { focused: null, announced: [], storage: new Map(stored === null ? [] : [[KEY, stored]]) };
   const html = element('html', state);
   html.style = { props: {}, setProperty(name, value) { this.props[name] = value; }, removeProperty(name) { delete this.props[name]; } };
   const nav = element('span', state);
@@ -56,6 +57,7 @@ function page({ stored = null, prefersDark = false, storageThrows = false, box =
   const media = { matches: prefersDark, listeners: [], addEventListener(type, fn) { this.listeners.push(fn); } };
   const windowListeners = {};
   const context = {
+    CustomEvent: class { constructor(type, init) { Object.assign(this, { type, ...init }); } },
     document: {
       documentElement: html,
       querySelector: (selector) => (selector === '.wm-appearance' ? reserved : meta[/name="([^"]+)"/.exec(selector)[1]] ?? null),
@@ -82,6 +84,7 @@ function page({ stored = null, prefersDark = false, storageThrows = false, box =
     radio: (label) => radios.find((each) => each.getAttribute('aria-label') === label),
     checked: () => radios.filter((each) => each.getAttribute('aria-checked') === 'true').map((each) => each.getAttribute('aria-label')),
     stored: () => state.storage.get(KEY) ?? null,
+    announced: () => state.announced.splice(0).map(({ type, bubbles, detail }) => [type, bubbles, detail]),
     flipSystem(dark) { media.matches = dark; for (const fn of media.listeners) fn({ matches: dark }); },
     otherTab(key, value) {
       if (value === null) state.storage.delete(key); else state.storage.set(key, value);
@@ -317,4 +320,22 @@ test('the toggle\'s chrome is token-valued and hides the word, not the name, on 
   assert.match(rules, /@media \(max-width: 479px\) \{[^\n]*\.wm-appearance-word \{ display: none; \}/);
   assert.match(rules, /\.wm-appearance\[data-resolved="dark"\] \.wm-appearance-thumb \{ transform: translateX/);
   assert.equal(SCRIPT.includes("setAttribute('aria-label',label)"), true, 'the word on the button survives its label being hidden');
+});
+
+// /events.js tells a pick as the front page's footer does: only one that moves the check, so a segment already in use
+// tells nothing, though picking it still stores the choice.
+test('a pick that moves the check is announced as a bubbling wm-appearance event carrying the stored value', () => {
+  const p = page({ prefersDark: true });
+  p.radio('Dark').fire('click');
+  assert.equal(p.stored(), 'dark');
+  assert.deepEqual(p.announced(), [], 'the device already showed Dark');
+  p.radio('Light').fire('click');
+  p.radio('Light').fire('click');
+  p.radio('Light').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(p.announced(), [['wm-appearance', true, 'light'], ['wm-appearance', true, 'dark']]);
+  const auto = page({ choices: 'system light dark', prefersDark: true });
+  auto.radio('Auto').fire('click');
+  auto.radio('Dark').fire('click');
+  auto.radio('Dark').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(auto.announced(), [['wm-appearance', true, 'dark'], ['wm-appearance', true, 'system']], 'with Auto the check is the choice, so Dark on a dark device moves it');
 });
