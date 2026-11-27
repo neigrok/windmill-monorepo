@@ -1152,10 +1152,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   library owner should correct the primitive sizing before replacing that adapter with an instance.
 - **Gallery controls.** Search/filter thresholds in `galleryIndex.js` are not rendered by
   `BrowsePage.jsx` and are not current controls.
-- **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
-  are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
-  that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
-  Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
 - **Design system · Figma library focus effect.** The library's `shadow/focus-ring` effect still uses
   terracotta-100. The design-system owner must align it with the approved light focus ring:
   2px `surface/canvas` gap plus a 2px terracotta-500 ring
@@ -1286,10 +1282,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   halo. Choose one treatment and align shader and specimen.
 - **F32 · Quest roster icons.** An optional `node.icon` can leave an empty reserved glyph well.
   Give the roster a fallback or remove the unused well.
-- **F50 · Marketing silhouettes.** The app uses bubble layout; `marketing/treeScenes.js` and
-  the Marketing drawings use authored radial compositions. Redraw the marketing scenes in bubble
-  while preserving their names, progress states and unlock ceremony. Engine output alone does not
-  define the marketing framing. Gallery portraits and minimap use the live canvas positions.
+- **F50 · Marketing silhouettes.** The app uses bubble layout; the site's composed trees
+  (`marketing/ComposedTree.jsx`, on the front page and the Roadmap landing) are hand-placed left-to-right
+  compositions, as the approved Marketing boards draw them, with the room's states and rule. The ready paths
+  on the landing use the room's own `QuestThumb`. Gallery portraits and minimap use the live canvas positions.
 - **21 · The fruit tiers in daylight.** The locked fruit is `color-mix(kind 18%, transparent)` with a
   35% ring; the fill measures **1.14–1.29:1** against the canvas in both themes, so a locked step and
   an available step of the same kind differ by an 11px smudge on a phone in daylight. Not a token

@@ -11,7 +11,7 @@ const entry = `
 import React, { Suspense, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
-import { LandingPage } from '/src/shell/marketing/LandingChrome.jsx';
+import { SiteFrame, SiteHeader } from '/src/shell/marketing/SiteChrome.jsx';
 import { PageFrame } from '/src/shell/PageFrame.jsx';
 import { ProductSessions } from '/src/shell/ProductSessions.jsx';
 import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
@@ -35,7 +35,7 @@ function App() {
   const [route, setRoute] = useState('shell');
   window.showRoute = setRoute;
   const children = route === 'shell' ? React.createElement(Shell, { location: { pathname: '/app', hash: '', search: '' }, neutral: { Component: Fixed } })
-    : route === 'landing' ? React.createElement(LandingPage, { links: [{ href: '/help', label: 'Help' }], cta: { label: 'Open Windmill', href: '/app' } }, React.createElement('h1', { id: 'page-content' }, 'Current route'))
+    : route === 'landing' ? React.createElement(SiteFrame, { path: '/', header: React.createElement(SiteHeader, { page: 'front', night: false }) }, React.createElement('h1', { id: 'page-content' }, 'Current route'))
     : route === 'fallback' ? React.createElement(Suspense, { fallback: React.createElement(PageFrame, null, React.createElement(Fixed)) }, React.createElement(Pending))
     : React.createElement(PageFrame, null, React.createElement(Fixed));
   return React.createElement(ProductSessions, { dataScope: scope.read, products: [{ session: { Provider: StepDraftProvider, Notice: StepDraftNotice } }] }, children);
@@ -90,7 +90,7 @@ for (const width of [320, 390, 744, 1440]) for (const theme of ['light', 'dark']
         await page.locator('.st-draft-notice').waitFor();
         const geometry = await page.evaluate(() => {
           const notice = document.querySelector('.st-draft-notice').getBoundingClientRect();
-          const header = document.querySelector('.wm-head, .landing-header')?.getBoundingClientRect();
+          const header = document.querySelector('.wm-head, .front-header')?.getBoundingClientRect();
           const content = document.querySelector('#page-content').getBoundingClientRect();
           return { count: document.querySelectorAll('.st-draft-notice').length, height: notice.height, top: notice.top, headerBottom: header?.bottom ?? 0,
             contentTop: content.top, noticeBottom: notice.bottom, text: document.querySelector('.st-draft-notice').innerText };

@@ -1,0 +1,90 @@
+/* Roadmap's pictures on its landing (LandingPictures.jsx), one rule set per picture and stage. Each fills the stage it
+   is given, its contents centred; the trees are composedTree.css's. */
+:where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) { box-sizing: border-box; height: 100%; font-family: var(--font-body); }
+:where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) :where(p, dl, dd, ul) { margin: 0; padding: 0; }
+
+/* ---- the sail tree on the page's ground, and the toast its last finished step left ---- */
+.rmHero { position: relative; display: flex; justify-content: center; background: var(--look-ground); }
+.rmHero .rmTree { --rm-plate: var(--look-ground); }
+.rmHero[data-stage="wide"] .plq { left: 98px; top: 20px; }
+.rmHero[data-stage="narrow"] .plq { left: 8px; top: 20px; }
+.rmHero-toast { position: absolute; left: 50%; top: 486px; transform: translateX(-50%); z-index: 10; padding: 9px 18px;
+                border-radius: var(--radius-full); background: var(--surface-inverse); color: var(--neutral-50);
+                font-size: 13px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+[data-theme="dark"] .rmHero-toast { border: 1px solid var(--border-strong); background: var(--surface-card); color: var(--text-primary); }
+
+/* ---- a step finishing, an arrow, the steps it opens ---- */
+.rmUnlock { display: flex; align-items: center; justify-content: center; gap: 40px; padding: 48px 20px; }
+.rmUnlock-arrow { display: flex; flex: none; color: var(--look-ink-3); }
+.rmBeat { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.rmBeat-world { width: 480px; height: 285px; }
+.rmBeat-world .rmTree { transform: scale(1.5); transform-origin: 0 0; }
+.rmBeat-caption { font-family: var(--font-mono); font-size: 13px; line-height: 20px; color: var(--text-tertiary); }
+.rmUnlock[data-stage="narrow"] { flex-direction: column; gap: 14px; padding: 20px 16px 24px; }
+.rmUnlock[data-stage="narrow"] .rmBeat { gap: 8px; }
+.rmUnlock[data-stage="narrow"] .rmBeat-world { width: 320px; height: 190px; }
+.rmUnlock[data-stage="narrow"] .rmBeat-world .rmTree { transform: none; }
+.rmUnlock[data-stage="narrow"] .rmUnlock-arrow { transform: rotate(90deg); }
+
+/* ---- the ready paths, as cards of the room's shelf ---- */
+.rmPaths { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 48px 20px; }
+.rmPaths-card { position: relative; display: flex; flex-direction: column; flex: none; width: 273px; height: 201px; overflow: hidden;
+                border: 1px solid var(--border-subtle); border-radius: var(--look-radius-inner); background: var(--surface-card); }
+.rmPaths-rule { flex: none; height: 3px; }
+.rmPaths-thumb { display: block; flex: 1; min-height: 0; padding: 8px 14px 0; background: var(--surface-canvas); border-bottom: 1px solid var(--border-subtle); }
+.rmPaths-thumb .quest-thumb { display: block; width: 100%; height: 100%; }
+.rmPaths-meta { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 14px 16px; }
+.rmPaths-meta > span:first-child { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.rmPaths-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; line-height: 1.2; color: var(--text-primary); }
+.rmPaths-readout { font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--text-tertiary); white-space: nowrap; }
+.rmPaths-dots { display: flex; gap: 4px; padding-bottom: 2px; }
+.rmPaths-dots i { width: 7px; height: 7px; border-radius: 50%; }
+.rmPaths[data-stage="narrow"] { flex-direction: column; gap: 16px; padding: 16px; }
+.rmPaths[data-stage="narrow"] .rmPaths-card { width: 326px; }
+
+/* ---- a step's page: its state, what it requires and opens, and the workspace that is only the owner's ---- */
+.rmStep { display: flex; align-items: center; justify-content: center; padding: 48px 16px; }
+.rmStep-panel { display: flex; flex-direction: column; box-sizing: border-box; width: 268px; padding: 24px 23px;
+                border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-card); color: var(--text-primary); }
+.rmStep-state { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; line-height: 14px; color: var(--accent-terracotta-600); }
+.rmStep-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--kind-terracotta); }
+.rmStep-name { margin-top: 12px; font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 32px; }
+.rmStep-about { margin-top: 10px; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.rmStep-links { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; font-size: 12px; line-height: 16px; }
+.rmStep-links div { display: flex; justify-content: space-between; }
+.rmStep-links dt { font-weight: 700; color: var(--text-secondary); }
+.rmStep-links dd { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.rmStep-workspace { display: flex; justify-content: space-between; margin-top: 16px; font-size: 12px; font-weight: 700; line-height: 16px; color: var(--text-secondary); }
+.rmStep-workspace span { font-weight: 600; color: var(--text-tertiary); }
+.rmStep-subtasks { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; padding: 14px 16px; list-style: none;
+                   border-radius: 12px; background: var(--surface-canvas); font-size: 12px; line-height: 16px; font-weight: 700; }
+.rmStep-subtasks li { display: flex; align-items: center; gap: 10px; }
+.rmStep-subtasks li.is-done { font-weight: 600; color: var(--text-secondary); }
+.rmStep-box { display: flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; box-sizing: border-box;
+              border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--surface-card); color: var(--text-on-accent); }
+.is-done .rmStep-box { border-color: var(--accent-terracotta-600); background: var(--accent-terracotta-600); }
+.rmStep-tally { margin-top: 8px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--text-tertiary); }
+.rmStep-note { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--surface-hover); font-size: 12px; line-height: 16px; }
+.rmStep-note b { font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.rmStep-note p { margin-top: 6px; }
+.rmStep-complete { display: flex; align-items: center; justify-content: center; height: 44px; margin-top: 14px; border-radius: var(--radius-full);
+                   background: var(--accent-terracotta-600); color: var(--text-on-accent); font-weight: 700; font-size: 15px; }
+/* The step page has no night drawing: its night colours are the boards' hand mapping. */
+[data-theme="dark"] .rmStep-panel { border-color: #2E2E32; background: #171719; color: #F2F0EB; }
+[data-theme="dark"] :is(.rmStep-about, .rmStep-links dt, .rmStep-workspace, .rmStep-subtasks li.is-done, .rmStep-note b) { color: #B4B2AC; }
+[data-theme="dark"] :is(.rmStep-links dd, .rmStep-workspace span, .rmStep-tally) { color: #86847E; }
+[data-theme="dark"] .rmStep-subtasks { background: #0B0B0C; }
+[data-theme="dark"] .rmStep-note { background: #222224; }
+[data-theme="dark"] .rmStep-state { color: #D98B5F; }
+[data-theme="dark"] .rmStep-box { border-color: #4A4A50; background: #171719; }
+[data-theme="dark"] :is(.is-done .rmStep-box, .rmStep-complete) { border-color: #D98B5F; background: #D98B5F; color: #1B1408; }
+
+/* ---- a published tree and its fork ---- */
+.rmFork { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 36px; padding: 48px 16px; }
+.rmFork-tree { width: 780px; height: 300px; }
+.rmFork-tree .rmTree { transform: scale(1.5); transform-origin: 0 0; }
+.rmFork-pill { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 22px; border-radius: var(--radius-full);
+               background: var(--color-brand); color: var(--text-on-accent); font-weight: 800; font-size: 14px; }
+.rmFork[data-stage="narrow"] { gap: 24px; padding: 24px 16px; }
+.rmFork[data-stage="narrow"] .rmFork-tree { width: 326px; height: 200px; }
+.rmFork[data-stage="narrow"] .rmFork-tree .rmTree { transform: none; }

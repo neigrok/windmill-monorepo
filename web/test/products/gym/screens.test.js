@@ -159,7 +159,7 @@ test('Coach is a tab root: a column in the rail, no back link, History its rail 
 });
 
 test('the word coach names exactly one thing — the room — and the share never carries it', () => {
-  for (const file of ['share/share.js', 'share/ShareWorkout.jsx', 'share/SharedSession.jsx', 'marketing/landingHead.js']) {
+  for (const file of ['share/share.js', 'share/ShareWorkout.jsx', 'share/SharedSession.jsx']) {
     assert.equal(speech(file).toLowerCase().includes('coach'), false, file);
   }
   assert.equal(read('share/share.js').includes("SHARE_OFFER = t('gym.share.offer')"), true);
@@ -184,18 +184,15 @@ test('Coach offers nothing to buy, and reads no entitlement to decide whether to
   }
 });
 
-test('the landing sells no panel, no plan behind Coach, and names the cap Coach really has', () => {
-  const said = speech('marketing/GymLanding.jsx');
-  for (const gone of ['coach panel', 'A panel under any finished workout', 'Windmill One', 'It only reads']) {
+test('the landing sells no panel and no plan behind Coach, and names Windmill One only as not on sale', () => {
+  const said = `${speech('marketing/landingPage.js')}\n${speech('marketing/LandingPictures.jsx')}`;
+  for (const gone of ['coach panel', 'ten questions', 'coach link', 'two taps', 'training log', 'tracker', 'works for you', 'does it for you']) {
     assert.equal(said.includes(gone), false, gone);
   }
-  assert.equal(said.includes('ten questions a day'), false, 'Coach has no question ration');
-  assert.equal(said.includes('nothing in Gym is on sale'), true);
-  assert.equal(said.includes('your whole log and it proposes'), true);
-  assert.equal(said.includes('how many of your rows they served'), true);
-  assert.equal(said.includes('log a set, correct one you lifted, or delete anything'), true);
-  assert.equal(said.includes('Coach is a room in the app'), true);
-  assert.equal(said.includes('coach link'), false);
+  assert.equal(said.match(/Windmill One/g).length, 1);
+  assert.equal(said.includes('Windmill One, which is not on sale yet, raises it.'), true);
+  assert.equal(said.includes('It never logs, fixes or deletes a set, never finishes a workout and never writes a weigh-in.'), true);
+  assert.equal(said.includes('No check-ins, no unread badge and no notifications.'), true);
   assert.equal(said.includes('end a share link'), true);
 });
 
@@ -565,7 +562,7 @@ test('the reserved slot is what keeps Apply still, and its height is a declarati
 });
 
 test('no gym copy claims an agent changes a routine of yours directly, or that it writes nothing', () => {
-  const landing = speech('marketing/GymLanding.jsx');
+  const landing = `${speech('marketing/landingPage.js')}\n${speech('marketing/LandingPictures.jsx')}`;
   for (const claim of [
     'writes directly',
     'exactly as it would if you had typed it yourself',
@@ -577,17 +574,11 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
   ]) {
     assert.equal(landing.includes(claim), false, claim);
   }
-  assert.equal(speech('marketing/GymLanding.jsx').includes('the day is yours to edit in Routines'), true);
-  const said = speech('marketing/GymLanding.jsx');
-  assert.equal(said.includes('it never rewrites a day you already have'), true);
-  assert.equal(said.includes('adds lands right away: it takes nothing away'), true);
-  assert.equal(said.includes('Propose next week’s routine — you read the diff and tap Apply.'), true);
-  const levels = speech('marketing/GymLanding.jsx');
-  assert.equal(levels.includes('Record what happened · add a new day or a new movement · propose changes to the days you have'), true);
-  assert.equal(levels.includes('Discard a workout · end a share link · propose a removal'), true);
-  assert.equal(said.includes('LEVEL_LINES.write'), true);
-  assert.equal(said.includes('LEVEL_LINES.delete'), true);
-  assert.equal(said.includes('end a share link, or ask to remove a routine.'), true);
+  assert.equal(landing.includes('a change to a routine you already have still waits for you to apply it'), true);
+  assert.equal(landing.includes('No assistant edits or deletes a logged set, and none writes a weigh-in.'), true);
+  assert.equal(landing.includes('Record what happened · add a new day or a new movement · propose changes to the days you have'), true);
+  assert.equal(landing.includes('Discard a workout · end a share link · propose a removal'), true);
+  assert.equal(landing.includes('end a share link, or ask to remove a routine.'), true);
 
   const connect = fs.readFileSync(path.join(GYM, '../../../public/connect.html'), 'utf8');
   assert.equal(connect.includes('keep your routines'), false);
@@ -748,8 +739,8 @@ test('the token bridge: one block per skin, and no shared role pointed back at g
   // the same tokens through the same file, not a copy.
   assert.equal(/--focus-ring:|--text-on-accent:|--color-danger:/.test(css), false);
   assert.equal(css.startsWith("@import './gymTokens.css';"), true);
-  assert.equal(read('marketing/gymLanding.css').startsWith("@import '../gymTokens.css';"), true);
-  assert.equal(/--gym-canvas:|--gym-ink:/.test(read('marketing/gymLanding.css')), false, 'the landing copies no token');
+  assert.equal(read('marketing/landingPictures.css').startsWith("@import '../gymTokens.css';"), true);
+  assert.equal(/--gym-canvas:|--gym-ink:/.test(read('marketing/landingPictures.css')), false, 'the landing copies no token');
 });
 
 test('the picker opens on the six it counted, then the catalogue, and says which is which', () => {
@@ -803,13 +794,7 @@ test('Daylight carries no glow token and no black shadow tuned for the night', (
   assert.equal(/\.gym-entry\.is-dragging \{[^}]*box-shadow: var\(--shadow-md\)/.test(css), true);
 });
 
-test('the exchange and the precondition are on the landing and on the crawlable workbench', () => {
-  const landing = speech('marketing/GymLanding.jsx');
-  assert.equal(landing.includes('<Exchange />'), true);
-  assert.equal(landing.includes('{PRECONDITION}'), true);
-  assert.equal(landing.includes('{EXCHANGE.asked}'), true);
-  assert.equal(landing.includes('{EXCHANGE.landed}'), true);
-
+test('the crawlable workbench carries the exchange and the precondition', () => {
   const connect = fs.readFileSync(path.join(GYM, '../../../public/connect.html'), 'utf8');
   assert.equal(connect.includes('Write me a four-week block'), true);
   assert.equal(connect.includes('an AI tool of your own that speaks MCP'), true);
@@ -818,12 +803,12 @@ test('the exchange and the precondition are on the landing and on the crawlable 
 });
 
 test('no gym landing copy sells a subscription, on the page or in the crawlable shell', () => {
-  const landing = speech('marketing/GymLanding.jsx');
+  const landing = speech('marketing/landingPage.js');
   const head = speech('marketing/landingHead.js');
   for (const source of [landing, head]) {
-    assert.equal(/one subscription|One subscription/.test(source), false);
+    assert.equal(/one subscription|One subscription|\$\d|£\d|€\d/.test(source), false);
   }
-  assert.equal(landing.includes('one account across Roadmap, Journal and Gym'), true);
+  assert.equal(landing.includes('Windmill charges nothing for your own assistant.'), true);
 });
 
 test('no gym surface counts a decline, on the device or on the wire', () => {

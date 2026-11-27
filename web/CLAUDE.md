@@ -119,8 +119,8 @@ Copy is read through a translator from catalogs; English is the only locale.
   such as gym's runtime) and each product's brand-root picture (`marketing/RootPicture.jsx`). `i18n/app/`
   holds the copy of the app's chrome and home: the shell's `/app` chrome and each product's home card.
   `i18n/settings/` holds the copy of the settings page: the shell's page, each product's settings sections,
-  and what they import. A product's `i18n/landing/` holds the copy of its landing page (the module its
-  landing head names, and what it imports). `i18n/` holds the rest and loads with the rooms. Every tier's
+  and what they import. A product's `i18n/landing/` holds the copy of its landing page (the page module its
+  landing head names, the pictures that page loads, and what they import). `i18n/` holds the rest and loads with the rooms. Every tier's
   `t` reads `entry/` and its own catalog, and `settings/` also reads `app/` because the page sits inside the
   app's chrome, so a word lives once, in the latest catalog every file that shows it reads: a word the
   settings page and the chrome share lives in `app/`, and a word two other moments share, such as a landing
@@ -248,9 +248,12 @@ are never logged. This local verification tool sends no product events or Sentry
 ## Static pages and search
 
 `scripts/build-landing-shells.mjs` builds `/`, `/roadmap`, `/journal` and `/gym` from
-`shell/marketing/landingHeads.js` and each product's `marketing/landingHead.js`. These modules
-must be plain Node-readable data: no top-level JSX imports or browser globals. Each landing has
-its own head and no-JS body. Shelf pages live in `public/`.
+`shell/marketing/landingHeads.js`, each product's `marketing/landingHead.js` and the page its registry entry supplies
+(`landing.page`, the product's `marketing/landingPage.js`). These modules must be plain Node-readable data: no top-level
+JSX imports or browser globals. Each landing has its own head; a product's landing's no-JS body is its whole page, written
+by `scripts/productLandingBody.mjs` from the page `shell/marketing/ProductLanding.jsx` draws, with its questions as
+`FAQPage` beside its `SoftwareApplication`, and `test/shell/marketing/ProductLanding.browser.test.js` fails the build when the
+two say different things. Shelf pages live in `public/`.
 
 The build generates `sitemap.xml` from canonical URLs, excluding `noindex` pages; there is no
 source sitemap to edit. `staticPageAssets.js` checks canonical, Open Graph and Twitter metadata
@@ -264,14 +267,14 @@ excluded from indexing. Cloudflare may add managed rules to `public/robots.txt`;
 response when checking crawler access.
 
 Remaining search work: product-specific social cards, a public-tree sitemap, font preloads and
-full landing prerendering. Hash routes cannot be independently indexed. Organization social links
+the brand root's whole page in its first HTML. Hash routes cannot be independently indexed. Organization social links
 and per-quest landing pages have no implementation here.
 
 ## Appearance and boot
 
 `shell/appearance.js` stores the device preference and exposes it through `useAppearance`.
-The app account menu offers Light, Dark and System; the brand root's footer offers the same three as
-Auto, Light and Dark; the product landings' and static pages' controls offer Light and Dark. Browser chrome metadata follows the active room or landing and is restored on unmount.
+The app account menu offers Light, Dark and System; the site's footer on the brand root and the product landings offers
+the same three as Auto, Light and Dark; the static pages' controls offer Light and Dark. Browser chrome metadata follows the active room or landing and is restored on unmount.
 
 `scripts/appBoot.js` stamps theme and ground colour before the bundle arrives. It reads rooms from
 `shell/products.js` and colours from shared tokens, failing when declarations drift. App rooms hide

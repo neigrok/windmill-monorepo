@@ -5,6 +5,7 @@ import { createElement, lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
 import { adoptGymDeviceRows, createGymApi, gymCommandResult, gymDeviceWork, gymLiveHint, signInWork, watchBrowserCopies } from './gymRuntime.js';
+import { frontPicture } from './marketing/frontPicture.js';
 import { t } from './i18n/entry/index.js';
 import { forgetRetiredCoach } from './coach/retiredCoach.js';
 
@@ -15,9 +16,6 @@ const GymApp = lazy(importGymApp);
 const RoutinesGhost = lazy(() => import('./RoutinesGhost.jsx').then((m) => ({ default: m.RoutinesGhost })));
 
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
-
-const importGymLanding = () => import('./marketing/GymLanding.jsx').then((m) => ({ default: m.GymLanding }));
-const GymLanding = lazy(importGymLanding);
 
 const GymSettingsSection = lazy(() => import('./settings/GymSettingsSection.jsx').then((m) => ({ default: m.GymSettingsSection })));
 
@@ -89,8 +87,7 @@ export const gymRoutes = {
   landing: {
     head: gymLandingHead,
     href: '/gym',
-    Component: GymLanding,
-    preload: importGymLanding,
+    page: () => import('./marketing/landingPage.js').then((m) => m.gymLandingPage),
     tagline: t('gym.product.tagline'),
     // What the brand root shows of gym: its row among the three tools and its section.
     root: {
@@ -104,12 +101,7 @@ export const gymRoutes = {
         { title: t('gym.root.progressTitle'), text: t('gym.root.progressText') },
         { title: t('gym.root.phoneTitle'), text: t('gym.root.phoneText') },
       ],
-      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
-      picture: {
-        label: t('gym.root.composed'),
-        stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
-        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.GymPicture }))),
-      },
+      picture: frontPicture,
     },
   },
   shell: {
