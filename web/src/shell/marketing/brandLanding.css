@@ -195,6 +195,7 @@
 
 /* The narrowest phones: the header's three parts still stand whole. */
 @media (max-width: 359px) {
+  .front-header-row { column-gap: 8px; }
   .front-cluster { gap: 8px; }
-  .front-pill { padding: 0 12px; }
+  .front-pill { padding: 0 10px; }
 }
