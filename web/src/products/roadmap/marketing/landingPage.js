@@ -3,7 +3,7 @@
 // Node-readable data. A heading breaks where its words hold a newline; `to` names what a link opens in its event.
 
 import { lazy } from 'react';
-import { roadmapRoutes } from '../routes.js';
+import { frontPicture } from './frontPicture.js';
 import { t } from '../i18n/landing/index.js';
 
 const pictures = () => import('./LandingPictures.jsx');
@@ -28,7 +28,7 @@ export const roadmapLandingPage = {
       key: 'connect',
       title: t('roadmap.root.title', { break: '\n' }),
       paragraph: t('roadmap.landing.connect.paragraph'),
-      picture: roadmapRoutes.landing.root.picture,
+      picture: frontPicture,
       features: [
         { title: t('roadmap.landing.connect.grantTitle'), text: t('roadmap.landing.connect.grantText') },
         { title: t('roadmap.landing.connect.editsTitle'), text: t('roadmap.landing.connect.editsText') },

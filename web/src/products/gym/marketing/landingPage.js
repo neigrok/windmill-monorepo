@@ -3,7 +3,7 @@
 // data. A heading breaks where its words hold a newline; `to` names what a link opens in its event.
 
 import { lazy } from 'react';
-import { gymRoutes } from '../routes.js';
+import { frontPicture } from './frontPicture.js';
 import { t } from '../i18n/landing/index.js';
 
 const pictures = () => import('./LandingPictures.jsx');
@@ -26,7 +26,7 @@ export const gymLandingPage = {
       key: 'coach',
       title: t('gym.landing.coach.title', { break: '\n' }),
       paragraph: t('gym.landing.coach.paragraph'),
-      picture: gymRoutes.landing.root.picture,
+      picture: frontPicture,
       features: [
         { title: t('gym.landing.coach.receiptTitle'), text: t('gym.landing.coach.receiptText') },
         { title: t('gym.landing.coach.askedTitle'), text: t('gym.landing.coach.askedText') },

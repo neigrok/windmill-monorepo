@@ -2,7 +2,7 @@
 // landing's own, out of landingHeads.js and, for a product's landing, the whole page its product supplies.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { LANDING_HEADS, PRODUCT_LANDING_MODULE, SITE_ORIGIN, SITE_SCHEMA } from '../src/shell/marketing/landingHeads.js';
 import { LEGAL_LINKS, LEGAL_SHELF_LABEL, PRODUCT_SHELF_LABEL, SURFACE_LINKS } from '../src/shell/marketing/siteIdentity.js';
 import { PRODUCTS } from '../src/shell/products.js';
@@ -97,10 +97,18 @@ const UNFURL_SENTINELS = ['<!-- meta:unfurl:start -->', '<!-- meta:unfurl:end --
 
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'));
 
+// A module's chunk in the manifest. Rollup gives a product's page chunk no facade, so the manifest keys it by its file:
+// it is the dynamic entry named after the page that lazily loads its own folder's pictures.
+function chunkOf(module) {
+  const name = basename(module, extname(module));
+  return manifest[module] ?? Object.values(manifest).find((entry) => entry.isDynamicEntry && entry.name === name
+    && entry.dynamicImports?.some((imported) => dirname(imported) === dirname(module)));
+}
+
 // The shell's product landing and the product's page, each with its stylesheets.
 function preloadTags(head) {
   const tags = [PRODUCT_LANDING_MODULE, head.module].flatMap((module) => {
-    const entry = manifest[module];
+    const entry = chunkOf(module);
     if (!entry) throw new Error(`build-landing-shells: ${head.path} needs the module ${module}, which is not in the Vite manifest — rename it where it is named or the shell preloads nothing`);
     return [`<link rel="modulepreload" crossorigin href="/${entry.file}">`, ...(entry.css ?? []).map((css) => `<link rel="stylesheet" crossorigin href="/${css}">`)];
   });

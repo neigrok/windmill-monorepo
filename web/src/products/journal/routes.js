@@ -7,6 +7,7 @@ import { CarryOver, forgetClosedAccount, forgetUnclaimedPages, settleSeat } from
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
 import { talkStore } from './talk/talkStore.js';
 import { track } from '../../telemetry/beacon.js';
+import { frontPicture } from './marketing/frontPicture.js';
 import { t } from './i18n/entry/index.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
@@ -100,12 +101,7 @@ export const journalRoutes = {
         { title: t('journal.root.pageTitle'), text: t('journal.root.pageText') },
         { title: t('journal.root.gradedTitle'), text: t('journal.root.gradedText') },
       ],
-      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
-      picture: {
-        label: t('journal.root.composed'),
-        stages: [{ name: 'narrow', width: 356, height: 814 }, { name: 'column', width: 632, height: 659 }, { name: 'wide', width: 1033, height: 472 }],
-        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.JournalPicture }))),
-      },
+      picture: frontPicture,
     },
   },
   shell: {

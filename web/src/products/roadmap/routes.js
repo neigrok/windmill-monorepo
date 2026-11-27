@@ -6,6 +6,7 @@ import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
+import { frontPicture } from './marketing/frontPicture.js';
 import { t } from './i18n/entry/index.js';
 import { YOUR_ROADMAPS } from './identity/HeldDeletion.js';
 import { ROOM_READS_REPLICA } from './replicaRoom.js';
@@ -132,12 +133,7 @@ export const roadmapRoutes = {
         { title: t('roadmap.root.noAccountTitle'), text: t('roadmap.root.noAccountText') },
         { title: t('roadmap.root.shareTitle'), text: t('roadmap.root.shareText') },
       ],
-      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
-      picture: {
-        label: t('roadmap.scene.composed'),
-        stages: [{ name: 'narrow', width: 356, height: 364 }, { name: 'column', width: 720, height: 584 }, { name: 'row', width: 1080, height: 500 }],
-        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.RoadmapPicture }))),
-      },
+      picture: frontPicture,
     },
   },
   shell: {
