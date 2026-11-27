@@ -101,7 +101,7 @@ export class ProductCorpus {
       inScope: (scope, body) => {
         const views = this.views(vector, scope, mint);
         return body({ drawn: views.drawn, stored: views.stored, confirmed: views.confirmed, spent: this.records(vector, scope).spent ?? [],
-          devices: views.devices, firstPullComplete: views.firstPullComplete, now: moment.now.ms });
+          devices: views.devices, firstPullComplete: views.firstPullComplete, replica: views.replica, now: moment.now.ms });
       },
       mintID: (type) => mint(type),
       stage: () => { throw new Fault('an act case decides one act, and stages nothing'); },

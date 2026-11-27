@@ -3422,7 +3422,7 @@ type** (§9.2): `tree`. No type is the headline.
 
 | Type | Scope | Identity | Life | Fields | Rules |
 |---|---|---|---|---|---|
-| `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
+| `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it, and the Coach conversations and proposals about each; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
 | `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, public}, which `opens` at {public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
 | `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
 | `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
@@ -3432,9 +3432,9 @@ type** (§9.2): `tree`. No type is the headline.
 | `subtask` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `label` ≤200 chars, `done` (false), `ord` | Cap 20 000. The owner's only. Replica origin. |
 | `stepLink` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `url` ≤2 048 chars, `title` ≤200 chars, `ord` | Cap 20 000. The owner's only. Replica origin. |
 | `stepNote` | overlay | keyed `ref<node>` | none; `visibleWhen [text]` | text: `text` ≤16 000 chars | The owner's only. Replica origin. |
-| `coachThread` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>` or null (all roadmaps); const: `stepId` ≤128 chars or null, `title` 1–8 000 bytes | Its death kills its messages, their write fates, and its proposals. Replica origin; not a primary type. |
+| `coachThread` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>` or null (all roadmaps); const: `stepId` ≤128 chars or null, `title` 1–8 000 bytes | Its death kills its messages, their write fates, and its proposals. The death of the roadmap it names kills it. Replica origin; not a primary type. |
 | `coachMessage` | self/roadmap | minted g | terminal, spent | const: `threadId` `ref<coachThread>` parent, `role` ∈ {person, coach}, `replica`, `pictures` (`maxItems` 1), `at`; lww: `text` ≤131 072 bytes, `truncated` (false), `refusal` a code or null, `calls` ≤32 768 bytes, `receipts` ≤16 384 bytes, `proposalId` `ref<coachProposal>` or null; ranked `state` (running 0; interrupted 1; completed, declined, failed, stopped 2) | Once the stored `state` is completed, declined, failed or stopped, a delta writing `state`, `text`, `calls` or `receipts` → `turn-final`. Its death kills its write fates. |
-| `coachProposal` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>`; const: `threadId` `ref<coachThread>`, `messageId` `ref<coachMessage>`, `base` ≤262 144 bytes of JSON, `changes` (`maxItems` 100 of JSON, ≤65 536 bytes); ranked `state` (pending 0; rejected, stale, replaced 1; applied 2); fww `undone` (false) | Roadmap Coach §7. |
+| `coachProposal` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>`; const: `threadId` `ref<coachThread>`, `messageId` `ref<coachMessage>`, `base` ≤262 144 bytes of JSON, `changes` (`maxItems` 100 of JSON, ≤65 536 bytes); ranked `state` (pending 0; rejected, stale, replaced 1; applied 2); fww `undone` (false) | Roadmap Coach §7. The death of the roadmap it names kills it. |
 | `coachWriteFate` | self/roadmap | minted g | terminal, spent | const: `messageId` `ref<coachMessage>` parent, `receipt` 0–5, `fate` ∈ {undone, refused}, `code` or null | Roadmap Coach §9. |
 
 **The owner's records.** A `pointer`, `subtask`, `stepLink` or `stepNote` in an overlay whose owner is not
@@ -3455,10 +3455,12 @@ and each under those, in order of depth, takes its place's roadmap's `reach` whi
 present, and `private` otherwise; a `meta.reach` that differs is written at the server stamp. Discovery
 declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes a node's life.
 
-**A roadmap's death** (in `self/roadmap`) kills every alive subtree under it. A root's death also kills every
-alive step of the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` the root;
-discovery reads the owner's overlays and declares those that hold one, with their trees, and the subtrees the
-steps own.
+**A roadmap's death** (in `self/roadmap`) kills every alive subtree under it. The roadmap and each subtree it
+kills take every alive `coachThread` whose `treeId` names them, as that conversation's own death would, and every
+alive `coachProposal` whose `treeId` names them, whatever made the death: a device's delete, a server door's or an
+Undo's; a conversation about all roadmaps stays (Roadmap Coach §9). A root's death also kills every alive step of
+the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` the root; discovery reads the
+owner's overlays and declares those that hold one, with their trees, and the subtrees the steps own.
 
 **Commands.** None names a stamp; each writes at the server stamp.
 
@@ -3503,8 +3505,10 @@ steps own.
 a subtree (reading prefers the subtree). A device checks each before the gesture
 (Roadmap on the sync engine §5).
 
-**Gestures:** **Held** (9 s): delete a step, delete a roadmap; a roadmap's deletion is not undone once its
-hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
+**Gestures:** **Held** (9 s): delete a step, delete a roadmap, and remove a Coach record (`coachThread`,
+`coachMessage`, `coachProposal`, `coachWriteFate`); a roadmap's delete removes, in its own hold, the conversations and
+proposals about it and about every subtree under it, which the server's consequence then finds dead; a roadmap's
+deletion is not undone once its hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
 parent's steps or one roadmap's kinds.
 
 **Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),

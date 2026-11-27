@@ -346,15 +346,18 @@ function limits() {
   ];
 }
 
+// A conversation about R with a turn ended, its proposal and a write fate, and a conversation about all roadmaps.
+const conversations = () => [
+  rec('coachThread', 'thread0001', 7, { ...alive(a(2000)), f: { treeId: [R, a(2000)], title: ['Plan my week', a(2000)] } }),
+  rec('coachMessage', 'message0001', 7, { ...alive(a(2000)), f: { threadId: ['thread0001', a(2000)], role: ['person', a(2000)], text: ['Plan my week', a(2000)], at: [2000, a(2000)] } }),
+  rec('coachMessage', 'message0002', 8, { ...alive(a(2100)), f: { threadId: ['thread0001', a(2100)], role: ['coach', a(2100)], text: ['Done.', a(2200)], state: ['completed', a(2200)], at: [2100, a(2100)] } }),
+  rec('coachProposal', 'proposal001', 8, { ...alive(a(2200)), f: { threadId: ['thread0001', a(2200)], messageId: ['message0002', a(2200)], treeId: [R, a(2200)] } }),
+  rec('coachWriteFate', 'fate000001', 8, { ...alive(a(2300)), f: { messageId: ['message0002', a(2300)], receipt: [0, a(2300)], fate: ['undone', a(2300)] } }),
+  rec('coachThread', 'thread0002', 8, { ...alive(a(2400)), f: { treeId: [null, a(2400)], title: ['All roadmaps', a(2400)] } }),
+];
+
 function coach() {
-  const turn = stateWith((scopes) => scopes[ACCOUNT].rows.push(
-    rec('coachThread', 'thread0001', 7, { ...alive(a(2000)), f: { treeId: [R, a(2000)], title: ['Plan my week', a(2000)] } }),
-    rec('coachMessage', 'message0001', 7, { ...alive(a(2000)), f: { threadId: ['thread0001', a(2000)], role: ['person', a(2000)], text: ['Plan my week', a(2000)], at: [2000, a(2000)] } }),
-    rec('coachMessage', 'message0002', 8, { ...alive(a(2100)), f: { threadId: ['thread0001', a(2100)], role: ['coach', a(2100)], text: ['Done.', a(2200)], state: ['completed', a(2200)], at: [2100, a(2100)] } }),
-    rec('coachProposal', 'proposal001', 8, { ...alive(a(2200)), f: { threadId: ['thread0001', a(2200)], messageId: ['message0002', a(2200)], treeId: [R, a(2200)] } }),
-    rec('coachWriteFate', 'fate000001', 8, { ...alive(a(2300)), f: { messageId: ['message0002', a(2300)], receipt: [0, a(2300)], fate: ['undone', a(2300)] } }),
-    rec('coachThread', 'thread0002', 8, { ...alive(a(2400)), f: { treeId: [null, a(2400)], title: ['All roadmaps', a(2400)] } }),
-  ));
+  const turn = stateWith((scopes) => scopes[ACCOUNT].rows.push(...conversations()));
   const message = (f) => ({ scope: 'self/roadmap', d: [{ t: 'coachMessage', id: 'message0002', born: a(2100), f }] });
   return [
     admitted('a message\'s text is final once its writer ended the turn: turn-final', turn, message({ text: ['Changed', a(5000)] })),
@@ -363,6 +366,30 @@ function coach() {
     admitted('a conversation\'s death kills its messages, their write fates and its proposals, and no other conversation', turn,
       { scope: 'self/roadmap', d: [{ t: 'coachThread', id: 'thread0001', born: a(2000), life: ['dead', a(5000)] }] }),
     admitted('a message\'s death kills its write fates', turn, { scope: 'self/roadmap', d: [{ t: 'coachMessage', id: 'message0002', born: a(2100), life: ['dead', a(5000)] }] }),
+  ];
+}
+
+// Roadmap Coach §9: a roadmap's death takes the conversations about it and about every subtree it takes, and the
+// proposals about them in a conversation about all roadmaps; a conversation about all roadmaps, and one about another
+// roadmap, stay.
+function roadmapDeaths() {
+  const state = stateWith((scopes) => scopes[ACCOUNT].rows.push(...conversations(),
+    rec('coachThread', 'thread0003', 9, { ...alive(a(2500)), f: { treeId: [S, a(2500)], stepId: ['lifetimes', a(2500)], title: ['Lifetimes?', a(2500)] } }),
+    rec('coachMessage', 'message0003', 9, { ...alive(a(2500)), f: { threadId: ['thread0003', a(2500)], role: ['person', a(2500)], text: ['Lifetimes?', a(2500)], at: [2500, a(2500)] } }),
+    rec('coachThread', 'thread0004', 9, { ...alive(a(2600)), f: { treeId: [Y, a(2600)], title: ['Reading list', a(2600)] } }),
+    rec('coachProposal', 'proposal002', 9, { ...alive(a(2700)), f: { threadId: ['thread0002', a(2700)], messageId: ['message0002', a(2700)], treeId: [R, a(2700)] } }),
+    rec('coachProposal', 'proposal003', 9, { ...alive(a(2800)), f: { threadId: ['thread0002', a(2800)], messageId: ['message0002', a(2800)], treeId: [Y, a(2800)] } }),
+  ));
+  const death = (tree, born, stamp, more = []) => ({ scope: 'self/roadmap', d: [{ t: 'tree', id: tree, born, life: ['dead', stamp] }, ...more] });
+  const killed = (t, id, born) => ({ t, id, born, life: ['dead', a(5000)] });
+  return [
+    admitted('a root\'s death kills the conversations about it and about every subtree under it, with their messages, write fates and proposals, and its proposals in a conversation about all roadmaps', state,
+      death(R, a(1000), a(5000))),
+    admitted('a root\'s death the device wrote with its conversations and proposals takes nothing more of Coach\'s', state,
+      death(R, a(1000), a(5000), [killed('coachThread', 'thread0001', a(2000)), killed('coachThread', 'thread0003', a(2500)), killed('coachProposal', 'proposal001', a(2200)),
+        killed('coachProposal', 'proposal002', a(2700))])),
+    admitted('the server\'s door deleting a subtree kills the conversations about it and every subtree under it, and none about the root', state,
+      death(S, srv(2000), null), DOOR),
   ];
 }
 
@@ -435,7 +462,7 @@ function clientVectors() {
 
 export function files() {
   return {
-    'roadmap/admit.json': [...commands(), ...visibilities(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach()],
+    'roadmap/admit.json': [...commands(), ...visibilities(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach(), ...roadmapDeaths()],
     'roadmap/client.json': clientVectors(),
   };
 }

@@ -1,6 +1,6 @@
 // Roadmap's server rules (engine.md Appendix A.1): its commands and their inverses, the life a change to a step or a
-// kind carries, a root's visibility and the reach of its branch, the end of a root, the owner's workspace and Coach's
-// records.
+// kind carries, a root's visibility and the reach of its branch, the end of a roadmap with Coach's records about it, the
+// owner's workspace and Coach's records.
 // corpus/README.md states the same rules.
 
 import { DEFAULT_KINDS } from '../../../genesis.js';
@@ -129,6 +129,64 @@ class Outcome {
 
   kill(scopeKey, row) {
     if (present(this.row(scopeKey, row.t, row.id))) this.append(scopeKey, { t: row.t, id: row.id, born: row.born, life: ['dead', null] });
+  }
+
+  // Coach's records of one scope, read once for the intent.
+  coach(scopeKey) {
+    this.coachRecords ??= new Map();
+    if (!this.coachRecords.has(scopeKey)) this.coachRecords.set(scopeKey, new CoachRecords(this, scopeKey));
+    return this.coachRecords.get(scopeKey);
+  }
+}
+
+// Coach's records of one scope as the intent leaves them (Roadmap Coach §9), read once and grouped by what names them:
+// each conversation's messages and proposals, each message's write fates, and the conversations and proposals about each
+// roadmap. A cascade then costs what it kills. The records a kill leaves keep what names them, so the groups hold.
+class CoachRecords {
+  constructor(outcome, scopeKey) {
+    this.outcome = outcome;
+    this.scopeKey = scopeKey;
+    const byField = (type, field) => {
+      const groups = new Map();
+      for (const row of outcome.rows(scopeKey, type).sort((x, y) => compareIds(x.id, y.id))) {
+        const key = valueOf(row, field);
+        if (typeof key !== 'string') continue;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      }
+      return groups;
+    };
+    this.messagesOf = byField('coachMessage', 'threadId');
+    this.fatesOf = byField('coachWriteFate', 'messageId');
+    this.proposalsOf = byField('coachProposal', 'threadId');
+    this.conversationsAbout = byField('coachThread', 'treeId');
+    this.proposalsAbout = byField('coachProposal', 'treeId');
+  }
+
+  // A conversation's death kills its messages, with their write fates, and its proposals.
+  endConversation(thread) {
+    for (const message of this.messagesOf.get(thread) ?? []) {
+      this.outcome.kill(this.scopeKey, message);
+      this.endFates(message.id);
+    }
+    for (const proposal of this.proposalsOf.get(thread) ?? []) this.outcome.kill(this.scopeKey, proposal);
+  }
+
+  // A message's death kills its write fates.
+  endFates(message) {
+    for (const fate of this.fatesOf.get(message) ?? []) this.outcome.kill(this.scopeKey, fate);
+  }
+
+  // The conversations about the roadmaps `ended` that stand, each as its own death ends it, then the proposals about them
+  // that stand, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+  endAbout(ended) {
+    const standing = (groups) => ended.flatMap((tree) => groups.get(tree) ?? [])
+      .filter((row) => present(this.outcome.row(this.scopeKey, row.t, row.id))).sort((x, y) => compareIds(x.id, y.id));
+    for (const thread of standing(this.conversationsAbout)) {
+      this.outcome.kill(this.scopeKey, thread);
+      this.endConversation(thread.id);
+    }
+    for (const proposal of standing(this.proposalsAbout)) this.outcome.kill(this.scopeKey, proposal);
   }
 }
 
@@ -353,14 +411,21 @@ export class RoadmapProduct {
   }
 
   // §4: a roadmap's death kills every subtree under it, and a root's deletes each step of the owner's other roadmaps
-  // whose pointer opens it.
+  // whose pointer opens it. Roadmap Coach §9: each roadmap that dies so takes the conversations about it, as their own
+  // deaths would, and the proposals about it.
   endBranches(ctx, changes, outcome) {
     const account = accountOf(ctx);
     const roadmaps = new Roadmaps(outcome.rows(account, 'tree'));
     const deaths = changes.filter((record) => record.scopeKey === account && record.type.type === 'tree' && died(record));
+    const ended = [];
     for (const death of deaths) {
-      for (const id of roadmaps.under(death.after.id)) outcome.kill(account, roadmaps.rows.get(id));
+      ended.push(death.after.id);
+      for (const id of roadmaps.under(death.after.id)) {
+        outcome.kill(account, roadmaps.rows.get(id));
+        ended.push(id);
+      }
     }
+    if (ended.length) outcome.coach(account).endAbout(ended);
     const roots = deaths.filter((record) => valueOf(record.original, 'parent') == null).map((record) => record.after.id);
     if (!roots.length) return;
     const standing = outcome.rows(account, 'tree').filter(present).map((row) => row.id).sort(compareIds);
@@ -431,28 +496,18 @@ const RULES = {
 
   // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
   coachThread(ctx, record, outcome) {
-    if (!died(record)) return;
-    for (const message of outcome.rows(record.scopeKey, 'coachMessage')) {
-      if (valueOf(message, 'threadId') !== record.after.id) continue;
-      outcome.kill(record.scopeKey, message);
-      endFates(record.scopeKey, message.id, outcome);
-    }
-    for (const row of outcome.rows(record.scopeKey, 'coachProposal')) if (valueOf(row, 'threadId') === record.after.id) outcome.kill(record.scopeKey, row);
+    if (died(record)) outcome.coach(record.scopeKey).endConversation(record.after.id);
   },
 
   // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts are
   // final.
   coachMessage(ctx, record, outcome) {
-    if (died(record)) return endFates(record.scopeKey, record.after.id, outcome);
+    if (died(record)) return outcome.coach(record.scopeKey).endFates(record.after.id);
     const ended = present(record.original) && WRITER_TERMINAL.includes(valueOf(record.original, 'state'));
     const writes = ctx.deltas.filter((delta) => delta.t === 'coachMessage' && delta.id === record.after.id).flatMap((delta) => Object.keys(delta.f ?? {}));
     if (ended && writes.some((name) => FINAL_REGISTERS.includes(name))) throw new Refusal('turn-final');
   },
 };
-
-function endFates(scopeKey, message, outcome) {
-  for (const row of outcome.rows(scopeKey, 'coachWriteFate')) if (valueOf(row, 'messageId') === message) outcome.kill(scopeKey, row);
-}
 
 // R-3: a pointer and the workspace are admitted only in the overlay of the roadmap's owner.
 function ownersOnly(ctx, record) {

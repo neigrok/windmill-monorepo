@@ -28,6 +28,18 @@ extension JSON {
   func ids<E: Entity>(_ key: String) throws -> [ID<E>] { try (self[key]?.asArray() ?? []).map { ID(try RecordID(json: $0)) } }
 }
 
+extension CoachPicture {
+  init(form: JSON) throws {
+    self.init(id: try form.member("id").asString(), mediaType: try form.member("mediaType").asString(), localOnly: try form.optionalBool("localOnly") ?? false)
+  }
+}
+
+extension OpenTurn.About {
+  init(form: JSON) throws {
+    self.init(treeId: try form.optionalString("treeId"), stepId: try form.optionalString("stepId"))
+  }
+}
+
 extension NewKind {
   init(form: JSON) throws {
     self.init(hue: try form.member("hue").asString(), label: try form.optionalString("label") ?? "",

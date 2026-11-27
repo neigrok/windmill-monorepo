@@ -132,6 +132,7 @@ bundle.
 | `gym/product.js` | gym's product rules and R118 metadata (A.2) |
 | `journal/product.js` | journal's whole-page save and claim rules, content clock and audit pruning (A.3) |
 | `journal/client.js` | durable pending-claim edits and result/covering-pull reconciliation before a newer-stamped save (A.3) |
+| `roadmap/product.js` | roadmap's server rules (A.1): its commands and their inverses, a change's revival, a root's visibility and its branch's reach, a roadmap's death with its subtrees, its pointer steps and Coach's records about it, the owner's workspace and Coach's records |
 | `client/replica.js` | §2.5 the local store, D-3 the device |
 | `client/views.js` | §7.6 |
 | `client/commit.js`, `client/hold.js` | §7.1, §7.3 |

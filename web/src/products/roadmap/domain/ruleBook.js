@@ -7,6 +7,7 @@ import { RoadmapLink, RoadmapStep } from './steps.js';
 import { RoadmapKind } from './kinds.js';
 import { StepMark, StepPointer } from './progress.js';
 import { StepLink, StepNote, Subtask } from './workspace.js';
+import { CoachMessage, CoachProposal, CoachThread, CoachWriteFate } from './conversation.js';
 
 /** @typedef {import('../../../../../packages/api-contract/sync/reference/core/registry.js').Registry} Registry */
 
@@ -16,11 +17,13 @@ export class RoadmapRules {
   /** @param {Registry} registry */
   constructor(registry) {
     this.registry = registry;
-    this.book = new RuleBook(registry, [Roadmap, RoadmapMeta, RoadmapStep, RoadmapLink, RoadmapKind, StepMark, StepPointer, Subtask, StepLink, StepNote], [
+    this.book = new RuleBook(registry, [Roadmap, RoadmapMeta, RoadmapStep, RoadmapLink, RoadmapKind, StepMark, StepPointer, Subtask, StepLink, StepNote,
+      CoachThread, CoachMessage, CoachProposal, CoachWriteFate], [
       ...Object.values(RoadmapSpecs).map((spec) => Rule.localSpec(spec)),
       Rule.localCheck(RoadmapChecks.cycle, 'edge'),
       Rule.localCheck(RoadmapChecks.wornHue, 'kind'),
       Rule.localCheck(RoadmapChecks.opening, 'progress'),
+      Rule.localCheck(RoadmapChecks.question, 'coachMessage'),
       Rule.serverDecided('tree.root', ['not-a-root'], 'tree'),
       Rule.serverDecided('tree.alive', ['scope-dead'], 'tree'),
       Rule.serverDecided('tree.reach', ['forbidden', 'not-found'], 'tree'),

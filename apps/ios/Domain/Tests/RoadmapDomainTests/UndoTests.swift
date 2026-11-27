@@ -100,6 +100,11 @@ struct UndoScene {
       guard let act = try self.role(name).role.undo else { throw ContractError("\(name) committed no act") }
       return ["cancelHeld": .bool(try phone.runner.cancelHeld(act.actId))]
     }
+    if let thread = step["conversation"] {
+      let id: ID<CoachThread> = ID(try RecordID(json: try bound(thread)))
+      let conversation = try phone.runner.read(CoachThread.scope) { try Conversation.read($0, thread: id) }
+      return ["conversation": conversation.map { ["messages": .of($0.messages.count), "fates": .of($0.fates.count)] } ?? .null]
+    }
     if let inspect = step["inspect"] {
       let type = try inspect.member("t").asString()
       let fields = try inspect.member("fields").asArray().map { try $0.asString() }

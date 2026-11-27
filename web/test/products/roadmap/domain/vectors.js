@@ -19,7 +19,8 @@ import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/produ
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
+import { Contract, VECTOR_REPLICA, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
+import { CoachMessage, CoachThread, Conversation, EndTurn, OpenTurn, CoachPicture, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -43,7 +44,7 @@ class RoadmapCorpus extends ProductCorpus {
     const confirmed = /** @type {any[]} */ (records.confirmed ?? records.stored ?? records.drawn ?? []);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn),
       confirmed: viewRecords(confirmed).map((record, index) => ({ ...record, ...(confirmed[index]?.seq === undefined ? {} : { seq: confirmed[index].seq }) })),
-      spent: records.spent ?? [], devices: device, firstPullComplete, mintId });
+      spent: records.spent ?? [], devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });
   }
 }
 const corpus = new RoadmapCorpus(roadmapBook, RoadmapRules.spec);
@@ -81,6 +82,12 @@ function actOf(input) {
     case 'MoveStepLink': return MoveStepLink(given.tree, given.link, given.below);
     case 'DeleteStepLink': return DeleteStepLink(given.tree, given.link);
     case 'ClearLanding': return new ClearLanding(given.tree, given.told);
+    case 'OpenTurn': return new OpenTurn({ thread: given.thread === undefined ? null : new Id(given.thread, CoachThread), about: given.about ?? null,
+      question: given.question, pictures: (given.pictures ?? []).map((/** @type {any} */ picture) => new CoachPicture(picture.id, picture.mediaType, picture.localOnly ?? false)) });
+    case 'EndTurn': return new EndTurn(new Id(given.message, CoachMessage), { state: given.state, text: given.text ?? null, truncated: given.truncated ?? false,
+      refusal: given.refusal ?? null });
+    case 'WithdrawTurn': return new WithdrawTurn({ thread: new Id(given.thread, CoachThread), person: new Id(given.person, CoachMessage),
+      coach: new Id(given.coach, CoachMessage) });
     default: throw new Error(`no roadmap action ${action}`);
   }
 }
@@ -104,6 +111,13 @@ function noteSave(vector) {
 function readResult(vector) {
   const input = vector.input;
   if (input.read === 'cannotLand') return { result: cannotLand(input.input.notices, roadmapRegistry) };
+  if (input.read === 'conversation') {
+    return corpus.read(vector, RoadmapScopes.account, (read) => {
+      const conversation = Conversation.read(read, new Id(input.input.thread, CoachThread));
+      return conversation === null ? null : { thread: conversation.thread.id.json, messages: conversation.messages.map((message) => message.id.json),
+        fates: conversation.fates.map((fate) => fate.id.json) };
+    });
+  }
   if (input.read !== 'landing') throw new Error(`no roadmap read ${input.read}`);
   return corpus.read(vector, RoadmapScopes.tree(input.input.tree), (read) => {
     const landing = landingOf(input.input.tree, read);
@@ -242,6 +256,9 @@ export async function runScene(vector) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {
         outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.undo?.actId)) });
+      } else if (step.conversation) {
+        const conversation = phone.runner.read(RoadmapScopes.account, (read) => Conversation.read(read, new Id(String(bind(step.conversation)), CoachThread)));
+        outcomes.push({ conversation: conversation === null ? null : { messages: conversation.messages.length, fates: conversation.fates.length } });
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
