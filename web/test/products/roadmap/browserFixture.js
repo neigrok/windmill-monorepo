@@ -13,6 +13,8 @@ export function fixtureNodes(total) {
 }
 
 export const beacon = `
+export const SESSION_KEY_STORAGE = 'windmill:beacon:key';
+export const DEV_OPT_IN_STORAGE = 'windmill:beacon:dev';
 export function track(name, props) { (window.events ??= []).push({ name, props }); }
 export function reportError(error) { (window.reportedErrors ??= []).push(String(error)); }
 export function routeFamily(route) { return route; }
