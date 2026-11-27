@@ -13,6 +13,8 @@ FIXTURE_SKIPS = {
         "requires the isolated removal fixture",
     ("JournalIntegrationFlowTests", "testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers"):
         "requires the verify skill's isolated backend",
+    ("RoadmapIntegrationFlowTests", "testARoadmapMadePublicIsExportedAndAnotherAccountForksItFromTheGallery"):
+        "requires the verify skill's isolated backend",
 }
 
 

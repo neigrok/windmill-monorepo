@@ -34,7 +34,9 @@ import SyncStore
 // on a phone never signed in (07.12b); roadmap-nested-done, the same with every step of *Learn to sail* done (07.4);
 // roadmap-nested-unattached, the same whose *Learn to sail* opens no roadmap yet (07.8 to 07.10); roadmap-nested-odd, the
 // variation whose Up next steps open a roadmap that loops back, one with no steps and one that cannot be found (07.5a to
-// 07.5d); and roadmap-nested-subtree, the variation whose *Night passage* owns a subtree (07.11, 07.11b). Section 10's
+// 07.5d); and roadmap-nested-subtree, the variation whose *Night passage* owns a subtree (07.11, 07.11b). The public
+// gallery's (`prepareGallery`): roadmap-gallery, the rows 09.12a draws on an account holding *Spanish B1*, and
+// roadmap-gallery-unreachable, a gallery that cannot be reached (09.12b). Section 10's
 // (`prepareSync`): roadmap-sync-offline, a step made with no connection (10.1); roadmap-sync-landed, one that lands
 // following past a step deleted elsewhere (10.2, 10.3); roadmap-sync-came-back, a step an edit brought back (10.4); and
 // roadmap-sync-set-aside, two changes to a roadmap deleted elsewhere (10.5a to 10.5c). A launch can also
@@ -157,24 +159,37 @@ enum RoadmapFixture {
     """
 
   // The file a launch names with `-roadmap-file` stands for the one the system's importer would hand New Roadmap: the
-  // boards' plan written under that name to the app's temporary folder, or, named `Sailing plan.md`, a file that cannot
-  // be read (01.8c). None where no launch names one, and in any build but a simulator's debug build.
+  // boards' plan written under that name to the app's temporary folder, the file Export wrote where the launch names
+  // the same file with `-roadmap-export`, or, named `Sailing plan.md`, a file that cannot be read (01.8c). None where no
+  // launch names one, and in any build but a simulator's debug build.
   static func chosenFile() -> URL? {
     #if DEBUG && targetEnvironment(simulator)
     let arguments = ProcessInfo.processInfo.arguments
     guard let named = arguments.firstIndex(of: "-roadmap-file"), named + 1 < arguments.count else { return nil }
     let file = URL.temporaryDirectory.appending(path: arguments[named + 1])
-    if arguments[named + 1] != "Sailing plan.md" { try? Data(summerCruise.utf8).write(to: file) }
+    if arguments[named + 1] != "Sailing plan.md" && file != exportFile() { try? Data(summerCruise.utf8).write(to: file) }
     return file
     #else
     return nil
     #endif
   }
 
+  // The file a launch names with `-roadmap-export`, in the app's temporary folder, which Export writes in place of the
+  // system's exporter. None where no launch names one, and in any build but a simulator's debug build.
+  static func exportFile() -> URL? {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let named = arguments.firstIndex(of: "-roadmap-export"), named + 1 < arguments.count else { return nil }
+    return URL.temporaryDirectory.appending(path: arguments[named + 1])
+    #else
+    return nil
+    #endif
+  }
+
   // What a cover reads a shared roadmap through: the engine, and the backend's sharing requests with the account's token. On
-  // a cover's board the model server serves sync alone, so the board's own requests stand in for the backend's
-  // (`BoardSharing`), and roadmap-cover-offline and roadmap-cover-no-connection have no connection, the latter following
-  // nothing, so the phone holds no copy.
+  // a cover's, a nested roadmap's or the gallery's board the model server serves sync alone, so the board's own requests
+  // stand in for the backend's (`BoardSharing`), and roadmap-cover-offline and roadmap-cover-no-connection have no
+  // connection, the latter following nothing, so the phone holds no copy.
   static func sources(_ runtime: AppRuntime, telemetry: any Telemetry) -> RoadmapCover.Sources {
     let engine = runtime.engine
     // The session the phone can send as now: the signed-in account's, none while it waits to be renewed.
@@ -183,7 +198,7 @@ enum RoadmapFixture {
       return runtime.tokens.token(for: account)
     }
     #if DEBUG && targetEnvironment(simulator)
-    if let board = runtime.settings.board, board.hasPrefix("roadmap-cover") || board.hasPrefix("roadmap-nested") {
+    if let board = runtime.settings.board, ["roadmap-cover", "roadmap-nested", "roadmap-gallery"].contains(where: { board.hasPrefix($0) }) {
       let offline = board == "roadmap-cover-offline" || board == "roadmap-cover-no-connection" || board == "roadmap-nested-offline"
       return RoadmapCover.Sources(follow: { board == "roadmap-cover-no-connection" ? .subscribed : try engine.subscribe($0) },
                                   letGo: { try engine.unsubscribe($0) }, online: { !offline && engine.status.online },
@@ -206,6 +221,10 @@ enum RoadmapFixture {
     }
     if board.hasPrefix("roadmap-nested") {
       await prepareNested(board, model: model)
+      return true
+    }
+    if board.hasPrefix("roadmap-gallery") {
+      await prepareGallery(board, model: model)
       return true
     }
     if board.hasPrefix("roadmap-sync") {
@@ -480,6 +499,71 @@ enum RoadmapFixture {
     }
   }
 
+  // The gallery's boards (09.12a, 09.12b): another account plants *Run a 10k* and *Room makeover* and makes them public;
+  // another phone of the person's account plants *Spanish B1*, and the phone signs in to that account. The board's gallery
+  // answers the rows 09.12a draws, five to a page, *Spanish B1* the person's own and those two the roadmaps the board
+  // holds; roadmap-gallery-unreachable answers none, as with no connection.
+  static func prepareGallery(_ board: String, model: AppModel) async {
+    do {
+      guard let server = model.runtime?.auth.fake, let sharing = model.roadmap?.links?.sources.requests as? BoardSharing else {
+        throw AppFailure(message: "no model server")
+      }
+      let clock = SteppingBoardClock()
+      let phone = { (email: String) async throws -> AppRuntime in
+        let identity = server.identity(email: email)
+        let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
+                                    directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                                    service: UUID().uuidString, syncTransport: server, wall: clock)
+        _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+        return remote
+      }
+      var sendings: Int64 = 0
+      let sent = { (remote: AppRuntime) async throws -> Void in
+        server.state.withLock { $0.pushesReceivedLaterMs = sendings * 1_000 }
+        clock.step(to: sendings * 1_000)
+        sendings += 1
+        try remote.engine.leave()
+        for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+          await remote.engine.flushOnLeave()
+        }
+      }
+      let owner = try await phone("roadmap-owner@example.com")
+      var shared: [String: String] = [:]
+      for (title, steps) in [("Run a 10k", 14), ("Room makeover", 11)] {
+        let planted = ImportedSteps(steps: (1...steps).map { ImportedStep(key: String($0), RoadmapStep.Changes(label: "\(title) · \($0)", color: "terracotta")) },
+                                    links: (1..<steps).map { (from: String($0), to: String($0 + 1)) })
+        guard case .committed(let made, _) = try owner.roadmapRunner.runAct(CreateRoadmap(title: title, steps: planted)),
+              case .committed = try owner.roadmapRunner.runAct(SetVisibility(tree: made.tree, visibility: "public")) else {
+          throw AppFailure(message: "\(title) was not shared.")
+        }
+        shared[title] = made.tree.description
+        try await sent(owner)
+      }
+      let mine = try await phone("roadmap-reader@example.com")
+      let spanish = try plant(others[0], opening: ID(RecordID(shared["Run a 10k"] ?? "")), by: mine.roadmapRunner)
+      try await sent(mine)
+      server.state.withLock { $0.pushesReceivedLaterMs = 0 }
+      sharing.owner = owner
+      sharing.reader = mine
+      sharing.sent = sent
+      let fake = { (index: Int) in "t_00000000000a\(String(format: "%04x", index))" }
+      sharing.gallery = board == "roadmap-gallery-unreachable" ? nil : [
+        GalleryPage.Row(id: shared["Run a 10k"] ?? fake(1), title: "Run a 10k", steps: 14, mine: false),
+        GalleryPage.Row(id: fake(2), title: "Rust from zero", steps: 24, mine: false),
+        GalleryPage.Row(id: shared["Room makeover"] ?? fake(3), title: "Room makeover", steps: 11, mine: false),
+        GalleryPage.Row(id: spanish.tree.description, title: "Spanish B1", steps: 40, mine: true),
+        GalleryPage.Row(id: fake(5), title: "Learn watercolor", steps: 15, mine: false),
+        GalleryPage.Row(id: fake(6), title: "Personal finance reset", steps: 13, mine: false),
+        GalleryPage.Row(id: fake(7), title: "Ship v1", steps: 17, mine: false),
+        GalleryPage.Row(id: fake(8), title: "ML foundations", steps: 29, mine: false),
+      ]
+      try await model.signIn(server.identity(email: "roadmap-reader@example.com"))
+    } catch {
+      NSLog("Roadmap gallery fixture failed: %@", String(describing: error))
+      model.error = "The roadmap fixture could not be prepared."
+    }
+  }
+
   // Section 10's boards: another phone of the person's account plants their roadmaps, a second apart as the server
   // receives them, the phone signs in and the room reads them all; then the phone loses its connection
   // (`BoardConnectivity`). roadmap-sync-offline: offline, the room's form makes *Reefing basics* after *Read the wind*
@@ -691,6 +775,15 @@ enum RoadmapFixture {
     var owner: AppRuntime?
     var reader: AppRuntime?
     var sent: ((AppRuntime) async throws -> Void)?
+    // The gallery's rows the board answers, five to a page; none where the gallery cannot be reached.
+    var gallery: [GalleryPage.Row]?
+
+    func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage {
+      guard let gallery else { throw .offline }
+      let start = cursor.flatMap { Int($0) } ?? 0
+      let end = min(start + 5, gallery.count)
+      return GalleryPage(rows: Array(gallery[start..<end]), next: end < gallery.count ? String(end) : nil)
+    }
 
     func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
       guard let owner else { throw .failed }
@@ -711,7 +804,7 @@ enum RoadmapFixture {
       }
     }
 
-    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
+    func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
       if ProcessInfo.processInfo.arguments.contains("-fork-held") { try? await Task.sleep(for: .seconds(3_600)) }
       guard let owner, let reader, let sent else { throw .signedOut }
       do {

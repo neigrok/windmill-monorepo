@@ -678,15 +678,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
-  the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
-  name there wraps onto a second line where the board truncates it; the menu
+  the system tells the room nothing of its rename; the system's *Rename* tile draws no pencil, where 01.3 draws one,
+  since a title menu gives a tile of the room's own no rename to call; a long name in the menu wraps onto a second line
+  where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
   at the domain's 200 characters with no counter, and no board
   draws the bound; no board draws All Roadmaps when a search finds nothing, and it is built as the system's own
   `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
   its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
   stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
-  the phone's copy holds it, with no band, as no board draws one for it; and 01.3 and 01.4 group a count's digits
+  the phone's copy holds it, with no band, as no board draws one for it; and 01.4 groups a count's digits
   (*3,200 of 5,000*) and the app writes every count as Swift does, *3200 of 5000*.
 - **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
   *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
@@ -867,6 +868,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
   cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
   or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what Share, Export and the public gallery leave for the boards.** Share, Export and *Planted in
+  Public* are built in Debug builds from 09.1a to 09.3, 09.12a and 09.12b, with *Share* and *Export* in 01.3's title
+  menu, *Export* in 07.11b's … menu and *Planted in Public* as 01.4's last row. To draw or rule: *Sign In* on 09.2a opens
+  the shell's own sign-in saying *Sign in to share this roadmap.*, which no board words; the share sheet's header names
+  the roadmap, where 09.1b draws no system sheet; a gallery's later page that comes to nothing says *Can’t reach the
+  gallery just now.* with *Try Again* under the rows read, and a later page being read shows a spinner there, which no
+  board draws; a row's *Fork* while it runs shows the spinner and *Forking…*, and a fork with no connection or that
+  comes to nothing says *Forking needs a connection.* or *Couldn’t fork this roadmap. Try again.* in the room's band, as
+  the cover's words, which 09.12a does not draw; a row's bordered *Fork* and *Open Your Copy* wear the system's tinted
+  fill, where 09.12a draws a dark one; 09.12b's sentence stands on one line where the board breaks it in two; and a
+  person with no roadmap reaches no *Planted in Public*, since
+  All Roadmaps opens from the title menu alone and 01.5 offers New Roadmap only.
 - **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
   Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
   or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
@@ -925,8 +938,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
   step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
   steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
-  which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
-  every board of the section draws Coach's composer, which is not built.
+  which has no title menu and so no way to Set Aside; 10.5a draws the title menu before 01.3's tiles, which the room
+  draws there too; and every board of the section draws Coach's composer, which is not built.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each

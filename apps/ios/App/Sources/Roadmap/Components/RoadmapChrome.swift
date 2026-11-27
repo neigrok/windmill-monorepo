@@ -97,6 +97,8 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
     case .forked(let steps):
       return String(localized: "Forked · \(steps) steps planted", locale: .copy, comment: "The band once a fork's copy opens: how many steps it planted")
+    case .unforked(let offline):
+      return offline ? String(localized: "Forking needs a connection.") : String(localized: "Couldn’t fork this roadmap. Try again.")
     case .checked(_, let label):
       return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
     case .deletedFromWorkspace(let name):
