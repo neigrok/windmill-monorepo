@@ -24,7 +24,7 @@ test('the three ways to use Windmill say what the pricing contract says, column 
   const ways = body.slice(start, body.indexOf('</ul>', start));
   const columns = [...ways.matchAll(/<h2>([^<]*)<\/h2>\s*<p class="price-tier">([^<]*)<\/p>\s*<p class="price-text">([^<]*)<\/p>/g)].map((column) => column.slice(1));
   assert.deepEqual(columns, [
-    ['By hand', 'Free', 'Trees, steps, sharing and forking in Roadmap. Writing and search by meaning in Journal. Logging, routines and progress in Gym. A tree or a journal page needs no account.'],
+    ['By hand', 'Free', 'Trees, steps, sharing and forking in Roadmap. Writing and search by meaning in Journal. Logging, routines and progress in Gym. A tree, a journal page or a workout needs no account.'],
     ['With your own AI', 'Free here', 'Connect the assistant you already have to Roadmap and Gym. You pay whoever provides it. Windmill charges nothing.'],
     ['With Windmill’s AI', '$0.50 of AI a month on a free account', 'Coach in Gym answers from your log and proposes changes you apply. Echoes in Journal show passages you wrote before, and Windmill pays for those. Windmill One, which is not on sale yet, raises the amount to $7 a month and adds Talk.'],
   ]);
