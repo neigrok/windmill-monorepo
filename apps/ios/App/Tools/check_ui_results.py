@@ -4,8 +4,7 @@ import os
 import re
 
 
-# The skips a shard may hold, each with its one reason: a fixture the shard does not run, or a simulator that cannot do
-# what the test needs.
+# The skips a shard may hold, each with its one reason: a fixture the shard does not run.
 EXPECTED_SKIPS = {
     ("GymIntegrationFlowTests", "testFiniteLoadsKeepTheirValueOnThePadAndSyncBeyondTheOldLimitIncludingZero"):
         "requires the isolated schema10 load fixture",
@@ -15,8 +14,6 @@ EXPECTED_SKIPS = {
         "requires the isolated removal fixture",
     ("JournalIntegrationFlowTests", "testAPageBacksUpWaitsWhileTheServerIsAwayAndBacksUpWhenItAnswers"):
         "requires the verify skill's isolated backend",
-    ("RoadmapFlowTests", "testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack"):
-        "the iOS 27.0 simulator cannot ask before a paste, so nothing can allow one",
     ("RoadmapIntegrationFlowTests", "testARoadmapMadePublicIsExportedAndAnotherAccountForksItFromTheGallery"):
         "requires the verify skill's isolated backend",
 }
