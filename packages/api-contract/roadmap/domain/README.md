@@ -216,7 +216,7 @@ Before the tree scope's first pull completes nothing has landed.
 | Action | Input | Result |
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}, kinds?: [{hue, label?, description?}]}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2` or the legend `kinds` under minted ids at `a0`, `a1`, … in its order (a kind refused as one made is, or wearing a hue a kind before it wears, at `kinds.<n>`), and the steps, chunked |
-| `DeleteRoadmap` | `{tree}` | `null`; held; the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
+| `DeleteRoadmap` | `{tree}` | `null`; held; with the root's record, each `coachThread` and each `coachProposal` the device draws about the root or a subtree under it, in id order, conversations first (their messages and write fates are the server's consequence, engine A.1), and the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
 | `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step the device knows as deleted (dead in `drawn`, or a spent id) is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
@@ -280,16 +280,17 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | Delete a subtask or a link | none: the type is terminal. The delete is held nine seconds, and `cancelHeld` in the hold is its one Undo | — |
 | Create a roadmap | `roadmap.undoCreateRoadmap {tree}` over the record and its tree scope, unchanged since: the roadmap dies while nothing changed in it, its owner's overlay included. Each tree segment is the Undo's evidence (`evidenceForUndo`, `undo: []`), journaled so its receipts prove the scope | none: a new roadmap is a new creation |
 | Create a subtree | `roadmap.undoCreateSubtree {tree, step, subtree}` over the step's `branch`, the subtree's record and its tree scope; a step revived before it, its life | `redoCreateSubtree`: the product's slots (`redoCreateSubtree(creation, fresh)` in `roadmaps.js`) plant a new subtree under a fresh id while the `branch` is still the one the Undo cleared (R-8) |
-| Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold | — |
+| Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold, which brings back the Coach conversations and proposals it took | — |
 | Save a step's note | the note's `text`, from the text the draft was saved from (`""` for a first note): `StepNote` saves reversibly, so each save is an act; it skips where a write the device had not seen changed the note | writes the saved text back |
 | The landing note | none: device rows are the device's | — |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
 binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots; an Undo or a Redo takes the Undo handle of its role's receipt, or of the
-Redo before it), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
+Redo before it), `{device: <name>}`, `{inspect: {scope, t, fields}}` or `{conversation: <thread>}`. An
 input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
-`{cancelHeld}`, and an inspection's visible records. In what a scene reads back, a minted id (`t_` and sixteen hex
+`{cancelHeld}`, an inspection's visible records, and `{conversation}`: null where the read `conversation` draws none, else
+`{messages, fates}`, how many of each it reads. In what a scene reads back, a minted id (`t_` and sixteen hex
 digits, or sixteen of `0-9a-z`) is named by the first role whose result holds it, `$role` or `$role.path`, and one no role
 holds is `<new>`; every other string stands as it is. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:

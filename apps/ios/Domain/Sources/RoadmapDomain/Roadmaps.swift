@@ -255,17 +255,26 @@ public struct CreateRoadmap: ActAction {
 
 // §5 Delete a roadmap: held nine seconds, and permanent once the hold ends (R-7). A subtree goes with the step that owns
 // it, so only a root's entry is deleted here. The device's notes (§6) of the roadmap and of every subtree under it go at
-// once, and an Undo within the hold does not bring them back.
+// once, and an Undo within the hold does not bring them back. Roadmap Coach §9: the conversations about the roadmap and
+// about every subtree under it, and the proposals about them, go in the same hold; the server's rule takes their messages
+// and write fates.
 public struct DeleteRoadmap: ActAction {
+  public struct Loaded {
+    let roadmap: RoadmapEntry?
+    // The roadmaps the device holds a note of: itself and each subtree under it.
+    let noted: [ID<RoadmapEntry>]
+    let conversations: [ID<CoachThread>]
+    let proposals: [ID<CoachProposal>]
+  }
+
   public let tree: ID<RoadmapEntry>
 
   public init(tree: ID<RoadmapEntry>) {
     self.tree = tree
   }
 
-  // The roadmap's entry, and the roadmaps the device holds a note of: itself and each subtree under it.
-  public func load(_ read: ActReader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) {
-    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) in
+  public func load(_ read: ActReader) throws -> Loaded {
+    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> Loaded in
       let entries = account.repository(RoadmapEntry.self)
       let roadmaps = try entries.all(in: .drawn)
       var under = [tree]
@@ -274,17 +283,22 @@ public struct DeleteRoadmap: ActAction {
         for each in roadmaps where each.parent?.tree == under[next] && !under.contains(each.id) { under.append(each.id) }
         next += 1
       }
-      return (try entries.find(tree, in: .drawn), try under.filter { try account.device(LandingNote.key(of: $0)) != nil })
+      let trees = Set(under.map(\.record.description))
+      return Loaded(roadmap: try entries.find(tree, in: .drawn), noted: try under.filter { try account.device(LandingNote.key(of: $0)) != nil },
+                    conversations: try account.repository(CoachThread.self).all(in: .drawn).filter { $0.treeId.map(trees.contains) ?? false }.map(\.id).sorted(),
+                    proposals: try account.repository(CoachProposal.self).all(in: .drawn).filter { trees.contains($0.treeId) }.map(\.id).sorted())
     }
   }
 
-  public func decide(_ loaded: (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]), ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
+  public func decide(_ loaded: Loaded, ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
     guard let roadmap = loaded.roadmap else { return .unchanged(()) }
     guard roadmap.parent == nil else {
       return .refuse(.notARoot(Refused(Roadmap.Codes.notARoot, subject: tree.ref, path: .predicted)))
     }
     var plan = Plan()
     plan.remove(tree)
+    for conversation in loaded.conversations { plan.remove(conversation) }
+    for proposal in loaded.proposals { plan.remove(proposal) }
     for noted in loaded.noted { plan.note(LandingNote(), of: noted) }
     return .write(plan, in: RoadmapEntry.scope, ())
   }

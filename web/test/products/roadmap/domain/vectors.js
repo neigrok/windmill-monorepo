@@ -256,6 +256,9 @@ export async function runScene(vector) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {
         outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.undo?.actId)) });
+      } else if (step.conversation) {
+        const conversation = phone.runner.read(RoadmapScopes.account, (read) => Conversation.read(read, new Id(String(bind(step.conversation)), CoachThread)));
+        outcomes.push({ conversation: conversation === null ? null : { messages: conversation.messages.length, fates: conversation.fates.length } });
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
