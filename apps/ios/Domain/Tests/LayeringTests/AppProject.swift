@@ -191,12 +191,19 @@ enum AppProject {
     let settings = entry.settings, kind = settings["PRODUCT_TYPE"] ?? ""
     guard targetTypes.contains(kind) else { return ["\(entry.place): a \(kind)"] }
     let groups = settings["SWIFT_WARNINGS_AS_WARNINGS_GROUPS"] ?? "", toolchain = settings["TOOLCHAINS"] ?? ""
+    // The flags Xcode itself supplies to a test bundle: the testing plugin (to a unit test bundle from Xcode 27), with the
+    // alias that keeps Swift Testing out of a UI test bundle. Written project flags remain forbidden.
+    let testingPlugin = "-plugin-path \(settings["TOOLCHAIN_DIR"] ?? "")/usr/lib/swift/host/plugins/testing"
+    let xcodeSwiftFlags: String? =
+      switch kind {
+      case "com.apple.product-type.bundle.ui-testing": "-module-alias Testing=_Testing_Unavailable \(testingPlugin)"
+      case "com.apple.product-type.bundle.unit-test": testingPlugin
+      default: nil
+      }
     let unset = ["OTHER_SWIFT_FLAGS", "SWIFT_EXEC", "SWIFT_USE_INTEGRATED_DRIVER"].map { key in
       let value = (settings[key] ?? "").trimmingCharacters(in: .whitespaces)
-      // Xcode supplies this exact pair to every UI test bundle; written project flags remain forbidden.
-      let xcodeUITesting = kind == "com.apple.product-type.bundle.ui-testing" && key == "OTHER_SWIFT_FLAGS"
-        && value == "-module-alias Testing=_Testing_Unavailable -plugin-path \(settings["TOOLCHAIN_DIR"] ?? "")/usr/lib/swift/host/plugins/testing"
-      return (!value.isEmpty && !xcodeUITesting, "\(key) \(value)")
+      let suppliedByXcode = key == "OTHER_SWIFT_FLAGS" && value == xcodeSwiftFlags
+      return (!value.isEmpty && !suppliedByXcode, "\(key) \(value)")
     }
     let checks = [
       (settings["SWIFT_VERSION"] != "6.0", "SWIFT_VERSION \(settings["SWIFT_VERSION"] ?? "unset")"),

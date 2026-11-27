@@ -79,7 +79,7 @@ Stage A is on main (`70ec2dbe`, and 70 at `5e0bb26d`); its boards 00.5, 00.6, 02
   - Android numbers follow ledger 11r: no number names two screens across the phone pages.
 - **The gate:**
   - Run the full `./gradlew build`, with `ANDROID_SENTRY_DSN` set to any well-formed DSN. CI runs exactly that, release unit tests and lint included. A narrower local run has turned CI red before.
-  - Tasks that touch iOS (57, 58, 71) also pass `swift test` for `GymDomain`. CI pins Xcode 26.3, so keep `#expect` expressions simple and never name a closure like a method it shadows.
+  - Tasks that touch iOS (57, 58, 71) also pass `swift test` for `GymDomain`, on Xcode 27.1 as CI does.
 - **Traps:**
   - **apiBase:** an APK with a malformed `apiBase` silently falls back to production. Check `BuildConfig` before every install, and never point a build or a test at production.
   - **Parallel work:** several agents may share this machine. Use a private backend port, your own emulator instance (`-read-only -port …`) and namespaced scratch, and never stop an emulator or backend you did not start.

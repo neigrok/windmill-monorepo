@@ -36,6 +36,20 @@ import Testing
     #expect(findings.sorted().map(\.withoutFile) == appCase.expected)
   }
 
+  // A unit test bundle keeps only the testing plugin Xcode supplies it; one character off is a flag of the project's own.
+  @Test(arguments: [
+    ("/usr/lib/swift/host/plugins/testing", [String]()),
+    ("/usr/lib/swift/host/plugins/testinG", ["WindmillTests [Debug, iphonesimulator]: OTHER_SWIFT_FLAGS -plugin-path /X/usr/lib/swift/host/plugins/testinG"]),
+  ])
+  func unitTestBundleFlags(plugin: String, expected: [String]) {
+    let settings = [
+      "PRODUCT_TYPE": "com.apple.product-type.bundle.unit-test", "TOOLCHAIN_DIR": "/X", "OTHER_SWIFT_FLAGS": "-plugin-path /X\(plugin)",
+      "SWIFT_VERSION": "6.0", "SWIFT_TREAT_WARNINGS_AS_ERRORS": "YES", "SWIFT_WARNINGS_AS_WARNINGS_GROUPS": "DeprecatedDeclaration",
+    ]
+    let entry = AppProject.Resolved(target: "WindmillTests", configuration: "Debug", sdk: "iphonesimulator", settings: settings)
+    #expect(AppProject.settingFindings(entry) == expected)
+  }
+
   @Test func completeCatalogueInspectionFromSmallCallerStack() async throws {
     let file = "Domain/Sources/GymDomain/Coach/Catalog.generated.swift"
     let source = try String(contentsOf: Checkout.iosRoot.appending(path: file), encoding: .utf8)
@@ -78,10 +92,12 @@ import Testing
   }
 
   @Test(arguments: [
-    ("602.0.0", "6.2.4", [String]()),
-    ("602.0.0", "6.2", []),
+    ("604.0.0", "6.4", [String]()),
+    ("602.0.0", "6.2.4", []),
+    ("604.0.0", "6.2.4", []),
     ("601.0.1", "6.2.4", ["Package.resolved: parser-version swift-syntax 601.0.1 for Swift 6.2.4 (602)"]),
-    ("603.0.0", "6.2.4", ["Package.resolved: parser-version swift-syntax 603.0.0 for Swift 6.2.4 (602)"]),
+    ("602.0.0", "6.4", ["Package.resolved: parser-version swift-syntax 602.0.0 for Swift 6.4 (604)"]),
+    ("602.0.0", "6", ["Package.resolved: parser-version swift-syntax 602.0.0 for Swift 6 (unread)"]),
   ])
   func parserVersion(pinned: String, compiler: String, expected: [String]) {
     let resolved = #"{"pins": [{"identity": "swift-syntax", "state": {"version": "\#(pinned)"}}]}"#

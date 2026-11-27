@@ -41,8 +41,8 @@ import SyncStore
 // following past a step deleted elsewhere (10.2, 10.3); roadmap-sync-came-back, a step an edit brought back (10.4); and
 // roadmap-sync-set-aside, two changes to a roadmap deleted elsewhere (10.5a to 10.5c). A launch can also
 // name where the Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go
-// (`boardFrames()`), how long a band stands (`wait()`), and the file New Roadmap's A File is handed in place of the
-// system's importer (`chosenFile()`).
+// (`boardFrames()`), how long a band stands (`wait()`), text the app copies itself before Paste Steps reads it
+// (`clipboard()`), and the file New Roadmap's A File is handed in place of the system's importer (`chosenFile()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -135,6 +135,16 @@ enum RoadmapFixture {
     }
     #endif
     return { try await Task.sleep(for: $0) }
+  }
+
+  // The clipboard the room reads and writes. A simulator launch whose environment holds text in `WM_COPIED_STEPS` has the
+  // app copy it itself first, so Paste Steps reads it as the app's own and the system asks nothing; another app's text
+  // stays the system's to hand over. The environment carries a list's line breaks, which a UI test's launch arguments split.
+  static func clipboard() -> Clipboard {
+    #if DEBUG && targetEnvironment(simulator)
+    if let copied = ProcessInfo.processInfo.environment["WM_COPIED_STEPS"] { Clipboard.system.copy(copied) }
+    #endif
+    return .system
   }
 
   // The boards' copied plan (Roadmap · iOS 01.8): *Summer cruise*, twelve steps under three headings, two done, four

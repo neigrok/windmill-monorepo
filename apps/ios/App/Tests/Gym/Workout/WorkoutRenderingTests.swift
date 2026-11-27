@@ -355,9 +355,7 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
       XCTAssertEqual(gym.workout.ledger(ID("back-squat")).rows.count, logged + 1)
       let window = try host(WorkoutScreen(gym: gym).environment(\.dynamicTypeSize, type), appearance: .dark, onSE: onSE)
       defer { window.isHidden = true; window.rootViewController = nil }
-      try await Task.sleep(for: .milliseconds(450))
-      window.layoutIfNeeded()
-      cards[name] = try ledgerCard(in: window).fit
+      cards[name] = try await settledLedgerCard(in: window).fit
     }
     XCTAssertEqual(cards, [
       "3 rows": CardFit(height: .rows(132), endsOnTheLastRow: true),
