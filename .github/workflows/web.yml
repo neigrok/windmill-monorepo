@@ -1,8 +1,8 @@
 name: Web Deploy
 
 # Static Vite build → rsync to the VPS, where the same Caddy that fronts the backend serves
-# ~/windmill/web at $DOMAIN_APP. `npm run build` runs `node --test test/` first, so the web half of
-# the ladder drift gate fires here. Promotion requires compatible live sync metadata; a PR never touches the VPS.
+# ~/windmill/web at $DOMAIN_APP. `npm run build` runs the domain type check and then the test suite, so the web half
+# of the ladder drift gate fires here. Promotion requires compatible live sync metadata; a PR never touches the VPS.
 on:
   push:
     branches: [main]
@@ -11,6 +11,10 @@ on:
       - 'packages/**'
       - 'backend/deploy/sync_compatibility.py'
       - 'backend/test/deploy/deploy_production_test.py'
+      - 'backend/db/schema.sql'
+      - 'backend/platform/adapters/http/ReplyWait.h'
+      - 'backend/products/journal/adapters/http/VoiceApi.h'
+      - 'backend/products/roadmap/adapters/ws/TreeSocket.h'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '.github/actions/browser-system-libraries/**'
@@ -22,6 +26,10 @@ on:
       - 'packages/**'
       - 'backend/deploy/sync_compatibility.py'
       - 'backend/test/deploy/deploy_production_test.py'
+      - 'backend/db/schema.sql'
+      - 'backend/platform/adapters/http/ReplyWait.h'
+      - 'backend/products/journal/adapters/http/VoiceApi.h'
+      - 'backend/products/roadmap/adapters/ws/TreeSocket.h'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '.github/actions/browser-system-libraries/**'
@@ -41,8 +49,8 @@ defaults:
 
 jobs:
   # A pull request's suite again with roadmap's room reading the device's copy, as production's build reads it, so a
-  # change that breaks the room on fails before it merges. It runs the tests alone: a pull request's build below reaches
-  # no host, builds the room off and ships nothing.
+  # change that breaks the room on fails before it merges. It runs the domain type check and the tests, not the build: a
+  # pull request's build below reaches no host, builds the room off and ships nothing.
   room-on-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -57,6 +65,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - run: npm ci
+
+      - name: Type-check the domain
+        run: npm run check:domain
 
       - name: Install the browsers' system libraries
         uses: ./.github/actions/browser-system-libraries

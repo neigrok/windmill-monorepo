@@ -7,7 +7,7 @@ account and backend. There is no subscription surface.
 
 | Module | Responsibility |
 |---|---|
-| `:platform` | Bearer HTTP transport, the released turn transport (`platform/agent/TurnHttp.kt`), the device Coach AI client (`platform/ai`), account/session storage, sign-in, tokens and product-neutral shell. |
+| `:platform` | Bearer HTTP transport, the Coach AI client and its runtime (`platform/ai`, `platform/agent`), account/session storage, sign-in, tokens and product-neutral shell. |
 | `:gym` | Android training runtime, device storage, presentation models (`works.windmill.gym.presentation`, the screens' projection of `:gym:domain`), network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapters shared by activity, receivers and the Quick Settings service. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
@@ -18,7 +18,7 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering, refusal subjects, and what an ability is: catalog, seats and schema check. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:agent` | JVM product-neutral turn libraries: the released server-hosted driver/wire and the device-hosted Coach runner (`agent/coach`). `:gym` still uses the released driver. See [Agent turns](agent/README.md). |
+| `:agent` | The JVM product-neutral Coach engine (`agent/coach`): the loop, the gate and the mark of a turn the phone runs, each model round a call to the AI service. `:gym`'s Coach runs on it. See [Agent turns](agent/README.md). |
 | `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 
 The JVM sync and kit modules and the Android engine library contain the SyncAPI, client runtime, model
@@ -48,7 +48,8 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - `local.properties` supplies `sdk.dir`; Android Studio writes it on first open.
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
-- Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- Compose UI tests use Robolectric. Gradle fetches its `android-all` jars (the root build's `robolectricAndroidAll`
+  list) and the tests read them through `robolectric-deps.properties`; a Robolectric bump updates that list.
 - On Robolectric `waitUntil` only sleeps on the main thread, so its condition goes through `runOnIdle` or the semantics tree,
   which idle the main looper. `WaitsRunTheLooperTests` holds the rule.
 - Release builds use R8 and resource shrinking; debug stays unminified. `:app:verifyReleaseMapping`
@@ -214,18 +215,22 @@ retain their movement picker and read as **Free workout**. Receipts do not creat
 The bundled movement catalogue uses backend seed identities. Only shares and connected-log credentials use REST,
 through `GymRest`.
 `coach/turn/` is the phone Coach: `CoachTurns` (one per application, handed out by
-`TrainingStore.coachTurns`) admits a question, records it and runs the turn through `:agent`'s driver;
-`GymTurnHost` runs each step under the seat the turn opened with, through `EngineTraining.pinnedOn`, which keeps
+`TrainingStore.coachTurns`) admits a question, records it and runs the turn on `:agent`'s `TurnRunner` with gym's
+profile (`GymProfile`: catalog/3's tools for the seat, each strict as the catalog states it, and the words in
+`gym-coach/`) and the AI client over the API origin, the pass asked with the session and the installation credential
+beside it, or the installation credential alone signed out; `GymTurnHost` runs each step under the seat the turn opened with, through `EngineTraining.pinnedOn`, which keeps
 `writable`'s one rule and holds to the replica and to whether it is anonymous, so a turn reads and writes nothing
 during a transition, under a sign-in's open decision, or under the seat that replaced its own: it waits out what can
-still be cancelled, and a change of the active replica or a rebind abandons it. The record takes the streamed text
-every 5 s, at each batch, when the app stops and at the end, and the room draws `CoachTurns.liveAnswer` meanwhile. `PictureFiles`
+still be cancelled, and a change of the active replica or a rebind ends it through the engine. It runs each call
+through the replica executor, a share through the Share door, writes the mark's round row at each round, and at start
+recovers a turn a process death left in its last round. The record takes the streamed text every 5 s, at each round,
+when the app stops and at the end, and the room draws `CoachTurns.liveAnswer`, the engine's text, meanwhile. `PictureFiles`
 keeps a turn's originals and model copies in `noBackupFilesDir/coach-pictures`, with one metadata row per picture on
 the replica; the engine stays in `filesDir`, and neither rides a backup or a device transfer. `TurnLease` holds an
 expedited WorkManager job for the length of a turn on API 31 and above. WorkManager starts on demand
 (`TurnLeaseHost`, the application's `Configuration.Provider`), `gym/src/main/AndroidManifest.xml` removes its startup
 initializer, its foreground service and the permissions it asks for beyond what a job on JobScheduler uses, and a job the system restarts in a
-new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog.json`, copied into `:gym`'s
+new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog-3.json`, copied into `:gym`'s
 generated assets by a Gradle task and parsed at the first send.
 
 `coach/` groups conversation models, storage, photos and screens. A conversation is the engine's `thread` and
@@ -242,7 +247,8 @@ stored, readable and with their drafts saveable through `CoachRoutineImports` on
 the conversations, requests and confirmations earlier versions kept at first load, keeping every draft, and removes the
 photos only they named; their conversations stay on the server and on the web, and History starts empty.
 A send goes through `CoachTurns` on both seats and its draft stays until the turn is recorded: a refusal keeps it, and a
-turn withdrawn before its stream returns the question and its photo to the field. Stop asks the driver. Nothing resumes
+turn withdrawn before the AI service admitted anything returns the question and its photo to the field. Stop asks the
+engine, which ends the turn after the round in flight. Nothing resumes
 per chat, since `CoachTurns` owns the one running turn and it survives every screen. A repeated finish share opens one
 turn: its key and its turn commit in one transaction in a `rack:` device row (`OpenTurnOnce`), so a death before the chat
 holds its thread finds the first turn again. A deliberate Coach entry or New chat creates a fresh identity; History,
@@ -315,21 +321,20 @@ refused-import recovery. Log offline, restart, reconnect and verify the server r
 Add and Discard with data on both sides, and Keep at sign-out. A same-debug-key source upgrade
 does not establish published release signing.
 
-`CoachTurnsLiveWireTests` runs turns on both seats and lost opens over the real routes, on a fresh database and a
-fresh account. Start the vendor, `python3 tools/fake_coach_vendor.py <port>`, whose output names each model round.
-Start the backend with `AI_ALLOWANCES_ENABLED=true`, `AI_INSTALLATIONS_ENABLED=true`,
-`AI_INSTALLATION_PROXY_MODE=direct`, an `AI_INSTALLATION_IP_HMAC_KEY` of at least 32 bytes, `AI_ALLOWANCE_ALERT_EMAIL`
-naming one of `WINDMILL_OWNER_EMAILS`, any `RESEND_API_KEY`, `RESEND_FROM` and `ANTHROPIC_API_KEY`, and
-`COACH_ANTHROPIC_BASE_URL` at that port. `WM_WIRE_BASE` must be a loopback host, and `WM_WIRE_EVIDENCE` is the
-folder that takes the test's stores and pictures. Without `WM_ANDROID_TURN_WIRE_TEST=1` it skips:
+`CoachTurnsLiveWireTests` runs gym Coach end to end on the real engine and AI client: a question answered, an ability
+that writes, a proposal applied, a share, a picture, Stop, a connection lost and found, a sign-in under a running turn,
+an app killed in its last round and an allowance used up. `tools/coach_turn_stack.py` stands up its stack on fresh
+`wm_gact_*` databases in the local socket Postgres: the backend signing passes, the AI service, a provider it plays
+and one origin in front of both, which the test steers. It runs the suite and removes its databases and listeners
+after. Build `windmill_server` (backend `RUNNING.md`) and `windmill-ai` (`cargo build --bin windmill-ai` in
+`services/ai`) first; without `WM_ANDROID_TURN_WIRE_TEST=1` the test skips:
 
 ```sh
-WM_ANDROID_TURN_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
-  WM_WIRE_BEARER="$WM_LOCAL_BEARER" WM_WIRE_EVIDENCE="$PWD/build/turn-wire" \
-  ./gradlew :gym:testDebugUnitTest --tests '*CoachTurnsLiveWireTests' --max-workers=4
+python3 tools/coach_turn_stack.py --backend-binary <build>/windmill_server --ai-binary <target>/debug/windmill-ai \
+  --scratch <empty folder> --ports 8475 8476 8477 8478 8479
 ```
 
-No test covers: a real vendor round; an NFC or collation case on an old device, since the JVM that runs the corpus and
+No test covers: a real provider round; an NFC or collation case on an old device, since the JVM that runs the corpus and
 the device hold different Unicode tables; a turn routed across server processes, since production runs one; whether
 the expedited job's quota holds in real use on Android 12 and later.
 
@@ -464,14 +469,14 @@ no Sentry upload token, and builds and the release helper perform no mapping upl
 a production Issue: the release Robolectric envelope test and Debug Files listing provide proof.
 
 Minified acceptance runs after review on a freshly wiped `Release_API34` Google APIs emulator,
-using the retained-key candidate with a version code above 322:
+using the retained-key candidate with a version code above 527:
 
 1. Check non-debuggable badging with `aapt2`, the asset UUID against provenance, and record APK
    sizes before and after minification in the release notes.
-2. Install published 0.17.0/code 322. Signed out, create a finished two-set workout, an open
-   workout with a logged set, a bodyweight routine with negative per-set loads, a set note (Notes
-   need an account) and a weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
-   the image's keyboard (Gboard on `Release_API34`) minus key for uniform and per-set loads.
+2. Install published 0.19.0/code 527. Signed out, create a finished two-set workout, an open
+   workout with a logged set, a bodyweight routine with negative per-set loads, a set note (a set note
+   needs no account; the Notes notebook does) and a weigh-in. Update with `adb install -r`; preserve all data and finish
+   the open workout. Check the image's keyboard (Gboard on `Release_API34`) minus key for uniform and per-set loads.
 3. Check that `adb logcat -b crash` stays empty and logcat contains no `SerializationException`,
    `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldException`,
    `Resources$NotFoundException`, `Crash reporting unavailable` or `Error delivery unavailable`.
@@ -486,40 +491,55 @@ using the retained-key candidate with a version code above 322:
    with an empty Routines tab. On an emulator with TalkBack,
    also verify heading navigation reaches Movements, History and Performed.
 8. Across devices, on one account: a conversation started on iOS reads on Android and the reverse, a running turn
-   shows as answering on the other device, and a seat change interrupts it. The web stays on its own conversations
-   and shows neither phone's.
+   shows as answering on the other device, and a seat change interrupts it. The web's History holds both phones'
+   conversations, and the phones' hold the web's.
 
-The published [0.17.0/code322 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.17.0)
-uses tag `android-v0.17.0` at `62c2a186f1ede8c50ddd554339eb911ac8690759`,
-[Actions run 42850545320](https://github.com/neigrok/windmill-monorepo/actions/runs/42850545320),
-attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
-non-debuggable package, unchanged application contents and linked provenance. All three
-anonymously downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
-`02a4a2c366d3d44201e697f673757341ac8911eb287bc8ac12ac7cc8f5bb19ba`, at 8,492,428 bytes (the unsigned CI
-candidate is 8,472,977 bytes). The release workflow supplies
-`-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`; the APK contains that
-destination, which resolves to this release. The R8 mapping, bound to the APK by `apk.proguardUuid`
-`1188ef80-1e35-3047-9c30-8c724578bb4c`, is not yet uploaded to Sentry: the release machine has no Sentry CLI
-or token, so the upload and the Debug Files check are pending, as they still are for 0.16.0's mapping
-(`2be7ac5f-e208-3acb-9550-b6cfc08892fb`).
+The published [0.19.0/code527 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.19.0)
+speaks sync schema 15 / minimum 15.
 
-Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator with 4 GB of RAM against the
-production configuration, signed out, on the release-signed APK. The public 0.16.0/code309 APK's finished
-two-set workout, live workout with one logged set and its set note, bodyweight routine with negative per-set
-loads and weigh-in survived `adb install -r` in place, which is the same-key update check; on 0.17.0 the live
-workout logged six more sets and finished. Notes need an account, so the signed-out note is a set note. The
-image carries no AOSP keyboard; its preloaded Gboard 12.4 number pad's minus key entered `−15` as a uniform
-load and `−7.5` as a per-set load. With an eight-set plan the ledger showed six whole rows above the rack,
-rested on the set in hand with the latest logged sets above it, and scrolled to the earlier ones. HOME then
-`am kill` restored a routine draft with Vary by set open, the logger's Assembly, Picker (with its search) and
-Fix (with an unsaved edit) sheets, a pushed movement page, session detail and the Finish sheet. In airplane
-mode a set logged, survived a force-stop and an offline restart, and the workout finished offline. A clean
-install opened the welcome carousel and, after Skip, Coach with an empty Routines tab; with TalkBack 14.2,
-heading navigation (reading control Headings, swipe down through the emulator's touchscreen) reached
-Movements and History in the routine editor and Performed on Finish. The crash buffer stayed empty, the
-system dropbox recorded no app crash or ANR, and none of the listed exceptions appeared in the logcat captured
-from the update through the offline run and over a second clean install. Not run:
-6 (no owner-designated address is recorded, so sign-in and everything behind it) and 8 (cross-device).
+- **Build.** It uses tag `android-v0.19.0` at `4b3e33ba31ed7d3723f1ec5584a801b9d7fbc30b`, built from a tag push by
+  [Actions run 45818276254](https://github.com/neigrok/windmill-monorepo/actions/runs/45818276254), attempt 1. Both
+  jobs passed.
+- **Signing.** Local finalization verified the retained certificate, the non-debuggable package, unchanged application
+  contents and linked provenance. All three anonymously downloaded assets are byte-identical to the accepted files.
+- **APK.** SHA-256 `d4e70f9b939f87227dcbfab80a8af6eabe9d53febcb3823d94129497544e61fe`, at 8,595,129 bytes; the
+  unsigned CI candidate is 8,575,930 bytes.
+- **Update destination.** The release workflow supplies
+  `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`. The APK contains that
+  destination, which resolves to this release.
+- **Mapping.** The R8 mapping, bound to the APK by `apk.proguardUuid` `a3dba18e-f4e1-325f-b2b2-ca4462321444`, is not
+  yet uploaded to Sentry: the release machine has no Sentry CLI or token. The upload and the Debug Files check are
+  pending, as they still are for the mappings of:
+  - 0.18.0 (`521624fb-c3da-3d83-bf78-26510bdddd86`);
+  - 0.17.0 (`1188ef80-1e35-3047-9c30-8c724578bb4c`);
+  - 0.16.0 (`2be7ac5f-e208-3acb-9550-b6cfc08892fb`).
+
+Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator against the production configuration,
+signed out, on the release-signed APK:
+
+- **Update in place.** The public 0.18.0/code463 APK's records survived `adb install -r`, which is the same-key update
+  check: a finished two-set workout with a set note, an open workout with one logged set, a bodyweight routine with
+  negative uniform and per-set loads, and a weigh-in. On 0.19.0 the open workout logged a set and finished.
+- **Negative loads.** Gboard's minus key entered `−20` as a uniform load, and `−7.5` and `−2.5` as per-set loads.
+- **Process death.** HOME then `am kill` restored:
+  - a routine draft with Vary by set open;
+  - the logger's Assembly, Picker (with its search) and Fix (with an unsaved edit) sheets;
+  - a pushed movement page;
+  - session detail;
+  - the Finish sheet. Its dismissal counts as Done, so this check finishes the workout.
+- **Offline.** In airplane mode a set logged, survived a force-stop and an offline restart, and the workout finished
+  offline.
+- **Clean install.** The welcome carousel opened, and after Skip, Coach with an empty Routines tab. With TalkBack 14.2,
+  heading navigation reached Movements and History in the routine editor and Performed on Finish, by swipe gestures
+  sent through the emulator console's touchscreen.
+- **Coach.** Signed out, one question to Coach on production streamed a complete answer with its read receipt, in
+  about 20 to 25 seconds.
+- **Crashes.** The crash buffer stayed empty, and the system dropbox recorded no app crash or ANR. None of the listed
+  exceptions came from the app in the logcat captured from the 0.18.0 install to the end; six
+  `ClassNotFoundException` lines came from the system Settings app.
+- **Not run:**
+  - 6, because sign-in and everything behind it need the owner's address and inbox;
+  - 8, because cross-device needs a signed-in account on two devices.
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. This build reads no device records written

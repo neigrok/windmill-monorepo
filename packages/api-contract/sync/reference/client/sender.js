@@ -9,8 +9,8 @@ import { InverseOutcomesError } from '../core/restore.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
-import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences } from './inverse.js';
-import { retainOutcome } from './journal.js';
+import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences, waitsAtBarrier } from './inverse.js';
+import { retainOutcome, stepPreimagesOver } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
 import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
@@ -36,6 +36,20 @@ function heldBack(replica, registry) {
     if (entry.state === 'held' || back.has(entry) || awaiting) sources.absorbEntry(entry);
   }
   return back;
+}
+
+// §7.4 whether a push would carry anything now, read without changing the replica: a sent entry to send again, or a
+// ready entry the sender would number before it stops at a held-back command entry or at an inverse slot that cannot
+// bind yet. A sender with nothing to send asks the server nothing, and waits for a kick.
+export function hasWorkToSend(replica, registry) {
+  if (replica.entries().some((entry) => entry.state === 'sent')) return true;
+  const back = heldBack(replica, registry);
+  for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
+    if (waitsAtBarrier(replica, entry)) return false;
+    if (!back.has(entry)) return true;
+    if (entry.intent.cmd !== undefined) return false;
+  }
+  return false;
 }
 
 // Numbers ready entries in commit order up to PUSH_MAX_INTENTS and while the request body, its jcs,
@@ -218,6 +232,7 @@ export function applyPushResult(replica, ctx, result, body, unreadable = new Set
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
   retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
+  stepPreimagesOver(replica, entry);
   resolveReferences(replica, entry, body.epoch);
   applyInverseResult(replica, entry, result, body.epoch);
   resolveIfCovered(replica, ctx, entry);
@@ -319,8 +334,13 @@ export class SenderWait {
 }
 
 // §10.4: every response carrying serverTime yields an offset sample, hello included. A 401, or a hello
-// served as anyone but the replica's account, pauses sync (§9.1).
+// served as anyone but the replica's account, pauses sync (§9.1) and forgets the server's schema; a 200 served
+// as the account records it, which gates what a version declares (§9.2, §2.4).
 export function onHello(replica, ctx, response, timing) {
   if (response.body?.serverTime !== undefined) replica.takeOffsetSample(response.body.serverTime, timing, ctx.limits);
-  if (replica.isUnauthenticated(response)) replica.meta.authPaused = true;
+  if (replica.isUnauthenticated(response)) {
+    replica.meta.authPaused = true;
+    delete replica.meta.serverSchema;
+  } else if (response.status === 200 && replica.meta.account !== undefined && response.body?.as === replica.meta.account
+    && Number.isSafeInteger(response.body.schema)) replica.meta.serverSchema = response.body.schema;
 }

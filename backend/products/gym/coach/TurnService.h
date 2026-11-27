@@ -69,7 +69,7 @@ public:
   // `server` is the server executor the R2 shares of a bound seat run on, `door` where a dropped
   // turn's message ends. `installations` may be null where no USD allowances exist; an `anon` open is
   // then refused `anonymous_ai_unavailable`.
-  TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server, GymWriteDoor& door,
+  TurnService(std::shared_ptr<CoachModel> model, const ServedCatalogs& catalogs, ToolHost& server, GymWriteDoor& door,
               Entitlements& entitlements, std::shared_ptr<AiInstallations> installations, Clock& clock,
               int maxOutputTokens, std::shared_ptr<FailureReporter> failures,
               std::chrono::milliseconds resultTimeout = kCallResultTimeout);
@@ -110,7 +110,7 @@ private:
   std::optional<AiBudgetView> seatAllowance(const TurnPrincipal& principal) const;
 
   std::shared_ptr<CoachModel> model_;
-  const AbilityCatalog& catalog_;
+  const ServedCatalogs& catalogs_;
   ToolHost& server_;
   GymWriteDoor& door_;
   Entitlements& entitlements_;

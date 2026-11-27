@@ -1,0 +1,34 @@
+[
+  {
+    "case": "a start at instant 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"id":"tn7Qm2Kx9Lp4Wz8R-7","startedAt":0},
+      "name": "start_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a start past the end of time is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"id":"tn7Qm2Kx9Lp4Wz8R-7","startedAt":253402300799001},
+      "name": "start_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  }
+]

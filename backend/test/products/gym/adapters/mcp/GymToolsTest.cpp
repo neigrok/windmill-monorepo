@@ -3,6 +3,7 @@
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/FractionalIndex.h"
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/application/AskService.h"
@@ -175,19 +176,19 @@ struct CatalogOnly : ToolHost {
 
 }
 
-// Pinned whole and in order, because this table is the permission model. Reads, then writes, then deletes.
+// Pinned whole and in order, because this table is the permission model. Reads, then writes, then deletes, each in
+// catalog-3.json's order.
 TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
   CHECK_EQ(classified(gymToolCatalog()),
            (std::vector<std::string>{
-               "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
-               "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "list_notes gym:read", "list_bodyweight gym:read", "get_sessions gym:read", "get_last_times gym:read",
-               "save_note gym:write", "start_session gym:write",
-               "log_set gym:write", "finish_session gym:write",
-               "create_routine gym:write", "propose_routine_change gym:write", "propose_workout_change gym:write",
-               "create_exercise gym:write", "update_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
-               "discard_session gym:delete", "propose_routine_removal gym:delete",
-               "revoke_share gym:delete"}));
+               "list_routines gym:read", "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
+               "get_sessions gym:read", "last_time gym:read", "get_last_times gym:read", "get_stats gym:read",
+               "list_notes gym:read", "list_bodyweight gym:read",
+               "create_routine gym:write", "create_exercise gym:write", "save_note gym:write", "share_session gym:write",
+               "propose_routine_change gym:write", "propose_workout_change gym:write", "start_session gym:write",
+               "log_set gym:write", "log_sets gym:write", "import_session gym:write", "finish_session gym:write",
+               "update_exercise gym:write",
+               "propose_routine_removal gym:delete", "revoke_share gym:delete", "discard_session gym:delete"}));
 }
 
 // `create_routine` LANDS — a day that did not exist takes nothing away — and the three `propose_` tools land nothing.
@@ -410,10 +411,9 @@ TEST(gym_publishes_no_tool_that_writes_a_bodyweight_at_any_level) {
     CHECK(tool.access == Access::read || mintsProposal(tool.name()));
     offered.push_back(tool.name());
   }
-  CHECK_EQ(offered, (std::vector<std::string>{"list_exercises", "list_sessions", "get_session",
-                                              "last_time", "list_routines", "get_stats",
-                                              "list_notes", "list_bodyweight", "get_sessions", "get_last_times",
-                                              "propose_routine_change",
+  CHECK_EQ(offered, (std::vector<std::string>{"list_routines", "list_exercises", "list_sessions", "get_session",
+                                              "get_sessions", "last_time", "get_last_times", "get_stats",
+                                              "list_notes", "list_bodyweight", "propose_routine_change",
                                               "propose_routine_removal"}));
 
   Json::Value args(Json::objectValue);
@@ -505,15 +505,13 @@ TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
 TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   MemoryHarness h;
 
-  const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
-                                       "last_time",      "list_routines", "get_stats",
-                                       "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
-  const std::vector<std::string> writes{"save_note", "start_session",  "log_set",
-                                        "finish_session", "create_routine",
-                                        "propose_routine_change", "create_exercise",
-                                        "update_exercise", "share_session", "log_sets", "import_session"};
-  const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
-                                         "revoke_share"};
+  const std::vector<std::string> reads{"list_routines", "list_exercises", "list_sessions", "get_session",
+                                              "get_sessions", "last_time", "get_last_times", "get_stats",
+                                              "list_notes", "list_bodyweight"};
+  const std::vector<std::string> writes{"create_routine", "create_exercise", "save_note", "share_session",
+                                              "propose_routine_change", "start_session", "log_set", "log_sets",
+                                              "import_session", "finish_session", "update_exercise"};
+  const std::vector<std::string> deletes{"propose_routine_removal", "revoke_share", "discard_session"};
 
   CHECK_EQ(namesIn(h.tools.listTools(ToolCaller{uid(), parseToolScope("gym:read")})), reads);
 
@@ -562,9 +560,10 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
 
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
   CHECK_EQ(namesIn(surface.listTools(ToolCaller{uid(), parseToolScope("gym:read")})),
-           (std::vector<std::string>{"gym_list_exercises", "gym_list_sessions", "gym_get_session", "gym_last_time",
-                                     "gym_list_routines", "gym_get_stats", "gym_list_notes",
-                                     "gym_list_bodyweight", "gym_get_sessions", "gym_get_last_times"}));
+           (std::vector<std::string>{"gym_list_routines", "gym_list_exercises", "gym_list_sessions",
+                                              "gym_get_session", "gym_get_sessions", "gym_last_time",
+                                              "gym_get_last_times", "gym_get_stats", "gym_list_notes",
+                                              "gym_list_bodyweight"}));
   // Every gym tool but the phone Coach's workout proposal.
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size() - 1));
@@ -572,11 +571,16 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
 
 // The schemas publish two vocabularies and the domain refuses against them; every word round-trips.
 TEST(gym_catalog_publishes_the_vocabularies_the_domain_actually_parses) {
-  for (const char* word : kPatterns) CHECK_EQ(toString(parsePattern(word)), std::string(word));
-  for (const char* word : kEquipment) CHECK_EQ(toString(parseEquipment(word)), std::string(word));
-  CHECK_EQ(kPatterns.size(), std::size_t{7});
-  CHECK_EQ((std::vector<std::string>{kEquipment.begin(), kEquipment.end()}),
-           (std::vector<std::string>{"barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"}));
+  Json::Value movement(Json::nullValue);
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "create_exercise") movement = tool.descriptor["inputSchema"]["properties"];
+  REQUIRE(movement.isObject());
+  for (const Json::Value& word : movement["pattern"]["enum"]) CHECK_EQ(toString(parsePattern(word.asString())), word.asString());
+  for (const Json::Value& word : movement["equipment"]["enum"])
+    CHECK_EQ(toString(parseEquipment(word.asString())), word.asString());
+  CHECK_EQ(movement["pattern"]["enum"].size(), 7u);
+  CHECK_EQ(movement["equipment"]["enum"],
+           parse(R"(["barbell","dumbbell","machine","cable","bodyweight","kettlebell","other"])"));
 }
 
 TEST(gym_tools_read_and_write_only_the_callers_own_log) {
@@ -992,6 +996,87 @@ TEST(gym_a_page_cursor_id_with_no_instant_beside_it_is_refused) {
                        "instant names no row in the page order."));
 }
 
+// A row names the lift behind its numbers: the squat single is the session's heaviest set and the bench's 90 × 8 its best
+// estimate, a zero-load movement's line has no estimate, and an assisted movement's heaviest is its least assistance.
+TEST(gym_the_log_row_names_its_heaviest_set_and_reads_one_line_per_movement) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  h.repo.db.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5, false});
+  h.repo.db.seed(Exercise{ExerciseId{"pull-up"}, "Pull-up", Pattern::pull, Equipment::bodyweight, 2.5, false});
+  h.repo.db.seedSession(Session{sid(), uid(), 1'700'000'000'000, 1'700'003'600'000});
+  h.repo.db.seedSet(Set{setId("set_00000001"), sid(), ExerciseId{"back-squat"}, 0, 100, 1, std::nullopt, "", 1'700'000'060'000});
+  h.repo.db.seedSet(Set{setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 0, 90, 8, std::nullopt, "", 1'700'000'120'000});
+  h.repo.db.seedSet(Set{setId("set_00000003"), sid(), ExerciseId{"chin-up"}, 0, 0, 10, std::nullopt, "", 1'700'000'180'000});
+  h.repo.db.seedSet(Set{setId("set_00000004"), sid(), ExerciseId{"pull-up"}, 0, -20, 8, std::nullopt, "", 1'700'000'240'000});
+  h.repo.db.seedSet(Set{setId("set_00000005"), sid(), ExerciseId{"pull-up"}, 0, -10, 6, std::nullopt, "", 1'700'000'300'000});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":["Back Squat","Bench Press","Chin-up","Pull-up"],"finishedAt":1700003600000,)"
+      R"("id":"ses_00000001","movements":[{"exerciseId":"back-squat","topE1rm":100,"topSet":{"reps":1,"weightKg":100}},)"
+      R"({"exerciseId":"bench-press","topE1rm":114,"topSet":{"reps":8,"weightKg":90}},)"
+      R"({"exerciseId":"chin-up","topE1rm":null,"topSet":{"reps":10,"weightKg":0}},)"
+      R"({"exerciseId":"pull-up","topE1rm":null,"topSet":{"reps":6,"weightKg":-10}}],)"
+      R"("record":false,"setCount":5,"startedAt":1700000000000,"tonnageKg":820,"topE1rm":114,)"
+      R"("topSet":{"exerciseId":"back-squat","reps":1,"weightKg":100},"workingSetCount":5}])")));
+}
+
+// Two movements' heaviest sets tie on load and reps: the row's top set is the lower set id's, though its movement sorts
+// second.
+TEST(gym_the_log_row_breaks_a_tie_across_movements_by_the_lower_set_id) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  h.repo.db.seedSession(Session{sid(), uid(), 1'700'000'000'000, 1'700'003'600'000});
+  h.repo.db.seedSet(Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 0, 100, 5, std::nullopt, "", 1'700'000'060'000});
+  h.repo.db.seedSet(Set{setId("set_00000002"), sid(), ExerciseId{"back-squat"}, 0, 100, 5, std::nullopt, "", 1'700'000'120'000});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":["Back Squat","Bench Press"],"finishedAt":1700003600000,"id":"ses_00000001",)"
+      R"("movements":[{"exerciseId":"back-squat","topE1rm":116.7,"topSet":{"reps":5,"weightKg":100}},)"
+      R"({"exerciseId":"bench-press","topE1rm":116.7,"topSet":{"reps":5,"weightKg":100}}],)"
+      R"("record":false,"setCount":2,"startedAt":1700000000000,"tonnageKg":1000,"topE1rm":116.7,)"
+      R"("topSet":{"exerciseId":"bench-press","reps":5,"weightKg":100},"workingSetCount":2}])")));
+}
+
+// A row is named by the name the workout went by — the display override, else the frozen plan's routine, and nothing
+// for an ad-hoc workout or a plan with no name — and carries no plan; a workout holding no set has no line and no top set.
+TEST(gym_the_log_row_goes_by_the_workouts_own_name_and_carries_no_plan) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  const auto plan = [](std::string name) {
+    return PlanSnapshot{std::move(name), {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}};
+  };
+  h.repo.db.seedSession(Session{sid("ses_00000001"), uid(), 1'700'000'000'000, 1'700'003'600'000, rtId(), plan("Push A"),
+                                ClosedBy::finish, "Heavy Monday"});
+  h.repo.db.seedSession(Session{sid("ses_00000002"), uid(), 1'700'100'000'000, 1'700'103'600'000, rtId(), plan("Push A"),
+                                ClosedBy::finish});
+  h.repo.db.seedSession(Session{sid("ses_00000003"), uid(), 1'700'200'000'000, 1'700'203'600'000, std::nullopt,
+                                std::nullopt, ClosedBy::finish});
+  h.repo.db.seedSession(Session{sid("ses_00000004"), uid(), 1'700'300'000'000, 1'700'303'600'000, rtId(), plan(""),
+                                ClosedBy::finish});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":[],"finishedAt":1700303600000,"id":"ses_00000004","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","setCount":0,"startedAt":1700300000000,"tonnageKg":0,"topE1rm":null,)"
+      R"("workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700203600000,"id":"ses_00000003","movements":[],)"
+      R"("record":false,"setCount":0,"startedAt":1700200000000,"tonnageKg":0,"topE1rm":null,"workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700103600000,"id":"ses_00000002","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","routineName":"Push A","setCount":0,"startedAt":1700100000000,)"
+      R"("tonnageKg":0,"topE1rm":null,"workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700003600000,"id":"ses_00000001","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","routineName":"Heavy Monday","setCount":0,"startedAt":1700000000000,)"
+      R"("tonnageKg":0,"topE1rm":null,"workingSetCount":0}])")));
+}
+
 TEST(gym_the_session_read_carries_the_finish_readout_only_when_it_is_asked_for) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
@@ -1119,7 +1204,8 @@ TEST(gym_stats_narrow_to_one_movement_and_keep_the_weeks) {
   CHECK_EQ(body(narrowed)["weeks"].size(), body(everything)["weeks"].size());
 }
 
-// A schema is a promise about what the write will accept, so every bound in it is the DOMAIN's.
+// A schema is a promise about what the write will accept. Strict mode states no bound, so each one is said in the
+// description of what it bounds, and kept by the DOMAIN, at both ends.
 TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps) {
   Json::Value entries(Json::nullValue);
   for (const ToolDeclaration& tool : gymToolCatalog())
@@ -1128,28 +1214,23 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   REQUIRE(entries.isObject());
   const Json::Value& fields = entries["items"]["properties"];
 
-  // An entry takes exactly these four, and the scheme is a list, never a count.
-  CHECK_EQ(fields.getMemberNames(),
-           (std::vector<std::string>{"exerciseId", "position", "restSeconds", "sets"}));
+  // An entry takes exactly these three, and the scheme is a list, never a count.
+  CHECK_EQ(fields.getMemberNames(), (std::vector<std::string>{"exerciseId", "restSeconds", "sets"}));
   CHECK_EQ(fields["sets"]["type"].asString(), std::string("array"));
   CHECK_EQ(fields["sets"]["minItems"].asInt(), 1);
-  CHECK_EQ(fields["sets"]["maxItems"].asInt(), static_cast<int>(kMaxSetTargets));
+  CHECK(fields["sets"]["description"].asString().find("1 to " + std::to_string(kMaxSetTargets)) != std::string::npos);
   const Json::Value& set = fields["sets"]["items"];
   CHECK_EQ(set["type"].asString(), std::string("object"));
   CHECK_EQ(set["properties"].getMemberNames(), (std::vector<std::string>{"reps", "weightKg"}));
   CHECK_EQ(set["properties"]["reps"]["type"].asString(), std::string("integer"));
-  CHECK_EQ(set["properties"]["reps"]["minimum"].asInt(), 1);
-  CHECK_EQ(set["properties"]["reps"]["maximum"].asInt(), 100);
+  CHECK(set["properties"]["reps"]["description"].asString().find("(1–100)") != std::string::npos);
   CHECK_EQ(set["properties"]["weightKg"]["type"].asString(), std::string("number"));
-  CHECK_FALSE(set["properties"]["weightKg"].isMember("minimum"));
-  CHECK_FALSE(set["properties"]["weightKg"].isMember("maximum"));
   CHECK_EQ(set["additionalProperties"].asBool(), false);
-  CHECK(set["required"].isNull());   // each set's two absences mean something
-  CHECK_EQ(fields["restSeconds"]["minimum"].asInt(), 15);
-  CHECK_EQ(fields["restSeconds"]["maximum"].asInt(), 900);
+  CHECK_EQ(set["required"], Json::Value(Json::arrayValue));   // each set's two absences mean something
+  CHECK(fields["restSeconds"]["description"].asString().find("15–900") != std::string::npos);
   // The document's own size is published beside its fields' values.
   CHECK_EQ(entries["minItems"].asInt(), 1);
-  CHECK_EQ(entries["maxItems"].asInt(), kMaxRoutineEntries);
+  CHECK(entries["description"].asString().find("at most " + std::to_string(kMaxRoutineEntries)) != std::string::npos);
   CHECK_EQ(entries["items"]["additionalProperties"].asBool(), false);
 
   // The promise, kept at both ends: each published extreme builds, and one past it does not.
@@ -1230,16 +1311,25 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Agent me{h.tools, h.user};
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
   createPushA(h);
 
-  // Read it back exactly as an agent would, and change the one thing it came for.
+  // Read it back exactly as an agent would, and change the one thing it came for. Over MCP the lines' positions,
+  // which catalog/3 does not declare, are dropped before the arguments are checked.
   const ToolResult listed = me.call("list_routines", Json::Value(Json::objectValue));
   REQUIRE(!listed.isError);
   Json::Value document = body(listed)["routines"][0];
   CHECK_EQ(document["entries"][0]["position"].asInt(), 1);
   document["entries"][0]["sets"][4]["weightKg"] = 85.0;
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+  args["entries"] = document["entries"];
+  args["name"] = Json::Value(Json::nullValue);
+  args["summary"] = Json::Value(Json::nullValue);
 
-  const ToolResult minted = me.propose("prop_00000001", "rt_00000001", document["entries"]);
+  const ToolResult minted =
+      surface.callTool("propose_routine_change", args, ToolCaller{h.user, ToolScope::everything()});
 
   REQUIRE(!minted.isError);
   const Json::Value& proposal = body(minted)["proposal"];
@@ -1469,7 +1559,8 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
            std::optional<EntryTargets>(EntryTargets{straight(5, 3, 87.5), std::nullopt}));
 }
 
-// Every field list_routines puts on a routine survives a read-and-send-back.
+// Every field list_routines puts on a routine survives a read-and-send-back over MCP: catalog/3 does not declare the
+// read's own fields on its writes, and the door drops them before it checks the arguments.
 TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_routine) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
@@ -1481,6 +1572,8 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_rou
   Json::Value document = body(me.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
   REQUIRE_EQ(document["revision"].asInt(), 1);
   REQUIRE(document.isMember("pendingProposal"));
+  REQUIRE_EQ(document["entries"][0]["position"].asInt(), 1);
+  document["lastTrainedAt"] = Json::Value::UInt64(1'700'000'000'000);  // what a trained day reads back with
   document["id"] = "rt_00000002";
   document["name"] = "Push B";
 

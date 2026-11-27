@@ -110,15 +110,18 @@ private fun Engine.projectionOf(view: Map<RecordKey, Json>, operations: List<Pla
 }
 
 // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, the values the inverted act
-// wrote (`forward`), never what a later local edit shows. A created record comes back by its life only where a write can bring it back, and
-// one the inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the product's. A
-// preimage's row is the one its restore writes over, anchored at the restore's ACK; a created record's keeps the record as `before` drew it.
+// wrote (`forward`), never what a later local edit shows. A life the slot takes away, a created record's among them, comes back only where
+// a write can bring it back, with the record as `before` drew it, and a record the inverse creates goes again by its strict recipe; a
+// product slot has no generic recipe, and its Redo is the product's. A preimage's row is the one its restore writes over, anchored at the
+// restore's ACK.
 private fun Engine.inverseJournal(inverseActId: String, slots: List<Pair<String, PlannedSlot>>, forward: Map<RecordSlot, Json>,
     before: Map<ScopeRef, Map<RecordKey, Json>>): ReversibleAct =
     ReversibleAct(inverseActId, true, slots.map { (localId, slot) ->
         val recipe = slot.recipe as? SlotRecipe.Restore ?: return@map SourceEntry(localId, slot.scope, emptyList(), emptyList())
         val taken = recipe.operations.mapNotNull { op -> when (op) {
-            is PlannedOperation.Field -> forward[op.target]?.let { Preimage(op.target, it) to Written(op.target, op.before) }
+            is PlannedOperation.Field -> forward[op.target]?.let { value ->
+                val takenAway = op.target.slot.kind == Slot.Kind.life && value == Json.of("alive")
+                Preimage(op.target, value, drawn = before.getValue(slot.scope)[op.target.key]?.takeIf { takenAway }?.drawnRecord()) to Written(op.target, op.before) }
             is PlannedOperation.CreatedRecord -> registry.type(op.record.key.type)!!.takeIf { it.identity == "keyed" || it.revivable }
                 ?.let { RecordSlot(op.record, Slot(Slot.Kind.life)).let { target ->
                     Preimage(target, Json.of("alive"), drawn = before.getValue(slot.scope)[target.key]?.drawnRecord()) to Written(target, Json.of("dead")) } }
@@ -187,7 +190,7 @@ internal fun Engine.requestInverse(replica: ReplicaState, sourceActId: String, r
 // An act every entry of which is still held never reached the server: Undo cancels it in place, its dependents folded silently, and
 // reports whether anything drawn changed. The act leaves the journal, and its cancellation receipt keeps what a Redo needs.
 private fun Engine.cancelHeld(replica: ReplicaState, act: ReversibleAct, entries: List<Entry>): InverseResult {
-    val ordinary = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
+    val ordinary = { entry: Entry -> registry.ownCommand(entry) == null }
     val scopes = entries.flatMap { entry -> entry.effects.map { it.scope } }.distinct()
     val before = scopes.associateWith { drawn(replica, it) }
     val written = entries.filter(ordinary).flatMap { entry -> entry.intent.deltas.map { Triple(entry, entry.scope, it) } }
@@ -303,11 +306,15 @@ private fun ReplicaState.authoritative(act: ReversibleAct): Boolean = act.source
     entry.state == "acked" && source.accepted(meta["serverEpoch"]?.orNull()?.str()) != null
 }
 
-// A Redo of a cancellation waits while an entry its references name has no result yet.
-private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean = request.slots.filter { it.state == "waiting" }
-    .flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
-    .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
-    .all { entry(it) == null }
+// A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while an entry its
+// references name has no result yet.
+private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean {
+    val waiting = request.slots.filter { it.state == "waiting" }
+    if (meta["serverEpoch"]?.orNull() == null && waiting.isNotEmpty()) return false
+    return waiting.flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
+        .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
+        .all { entry(it) == null }
+}
 
 // The receipts an act's sources own in the current epoch, in commit order, beside whether a source's history is lost.
 private class OwnedHistory(val lost: Boolean, val effects: List<EffectReceipt>) {
@@ -397,24 +404,29 @@ internal fun ReplicaState.bindReferences(epoch: String?) {
 }
 
 // What one planned restore operation becomes: its wire form, a skip by its code the request counts, or nothing where the act never wrote
-// the target, so there is nothing to take back. Where a source's history is lost, an unowned target may be one it wrote, and skips.
+// the target, so there is nothing to take back. Where a source's history is lost, an unowned target may be one it wrote, and skips. A keyed
+// record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to a server that
+// declares them.
 private sealed interface Bound {
     data class Sent(val operation: RestoreOperation) : Bound
     data class Skipped(val code: String) : Bound
 }
 
-private fun ReplicaState.bind(act: ReversibleAct?, history: OwnedHistory, op: PlannedOperation): Bound? {
+private fun ReplicaState.bind(registry: Registry, act: ReversibleAct?, history: OwnedHistory, op: PlannedOperation): Bound? {
     val epoch = meta["serverEpoch"]?.orNull()?.str()
     return when (op) {
         is PlannedOperation.Field -> {
-            if (op.reference != null) return expectedOf(op.reference)?.let { Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, it, op.before)) }
-                ?: Bound.Skipped("reference-unbound")
+            val type = registry.type(op.target.key.type)!!
+            val declared = (meta["serverSchema"]?.long() ?: 0L) >= REVIVAL_VALUES_SCHEMA
+            val values = op.drawn?.takeIf { declared && type.revivesKeyed(op.target.slot, op.before) }?.let { CreationValues.revival(type, it) }?.takeUnless { it.isEmpty }
+            val sent = { expected: Expectation -> Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, expected, op.before, values)) }
+            if (op.reference != null) return expectedOf(op.reference)?.let(sent) ?: Bound.Skipped("reference-unbound")
             val expected = history.latestOwned(op.target) ?: return if (history.lost) Bound.Skipped("history-changed") else null
             val preimage = act?.sourceEntries.orEmpty().flatMap { it.preimages }.firstOrNull { it.target == op.target }
             when {
                 (preimage?.epoch ?: epoch) != epoch -> Bound.Skipped("epoch-changed")
                 preimage == null || !unbroken(history, op.target.record, preimage.rowSeq) -> Bound.Skipped("history-changed")
-                else -> Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, Expectation.Version(expected), op.before))
+                else -> sent(Expectation.Version(expected))
             }
         }
         is PlannedOperation.CreatedRecord -> when (val proof = history.createdFootprint(op.record)) {
@@ -440,12 +452,13 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
         val entry = replica.entry(slot.localId)
         if (entry == null) { slot.settle(null, "refused"); continue }
         val recipe = slot.recipe
-        slot.skipped = emptyList()
+        val recorded = slot.skipped.orEmpty()
+        slot.skipped = recorded
         val args: Json? = when {
             epoch == null -> null
             recipe is SlotRecipe.Restore -> {
-                val results = recipe.operations.map { op -> op to replica.bind(act, history, op) }
-                slot.skipped = results.mapNotNull { (it.second as? Bound.Skipped)?.code }
+                val results = recipe.operations.map { op -> op to replica.bind(registry, act, history, op) }
+                slot.skipped = recorded + results.mapNotNull { (it.second as? Bound.Skipped)?.code }
                 val sent = results.mapNotNull { (op, result) -> (result as? Bound.Sent)?.let { op to it.operation } }
                 slot.recipe = recipe.copy(operations = sent.map { it.first })
                 sent.takeIf { it.isNotEmpty() }?.let { RestoreArguments(epoch, it.map { (_, wire) -> wire }).json }
@@ -454,7 +467,7 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
                 val selection = recipe.recipe.evidence
                 val records = selection.unchangedCreatedRecords.map { (history.createdFootprint(it) as? CreatedProof.Held)?.proof }
                 val scopes = selection.unchangedCreatedScopes.map(history::createdScope)
-                if (records.any { it == null } || scopes.any { it == null }) null.also { slot.skipped = listOf("history-changed") }
+                if (records.any { it == null } || scopes.any { it == null }) null.also { slot.skipped = recorded + "history-changed" }
                 else Json.objectOf("input" to recipe.recipe.input, "evidence" to Evidence(epoch,
                     selection.ownedFields.mapNotNull { target -> history.latestOwned(target)?.let { Evidence.OwnedField(target, it) } },
                     records.filterNotNull(), scopes.filterNotNull()).json)
@@ -473,6 +486,42 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
     }
     request.state = "materialized"
     replica.settleRequest(request)
+}
+
+// §7.10 Add: an act adopted from `from` never read this replica's own writes, which reach the server before its own. Each adopted act
+// gives up every field target whose record this replica holds a write of, an outbox entry whose stored effects write it or a receipt row
+// its journal keeps: the target leaves its recipes, preimages and written values, and a waiting request withdraws its operation there,
+// with its projection, counted skipped `history-changed`. A created record and a command recipe stay, proven by the act's own receipts
+// alone. Answers how many targets the adopted acts gave up.
+internal fun ReplicaState.giveUpUnread(from: ReplicaState): Int {
+    val written = buildSet {
+        for (entry in outbox) for (effect in entry.effects) for (delta in effect.deltas) add(RecordAddress(effect.scope, delta.key))
+        for (attempt in journal.flatMap { it.sourceEntries }.flatMap { it.attempts }) {
+            for (effect in attempt.acceptedEffects.orEmpty()) for (row in effect.rows) add(RecordAddress(effect.scope, row.key))
+        }
+    }
+    if (written.isEmpty()) return 0
+    var givenUp = 0
+    for (source in from.journal.flatMap { it.sourceEntries }) {
+        source.recipes = source.recipes.mapNotNull { recipe ->
+            if (recipe !is UndoRecipe.Fields) return@mapNotNull recipe
+            val kept = recipe.targets.filter { it.target.record !in written }
+            givenUp += recipe.targets.size - kept.size
+            kept.takeIf { it.isNotEmpty() }?.let { recipe.copy(targets = it) }
+        }
+        source.preimages = source.preimages.filter { it.target.record !in written }
+        source.written = source.written.filter { it.target.record !in written }
+    }
+    for (request in from.inverses.filter { it.state == "waiting" }) for (slot in request.slots.filter { it.state == "waiting" }) {
+        val recipe = slot.recipe as? SlotRecipe.Restore ?: continue
+        val kept = recipe.operations.filter { it !is PlannedOperation.Field || it.reference != null || it.target.record !in written }
+        val withdrawn = recipe.operations.size - kept.size
+        if (withdrawn == 0) continue
+        slot.recipe = recipe.copy(operations = kept)
+        slot.skipped = slot.skipped.orEmpty() + List(withdrawn) { "history-changed" }
+        from.entry(slot.localId)?.let { keepProjection(it, kept) }
+    }
+    return givenUp
 }
 
 // The projection of the operations a slot still holds, the rest withdrawn.

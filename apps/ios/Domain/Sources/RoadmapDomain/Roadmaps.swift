@@ -52,8 +52,8 @@ extension ID where E == RoadmapEntry {
   public var overlay: ScopeRef { .overlay(description) }
 }
 
-// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place, its reach and whether its
-// guide is inherited are the server's.
+// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place, its reach, whether its guide
+// is inherited and the roadmap a fork was copied from are the server's.
 public struct RoadmapMeta: Writable {
   public static let type = Roadmap.Types.meta
   public static let singleton = ID<RoadmapMeta>("meta")
@@ -68,11 +68,13 @@ public struct RoadmapMeta: Writable {
   public let parent: RoadmapEntry.Parent?
   public let depth: Int
   public let reach: String
+  // Unset on a roadmap that is no fork.
+  public let forkedFrom: ID<RoadmapEntry>?
 
   public init(title: String = Roadmap.Defaults.Meta.title, guide: String = Roadmap.Defaults.Meta.guide,
               visibility: String = Roadmap.Defaults.Meta.visibility, guideInherited: Bool = Roadmap.Defaults.Meta.guideInherited,
               root: ID<RoadmapEntry>? = nil, parent: RoadmapEntry.Parent? = nil, depth: Int = Roadmap.Defaults.Meta.depth,
-              reach: String = Roadmap.Defaults.Meta.reach) {
+              reach: String = Roadmap.Defaults.Meta.reach, forkedFrom: ID<RoadmapEntry>? = nil) {
     self.title = title
     self.guide = guide
     self.visibility = visibility
@@ -81,6 +83,7 @@ public struct RoadmapMeta: Writable {
     self.parent = parent
     self.depth = depth
     self.reach = reach
+    self.forkedFrom = forkedFrom
   }
 
   public init(_ r: Fields) throws(DecodeError) {
@@ -88,7 +91,8 @@ public struct RoadmapMeta: Writable {
               visibility: try r.string("visibility", default: Roadmap.Defaults.Meta.visibility),
               guideInherited: try r.bool("guideInherited", default: Roadmap.Defaults.Meta.guideInherited),
               root: try r.optionalRef("root", RoadmapEntry.self), parent: RoadmapEntry.Parent(r.json("parent")),
-              depth: try r.optionalInt("depth") ?? Roadmap.Defaults.Meta.depth, reach: try r.string("reach", default: Roadmap.Defaults.Meta.reach))
+              depth: try r.optionalInt("depth") ?? Roadmap.Defaults.Meta.depth, reach: try r.string("reach", default: Roadmap.Defaults.Meta.reach),
+              forkedFrom: try r.optionalRef("forkedFrom", RoadmapEntry.self))
   }
 
   public var fields: [String: JSON] { ["title": .string(title), "guide": .string(guide), "visibility": .string(visibility)] }
@@ -109,7 +113,7 @@ extension Record {
 extension RoadmapTree {
   // One roadmap as a device's replica holds it, from the engine's records as `drawn` folds them, visible or not: a
   // reader's `records(in: .drawn)`, or the room's views of every record. `tree` is every record of its tree scope: its
-  // steps and links, absent ones kept, its meta and its kinds. `overlay` is every record of its owner's overlay, for the
+  // steps and links, absent ones kept, its meta, with the roadmap a fork was copied from, and its kinds. `overlay` is every record of its owner's overlay, for the
   // marks and pointers, nil where the reader takes none (a roadmap someone else owns). `listed` is its entry in the
   // person's own list, nil where it is not theirs: it says whether the roadmap is present and where it sits, and without
   // it the meta says where. `read` says the device holds the server's whole copy: the first pull of every scope it is read
@@ -119,7 +123,9 @@ extension RoadmapTree {
   // A subtree's date and a pointer's order are the stamps of the registers that hold them. §5 Dates: the server has
   // received a mark once no queued entry still changes its record (`isPending`), and its time is the record's `ru`; a mark
   // an entry still changes is the device's, timed by its register's stamp. A roadmap was last changed when the server
-  // last received a record of it: the newest `ru` among its entry, its tree scope's records and its overlay's.
+  // last received a record of it: the newest `ru` among its entry, its tree scope's records and its overlay's; and it was
+  // last stamped at the time of the newest engine stamp among them as the device holds them, which orders a roadmap no
+  // server has received.
   public init(id: ID<RoadmapEntry>, listed: Record?, tree: [Record], overlay: [Record]?, read: Bool = true) throws(DecodeError) {
     let overlaid = overlay ?? []
     var meta: RoadmapMeta?
@@ -165,13 +171,16 @@ extension RoadmapTree {
     if let listed { place = try RoadmapEntry(Fields(listed)).parent } else { place = meta?.parent }
     let held = tree + overlaid
     let received = ([listed?.ru] + held.map(\.ru)).compactMap { $0 }.max()
+    let stamped = ([listed].compactMap { $0 } + held).flatMap { (record: Record) -> [Stamp] in
+      [record.born, record.life?.stamp].compactMap { $0 } + Array(record.stamps.values)
+    }.max()
     let madeHere = !tree.isEmpty && held.allSatisfy { $0.ru == nil }
     let metadata = meta.map { (meta: RoadmapMeta) -> Metadata in
       Metadata(title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: (meta.root ?? id).description, depth: meta.depth,
-               visibility: meta.visibility, reach: meta.reach)
+               visibility: meta.visibility, reach: meta.reach, forkedFrom: meta.forkedFrom?.description)
     }
     self.init(id: id.description, present: listed.map { $0.life?.isAlive == true } ?? true, read: read || madeHere ? .loaded : .unread,
-              own: listed != nil, updatedAt: received.map(Instant.init(ms:)),
+              own: listed != nil, updatedAt: received.map(Instant.init(ms:)), stampedAt: stamped.map { Instant(ms: $0.ms) },
               parent: place.map { Parent(tree: $0.tree.description, step: $0.step.description) }, meta: metadata, nodes: nodes, edges: edges,
               kinds: kinds, marks: marks, pointers: pointers)
   }
@@ -224,7 +233,7 @@ public struct CreateRoadmap: ActAction {
     } else {
       for kind in RoadmapRules.genesisKinds { legend.append(try Valid(kind, at: moment)) }
     }
-    let imported = try StepsImport(steps, in: tree.tree, at: moment, ids: ids)
+    let imported = try StepsImport(steps, into: RoadmapTree(id: tree.description, meta: nil), under: nil, in: tree.tree, at: moment, ids: ids)
     var entry = Plan()
     entry.create(try Valid(RoadmapEntry(id: tree), at: moment))
     entry.undoBy(.command(Roadmap.Commands.undoCreateRoadmap, input: ["tree": tree.json], unchangedCreatedRecords: [.of(tree)],
@@ -236,7 +245,7 @@ public struct CreateRoadmap: ActAction {
         plan.create(words, fields: ["title"])
         for kind in legend { plan.create(kind) }
       }
-      for unit in chunk { unit.write(to: &plan) }
+      for unit in chunk { unit.write(to: &plan, undoable: false) }
       plan.evidenceForUndo()
       segments.append(ScopedPlan(tree.tree, plan))
     }
@@ -254,8 +263,9 @@ public struct DeleteRoadmap: ActAction {
     self.tree = tree
   }
 
-  public func load(_ read: ActReader) throws -> (roadmap: RoadmapEntry?, notes: [String]) {
-    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> (roadmap: RoadmapEntry?, notes: [String]) in
+  // The roadmap's entry, and the roadmaps the device holds a note of: itself and each subtree under it.
+  public func load(_ read: ActReader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) {
+    try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]) in
       let entries = account.repository(RoadmapEntry.self)
       let roadmaps = try entries.all(in: .drawn)
       var under = [tree]
@@ -264,18 +274,18 @@ public struct DeleteRoadmap: ActAction {
         for each in roadmaps where each.parent?.tree == under[next] && !under.contains(each.id) { under.append(each.id) }
         next += 1
       }
-      return (try entries.find(tree, in: .drawn), try under.map(LandingNote.key).filter { try account.device($0) != nil })
+      return (try entries.find(tree, in: .drawn), try under.filter { try account.device(LandingNote.key(of: $0)) != nil })
     }
   }
 
-  public func decide(_ loaded: (roadmap: RoadmapEntry?, notes: [String]), ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
+  public func decide(_ loaded: (roadmap: RoadmapEntry?, noted: [ID<RoadmapEntry>]), ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
     guard let roadmap = loaded.roadmap else { return .unchanged(()) }
     guard roadmap.parent == nil else {
       return .refuse(.notARoot(Refused(Roadmap.Codes.notARoot, subject: tree.ref, path: .predicted)))
     }
     var plan = Plan()
     plan.remove(tree)
-    for key in loaded.notes { plan.device(key, nil) }
+    for noted in loaded.noted { plan.note(LandingNote(), of: noted) }
     return .write(plan, in: RoadmapEntry.scope, ())
   }
 }
@@ -427,8 +437,7 @@ public struct CreateSubtree: ActAction {
     public let creation: (root: ID<RoadmapEntry>, revived: Bool)?
   }
 
-  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, held: HeldRecord<RoadmapStep>, note: LandingNote?,
-                             moment: Moment)
+  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, step: HeldStep)
 
   public let tree: ID<RoadmapEntry>
   public let step: ID<RoadmapStep>
@@ -442,21 +451,20 @@ public struct CreateSubtree: ActAction {
     let roadmap = try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> RoadmapEntry? in
       try account.repository(RoadmapEntry.self).find(tree, in: .drawn)
     }
-    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldRecord<RoadmapStep>, note: LandingNote?) in
-      let step = try HeldRecord(RoadmapStep(id: step), in: scope.repository(RoadmapStep.self))
-      return (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), step,
-              step.isAbsent ? try LandingNote(of: tree, in: scope) : nil)
+    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldStep) in
+      (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), try HeldStep(step, of: tree, in: scope))
     }
     let pointer = try read.inScope(tree.overlay) { (overlay: Reader) throws -> StepPointer? in
       try overlay.repository(StepPointer.self).find(ID(step.record), in: .drawn)
     }
-    return (roadmap, pointer, held.meta, held.step, held.note, read.moment)
+    return (roadmap, pointer, held.meta, held.step)
   }
 
   public func decide(_ loaded: Loaded, ids: ActIDSource) throws(Violation) -> ActDecision<Result, RoadmapRefusal> {
     guard loaded.roadmap != nil else { return .refuse(.gone(tree.ref, .predicted)) }
-    guard loaded.held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
-    if let owned = loaded.held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
+    let held = loaded.step.held
+    guard held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
+    if let owned = held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
     guard loaded.pointer == nil else {
       return .refuse(.stepOpensARoadmap(Refused(Roadmap.Codes.stepOpensATree, subject: step.ref, path: .predicted)))
     }
@@ -480,10 +488,25 @@ public struct CreateSubtree: ActAction {
                                ownedFields: [.field(step, "branch", in: tree.tree)], unchangedCreatedRecords: [.of(subtree)],
                                unchangedCreatedScopes: [subtree.tree]))
     let connected = ScopedPlan(RoadmapEntry.scope, connection)
-    let result = Result(subtree: subtree, creation: (root, loaded.held.isAbsent))
-    guard let note = loaded.note else { return .write(ActPlan([connected]), result) }
-    var revival = loaded.held.reviving(try Valid(loaded.held.value, fields: [], at: loaded.moment), fields: [])
-    revival.device(LandingNote.key(of: tree), note.adding(revived: [step]).json)
+    let result = Result(subtree: subtree, creation: (root, held.isAbsent))
+    guard held.isAbsent else { return .write(ActPlan([connected]), result) }
+    let revival = loaded.step.reviving(try Valid(held.value, fields: [], at: loaded.step.moment), fields: [])
     return .write(ActPlan([ScopedPlan(tree.tree, revival), connected]), result)
+  }
+
+  // R-8 Redo of the creation: the Undo's inverse act, its sources by ordinal, given recipes of the product's own.
+  // `roadmap.redoCreateSubtree` plants a new subtree under `fresh` while the step's `branch` is still the one the Undo
+  // cleared; a step the creation revived is revived again. The Undo's sources walk the creation backwards: the command's
+  // inverse first, then the revival's restore.
+  public func redo(_ creation: (root: ID<RoadmapEntry>, revived: Bool), under fresh: ID<RoadmapEntry>) -> [ProductSlot] {
+    var planted = Plan()
+    planted.undoBy(.command(Roadmap.Commands.redoCreateSubtree,
+                            input: ["tree": tree.json, "root": creation.root.json, "step": step.json, "subtree": fresh.json],
+                            ownedFields: [.field(step, "branch", in: tree.tree)]))
+    let slots = [ProductSlot(index: 0, scope: RoadmapEntry.scope, plan: planted)]
+    guard creation.revived else { return slots }
+    var alive = Plan()
+    alive.undoBy(.restoring(step, life: true, by: Roadmap.Commands.restoreTree))
+    return slots + [ProductSlot(index: 1, scope: tree.tree, plan: alive)]
   }
 }

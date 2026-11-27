@@ -1266,9 +1266,9 @@ class DeployWorkflowTest(unittest.TestCase):
         names = json.loads((contract / "composition.json").read_text())["registries"]
         self.assertEqual((result.returncode, result.stdout, result.stderr, names),
                          (0, "", "", ["gym.registry.json", "journal.registry.json", "roadmap.registry.json"]))
-        # Roadmap joins additively: the composed version rises and the minimum a released gym or journal client meets
-        # does not.
-        self.assertEqual(json.loads(output.read_text()), {"schema": 13, "minSchema": 11})
+        # Roadmap's visibility and reach narrow to private and public, a rule clients enforce, so the minimum rises with
+        # the composed version.
+        self.assertEqual(json.loads(output.read_text()), {"schema": 15, "minSchema": 15})
 
     def test_the_server_takes_roadmap_s_switch_from_the_host_file_alone_which_no_deploy_renders_or_ships(self):
         root = SCRIPT.parents[2]

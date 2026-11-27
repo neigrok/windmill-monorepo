@@ -1,19 +1,20 @@
 // Off the main thread: bge-small-en-v1.5 int8, loaded once, turning batches of text into 384-dim unit
-// vectors. The model is served from our own origin, so no writer data leaves the device.
+// vectors. The model and its WebAssembly runtime are served from our own origin, so no writer data leaves the
+// device and nothing is fetched from a third party; the service worker keeps both after first use (public/sw.js).
 // Runs on wasm (CPU), never WebGPU: onnxruntime-web's WebGPU path miscomputes this quantized model.
 // Protocol: the main thread posts { id, kind: 'passages' | 'query', texts } and gets back
 // { id, ok, vectors } or { id, ok: false, error }; a one-time { ready } / { failed } says whether the
 // model came up at all.
-//
-// TODO: `env.backends.onnx.wasm.wasmPaths` is left at its default jsdelivr CDN URL, so onnxruntime-web
-// fetches its .wasm from a third party at first use. To close it, copy the ORT wasm files into public/
-// and set `wasmPaths` beside the env lines below.
 
 import { pipeline, env } from '@huggingface/transformers';
+// The runtime of the onnxruntime-web the library imports, copied into the build as a hashed asset.
+import runtime from '../../../../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm?url';
 
 env.allowLocalModels = true;            // load from our origin — off by default in the browser build
 env.allowRemoteModels = false;          // the promise, enforced: never reach a third-party host for the model
 env.localModelPath = '/models/';        // served same-origin from dist/ (public/models/)
+env.useBrowserCache = false;            // the service worker keeps the weights, in one copy
+env.backends.onnx.wasm.wasmPaths = { wasm: runtime };
 env.backends.onnx.wasm.numThreads = 1;  // single-threaded wasm needs no SharedArrayBuffer / COOP-COEP headers
 
 const MODEL = 'Xenova/bge-small-en-v1.5';

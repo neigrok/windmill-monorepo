@@ -15,5 +15,5 @@ test('every auth failure the shell reports is named in OBSERVABILITY.md, and aut
     named: reported.filter((operation) => doc.includes(`\`${operation}\``)),
     questions: [...new Set([...meaning.matchAll(/`([a-z]+)` \(/g)].map((match) => match[1]))].sort(),
   }, { named: reported, questions: asked });
-  assert.deepEqual(asked, ['adoption', 'notice', 'signin', 'signout', 'step']);
+  assert.deepEqual(asked, ['adoption', 'begin', 'forget', 'notice', 'signin', 'signout', 'step']);
 });

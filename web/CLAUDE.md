@@ -181,7 +181,7 @@ before installing or running the suite. Newer Node globals can conflict with the
 ```sh
 npm run dev      # localhost:5173; development API defaults to localhost:8088
 npm test         # complete Node test suite
-npm run build    # fetch model weights, run tests, build Vite and static landing shells
+npm run build    # fetch model weights, type-check the domain, run tests, build Vite and static landing shells
 ```
 
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
@@ -259,7 +259,7 @@ bodies fail the build.
 
 Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
 association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.
-Shared-tree pages receive tree-specific metadata; unlisted trees are `noindex`. The API host is
+Shared-tree pages receive tree-specific metadata; a page of any tree but a public one is `noindex`. The API host is
 excluded from indexing. Cloudflare may add managed rules to `public/robots.txt`; inspect the live
 response when checking crawler access.
 
@@ -285,7 +285,9 @@ relative and collaboration sockets use the page's `ws(s)` origin. `VITE_API_BASE
 this only for preview builds.
 
 `.github/workflows/web.yml` builds and rsyncs `dist/` on trusted runs. On a fresh host, web must
-land before backend deployment because the embedder mounts weights from the web directory.
+land before backend deployment because the embedder mounts weights from the web directory. Its paths
+name every file outside `web/` and `packages/` a web test reads, so a change to one runs the tests that
+read it; `test/web-workflow-paths.test.mjs` fails on a read the paths miss.
 See [embedder operations](../services/embedder/README.md).
 
 Watch every PR check with `gh pr checks <number> --watch --fail-fast --interval 45` under a bounded
@@ -310,23 +312,53 @@ it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring too
 
 ## Offline rooms and browser replicas
 
-The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
+The auth provider opens the browser sync engine once for this document and owns cookie cleanup. The read of `/v1/me` that
+lapses the seat (a `401` outside a sign-out, while the seat holds the account the engine's replica is still bound to) clears
+the cookie no live session holds any more, once a lapse: under the `windmill:auth-cookie` Web Lock, which a magic-link
+verify also holds for no longer than its 10-second request, it reads the account again and logs out if still no session
+holds the cookie, then marks the auth hint `{ status: 'ghost', cleared: <account> }`, so another tab or a later page sends
+nothing more. Every writer of the hint, the static pages' `nav-auth.js` among them, keeps the mark on a signed-out hint and
+drops it on a signed-in one, since the cookie comes back only through a sign-in. A clear that failed, because the lock did
+not come within 10 seconds, the read had no answer or the logout failed, marks nothing: the seat lapses on the first read
+all the same, and the next page tries again. A sign-in another tab completes meanwhile is read under the lock and kept. A
+sign-in whose cookie arrives on a navigation, Google's callback, holds no lock, so one landing between that read and the
+logout can still be ended. A browser without Web Locks verifies and clears without the lock. The account's copy stays, as
+a lapse keeps it.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
-of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product may
-word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
-notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
-Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
-product is asked in turn. Account closure records a durable intent and discards that
-account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
-`platform/sync/react.js` exports `useSyncEngine()`,
-`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.
+of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product's
+`sync.signOutBegins(engine)` runs before the engine sends what the device holds, while the account's replica still takes
+a write: gym's Coach ends its running turn there. Its `sync.signOutForgets(engine)` names, as the sign-out is decided, the
+device rows the finished sign-out takes from the account's replica (`finishSignOut`'s `forgetDeviceRows`), in the write
+that finishes it, so a sign-out cancelled or failed keeps them: gym's Coach names its mark and its pictures. A product's
+`sync.seatWillChange(engine)` runs before the seat changes: before a sign-in binds the device to an account (one the
+engine resumes as it starts included) and before a sign-out finishes, in rail order, each awaited for at most five seconds
+(`DeviceSeat.willChange`); one that throws or outlasts that is reported and the seat changes without it. Gym saves each
+signed-out workout for adoption there. A sign-in question is asked in its product's words (`sync.signInWords`, as
+roadmap's), or else in the shell's, consistency 7d's with *this browser*, around what the product counts: kind by kind,
+each with what names it (`sync.signInWork`, gym's workouts, routines, weigh-ins, movements and settings), or by its one noun
+(`sync.signedOutWork`, counted by `adoptionCount`, the journal's pages) beside its unsaved device work. It is a dialog from
+744px and a page below, as flow 50 draws roadmap's: Add and Discard of equal weight and Cancel sign-in, which Escape is
+too; Discard asks again before it deletes anything, in the words' `discard` (*Discard all of it?* where a product's words
+carry none), and Cancel or Escape there returns to the question. A cancelled sign-in signs the account out and leaves the
+work from before on the device. A product may word its sign-out too (`sync.signOutWords`, for a sign-out whose work is
+all its own and that no notice joins), with flow 50's Keep and quiet Discard. Each due product is asked in turn. Account closure records a durable intent and discards that
+account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh: each
+product's `forgetDevice` hears `closed` for it.
+`platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
+`useSyncRecords(scope)` and `useSyncNotices(product)`; records and notices follow the replica this tab draws, so no room
+draws another seat's while the shell catches up. The anonymous journal uses record observations; gym's room draws from
+the replica the engine holds without waiting for the account, logs a workout on it as the phones do, and signed out
+is the browser's own copy. A page restored from
+the back/forward cache keeps every room as it stood, and its writes wait for the engine's restore, landing only under the
+seat they were made under.
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
-enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use, and the
-brand root's Inter stays out of the precache, so only that page fetches it.
-API/model responses bypass the worker: its fetch handler declines them, and where the browser takes service
+enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use; the worker
+keeps the runtime in its asset cache and the weights in `windmill-models-v1` after that use, neither in the shell.
+The brand root's Inter stays out of the precache, so only that page fetches it.
+API responses bypass the worker: its fetch handler declines them, and where the browser takes service
 worker routes the worker routes `/v1/` to the network at install, so a beacon or keepalive request a page sends
 as it hides never waits on the handler. Bounded network navigation falls back to the cached shell.
 Server features name their connection requirement in the offline state.

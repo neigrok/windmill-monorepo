@@ -152,6 +152,14 @@ pub fn principal_key(principal: &Principal) -> String {
     format!("{}:{}", principal.kind(), principal.id())
 }
 
+pub fn rate_key(identity: &Identity) -> String {
+    let principal = principal_key(&identity.principal);
+    if identity.background() {
+        return format!("background:{principal}");
+    }
+    principal
+}
+
 pub fn public_router(service: Arc<Service>) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -187,8 +195,11 @@ struct RefusalCode(&'static str);
 struct RefusalLine {
     operation: &'static str,
     code: &'static str,
+    ceiling: Option<&'static str>,
     client: &'static str,
     tier: Option<&'static str>,
+    refusal: Option<ai_providers::RefusalReason>,
+    provider_request_id: Option<String>,
 }
 #[derive(Clone)]
 struct WriteOutcome(&'static str);
@@ -256,8 +267,11 @@ async fn no_store(State(service): State<Arc<Service>>, request: Request, next: N
             product = "ai",
             door = "public",
             code = line.code,
+            ceiling = line.ceiling,
             client = line.client,
             tier = line.tier,
+            refusal = line.refusal.map(ai_providers::RefusalReason::as_str),
+            provider_request_id = line.provider_request_id.as_deref(),
             label,
             environment = service.config.environment.label(),
             duration_ms,
@@ -352,17 +366,24 @@ pub fn report_events(events: Vec<LedgerEvent>, duration: Duration) {
     let duration_ms = duration.as_millis() as u64;
     for event in events {
         match event {
-            LedgerEvent::Threshold { budget_id, percent } => {
+            LedgerEvent::Threshold {
+                budget_id,
+                kind,
+                percent,
+            } => {
                 tracing::warn!(
                     operation = "budget.threshold",
                     budget_id,
+                    kind = kind.as_str(),
                     percent,
                     "threshold"
                 );
                 sentry::with_scope(
                     |scope| {
                         scope.set_tag("budget_id", budget_id.to_string());
+                        scope.set_tag("kind", kind.as_str());
                         scope.set_tag("percent", percent.to_string());
+                        scope.set_fingerprint(Some(&["budget.threshold", kind.as_str()]));
                     },
                     || sentry::capture_message("budget.threshold", sentry::Level::Warning),
                 );
@@ -407,6 +428,9 @@ pub fn report_events(events: Vec<LedgerEvent>, duration: Duration) {
                     telemetry::report_failure("sweep.end", "assumed", None);
                 }
             }
+            LedgerEvent::ThresholdUnreadable => {
+                telemetry::report_failure("ledger.drain_events", "threshold_unreadable", None);
+            }
         }
     }
 }
@@ -424,6 +448,7 @@ pub fn refusal(code: &'static str, allowance: Option<Value>) -> Response {
         "subject_exhausted"
         | "free_month_exhausted"
         | "free_day_exhausted"
+        | "background_exhausted"
         | "concurrency_exhausted"
         | "rate_limited" => StatusCode::TOO_MANY_REQUESTS,
         "busy" | "paused" | "accounting_unavailable" | "provider_unavailable" => {
@@ -446,6 +471,9 @@ pub async fn reject(
     if counted {
         service.refusals.count(code.as_str());
     }
+    if code == StaticCode::BackgroundHour {
+        telemetry::report_background_hour();
+    }
     let allowance = if code == StaticCode::AccountingUnavailable {
         None
     } else {
@@ -456,13 +484,19 @@ pub async fn reject(
         .await
         .ok()
     };
-    let mut response = refusal(code.as_str(), allowance.as_ref().map(wire::allowance));
+    let mut response = refusal(
+        code.wire().as_str(),
+        allowance.as_ref().and_then(wire::allowance),
+    );
     if !counted {
         response.extensions_mut().insert(RefusalLine {
             operation,
-            code: code.as_str(),
+            code: code.wire().as_str(),
+            ceiling: code.ceiling(),
             client: identity.client.as_str(),
             tier: allowance.map(|value| value.tier.as_str()),
+            refusal: None,
+            provider_request_id: None,
         });
     }
     response
@@ -471,7 +505,7 @@ pub async fn reject(
 pub fn read_rate(service: &Service, identity: &Identity) -> bool {
     service
         .rates
-        .allow(principal_key(&identity.principal), false, READS_PER_MINUTE)
+        .allow(rate_key(identity), false, READS_PER_MINUTE)
 }
 
 pub async fn body(request: Request, limit: usize) -> Result<axum::body::Bytes, StaticCode> {
@@ -520,7 +554,18 @@ async fn allowance(State(service): State<Arc<Service>>, request: Request) -> Res
     )
     .await
     {
-        Ok(value) => Json(wire::allowance(&value)).into_response(),
+        Ok(value) => match wire::allowance(&value) {
+            Some(body) => Json(body).into_response(),
+            None => {
+                reject(
+                    &service,
+                    &identity,
+                    StaticCode::InvalidRequest,
+                    "allowance.read",
+                )
+                .await
+            }
+        },
         Err(code) => reject(&service, &identity, code, "allowance.read").await,
     }
 }
@@ -721,11 +766,10 @@ async fn text(
         Ok(row) => row,
         Err(code) => return reject(&service, &identity, code, "call.text").await,
     };
-    if !service.rates.allow(
-        principal_key(&identity.principal),
-        true,
-        row.calls_per_minute as usize,
-    ) {
+    if !service
+        .rates
+        .allow(rate_key(&identity), true, row.calls_per_minute as usize)
+    {
         return reject(&service, &identity, StaticCode::RateLimited, "call.text").await;
     }
     if allowance.code != StaticCode::Ok {
@@ -797,7 +841,12 @@ async fn text(
                 FailureCode::ProviderUnavailable => StaticCode::ProviderUnavailable,
                 FailureCode::ProviderFailed => StaticCode::ProviderFailed,
             };
-            return reject(&service, &identity, code, "call.text").await;
+            let mut response = reject(&service, &identity, code, "call.text").await;
+            if let Some(line) = response.extensions_mut().get_mut::<RefusalLine>() {
+                line.refusal = failure.refusal;
+                line.provider_request_id = failure.request_id;
+            }
+            return response;
         }
     };
     match crate::database(
@@ -990,6 +1039,7 @@ async fn text_task(
         started: start,
         http_status: outcome.http_status,
         failure_kind: outcome.failure.as_ref().map(|failure| failure.kind),
+        refusal: outcome.failure.as_ref().and_then(|failure| failure.refusal),
         usage,
     };
     let charged = settle(
@@ -1011,7 +1061,7 @@ async fn text_task(
     )
     .await
     .ok()
-    .map(|value| wire::allowance(&value));
+    .and_then(|value| wire::allowance(&value));
     if let Some(code) = code {
         service.results.push(
             &entry,

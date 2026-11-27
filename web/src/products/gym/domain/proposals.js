@@ -106,6 +106,18 @@ export class RoutineChange {
     });
   }
 
+  // Whether `floored` refuses these changes: a line setting a load under its movement's floor, read without refusing.
+  /** @param {readonly RoutineChange[]} changes @param {Catalogue} catalogue */
+  static underFloor(changes, catalogue) {
+    try {
+      RoutineChange.floored(changes, catalogue, new Path('changes'));
+      return false;
+    } catch (error) {
+      if (error instanceof Violation && error.rule === RoutineRules.loadFloor) return true;
+      throw error;
+    }
+  }
+
   // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal. A
   // movement whose place is the same in both never moved. Of the rest, one that crosses such a movement moved; of those
   // left, the longest run that keeps the base's order stands — of equal runs, the one whose places come first — and every
@@ -275,8 +287,16 @@ export function changesBetween(base, proposed) {
   return RoutineChange.between(base, proposed.map((entry) => entry.validated(new Path('entries'))));
 }
 
+// What a proposal decides before it is a decision: refused, nothing to propose, or the proposal minted with the plan that
+// writes it, which Coach's call reads as its receipt.
 /**
- * @param {{ id: Id<ProposalValue>, routineId: Id<RoutineValue>, name: string,
+ * @template P
+ * @typedef {{ kind: 'refuse', refusal: import('./gymRules.js').GymRefusal } | { kind: 'unchanged' }
+ *   | { kind: 'minted', proposal: Valid<any> & { value: P }, plan: Plan }} Proposed
+ */
+
+/**
+ * @param {{ id: Id<ProposalValue>, routineId: Id<RoutineValue>, name: string | null,
  *   entries: readonly RoutineEntry[], summary: string, removing?: boolean }} input
  */
 export function ProposeRoutine({ id, routineId, name, entries, summary, removing = false }) {
@@ -284,31 +304,40 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
   return Object.freeze({
     scope: Proposal.scope,
     refusals: GymRefusals,
+    id,
     /** @param {Reader} read */
     load(read) {
       const routines = read.repository(Routine);
       return { routine: routines.find(routineId, 'stored'), routineVisible: routines.find(routineId, 'drawn') !== null,
         catalogue: new Catalogue(read, 'stored'), moment: read.moment };
     },
-    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded */
-    decide(loaded) {
+    // A null name keeps the routine's own.
+    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded @returns {Proposed<ProposalValue>} */
+    proposed(loaded) {
       const base = loaded.routine;
-      if (base === null || !loaded.routineVisible) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', routineId.ref, null, 'predicted')));
+      if (base === null || !loaded.routineVisible) return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-record', routineId.ref, null, 'predicted')) };
       const proposed = removing ? [] : RoutineRules.entries.apply([...requested], new Path('entries'));
-      const proposedName = removing ? '' : RoutineRules.name.apply(name, new Path('name'));
+      const proposedName = removing ? '' : RoutineRules.name.apply(name ?? base.name, new Path('name'));
       if (proposed.some((entry) => loaded.catalogue.find(entry.exerciseId) === null)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')));
+        return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')) };
       }
       const changes = RoutineChange.between(base.entries, proposed);
       RoutineChange.floored(changes, loaded.catalogue, new Path('changes'));
       if (!removing && base.name === proposedName && sameJson(base.entries.map((entry) => entry.json), proposed.map((entry) => entry.json))) {
-        return Decision.unchanged(id);
+        return { kind: 'unchanged' };
       }
-      const proposal = new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName, summary, changes });
+      const proposal = new Valid(new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName, summary, changes }), loaded.moment);
       const plan = new Plan();
-      plan.create(new Valid(proposal, loaded.moment));
+      plan.create(proposal);
       plan.guardRead(base.id, ['entries', 'name']);
-      return Decision.write(plan, id);
+      return { kind: 'minted', proposal, plan };
+    },
+    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded */
+    decide(loaded) {
+      const proposed = this.proposed(loaded);
+      if (proposed.kind === 'refuse') return Decision.refuse(proposed.refusal);
+      if (proposed.kind === 'unchanged') return Decision.unchanged(id);
+      return Decision.write(proposed.plan, id);
     },
   });
 }
@@ -384,15 +413,32 @@ export class ProposalState {
   superseded(id, reason) { return GymRefusals.ofRefused(new Refused('proposal-superseded', id.ref, { reason }, 'predicted')); }
 }
 
-/** @typedef {{ state: ProposalState, catalogue: Catalogue }} ProposalApplication */
+// A routine proposal as applying it reads it: its state, and the catalogue its loads meet their floors in. Pending, it is
+// `underFloor` when Apply would refuse it for a load under a movement's floor.
+export class ProposalApplication {
+  /** @param {ProposalState} state @param {Catalogue} catalogue */
+  constructor(state, catalogue) {
+    this.state = state;
+    this.catalogue = catalogue;
+    Object.freeze(this);
+  }
+
+  /** @param {Reader} read @param {Id<ProposalValue>} id */
+  static of(read, id) { return new ProposalApplication(ProposalState.of(read, id), new Catalogue(read, 'stored')); }
+
+  get underFloor() {
+    const proposal = this.state.proposal;
+    return proposal?.state === 'pending' && RoutineChange.underFloor(proposal.changes, this.catalogue);
+  }
+}
 
 /** @param {Id<ProposalValue>} id */
 export function ApplyProposal(id) {
   return Object.freeze({
     scope: Proposal.scope,
     refusals: GymRefusals,
-    /** @param {Reader} read @returns {ProposalApplication} */
-    load(read) { return { state: ProposalState.of(read, id), catalogue: new Catalogue(read, 'stored') }; },
+    /** @param {Reader} read */
+    load(read) { return ProposalApplication.of(read, id); },
     /** @param {ProposalApplication} loaded */
     decide({ state, catalogue }) {
       const refused = state.refusal(id, true);

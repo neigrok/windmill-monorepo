@@ -458,6 +458,33 @@ TEST(composite_walks_only_what_a_schema_closes_and_passes_the_rest_through) {
   CHECK_EQ(r.calls[0].args["meta"]["anything"].asString(), std::string("goes"));
 }
 
+// A field the declaration names as read back is dropped wherever its path reaches, before the schema is checked,
+// and the tool never sees it; a stray key beside it is still refused by name.
+TEST(composite_drops_what_a_declaration_reads_back_and_refuses_everything_else_it_does_not_declare) {
+  FakeProduct r = importer();
+  r.catalog[0].readBack = {"revision", "nodes[].rank"};
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
+
+  Json::Value readBack = args({{"treeId", "t"}});
+  readBack["revision"] = 4;
+  Json::Value ranked = nodeItem("a");
+  ranked["rank"] = 1;
+  readBack["nodes"].append(ranked);
+  readBack["nodes"].append(nodeItem("b"));
+  const ToolResult ran = surface.callTool("import_subgraph", readBack, granted(""));
+  CHECK_FALSE(ran.isError);
+  REQUIRE_EQ(r.calls.size(), std::size_t{1});
+  Json::Value expected = args({{"treeId", "t"}});
+  expected["nodes"].append(nodeItem("a"));
+  expected["nodes"].append(nodeItem("b"));
+  CHECK_EQ(dump(r.calls[0].args), dump(expected));
+
+  readBack["nodes"][1]["deleted"] = true;
+  CHECK_EQ(message(surface.callTool("import_subgraph", readBack, granted(""))),
+           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, position."));
+  CHECK_EQ(r.calls.size(), std::size_t{1});
+}
+
 TEST(composite_aliases_and_canonical_names_share_permissions_and_do_not_rewrite_arguments) {
   FakeProduct r = roadmap();
   CompositeToolHost surface(std::vector<ToolModule>{{r, "Call get_tree before create_node."}});

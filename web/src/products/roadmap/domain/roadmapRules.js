@@ -59,7 +59,7 @@ export const RoadmapSpecs = Object.freeze({
   linkLabel: chars('node.links.label', 200),
   hue: new ChoiceSpec('kind.hue', [...HUES]),
   recolourHue: new ChoiceSpec('roadmap.recolourKind.hue', [...HUES]),
-  visibility: new ChoiceSpec('meta.visibility', ['private', 'unlisted', 'public']),
+  visibility: new ChoiceSpec('meta.visibility', ['private', 'public']),
   kindLabel: chars('kind.label', 24),
   kindDescription: chars('kind.description', 80),
   mark: new ChoiceSpec('progress.mark.status', ['complete', 'none']),
@@ -68,6 +68,10 @@ export const RoadmapSpecs = Object.freeze({
   linkTitle: chars('stepLink.title', 200, { trim: true }),
   note: chars('stepNote.text', 16000),
 });
+
+// The web links a person is shown and the server takes (packages/api-contract/roadmap-link-urls.json): an address that
+// starts with http:, https: or mailto:, in any case, so no link or note can carry a javascript: URL.
+export const SAFE_URL = /^(https?:|mailto:)/i;
 
 export const RoadmapChecks = Object.freeze({
   cycle: 'edge.cycle',

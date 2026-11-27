@@ -112,7 +112,7 @@ struct CoachReading: Identifiable {
     var steps: [Step] = []
     var phrases: [String] = []
     for call in calls where call.outcome == .ok {
-      guard let ability = Catalog.ability(named: call.name) else { continue }
+      guard let ability = Catalog.gym.ability(named: call.name) else { continue }
       switch call.read {
       case .ids(let read): served.saw(read)
       case .counts(let tally): counted = counted + tally
@@ -404,7 +404,7 @@ struct CoachPhotoView: View {
   @Namespace var zoom
   var row: CoachPictureRow? {
     guard local == nil else { return nil }
-    return CoachPictureRow(id: id, json: try? gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(id)) })
+    return CoachPictureRow(id: id, json: try? gym.runner.read(Gym.scope) { try $0.device(Picture.rowKey(id)) })
   }
   var attachment: CoachAttachment? { local?.0 ?? row?.attachment }
   var image: UIImage? { (local?.1 ?? row?.original).flatMap(UIImage.init(data:)) }

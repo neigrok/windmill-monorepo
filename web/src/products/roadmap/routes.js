@@ -112,9 +112,11 @@ export const roadmapRoutes = {
   render,
   forgetDevice,
   preloadApp: importSkillTreeApp,
+  // The reminder and the tending are the account's; the export reads the device's trees, so signed out shows it too.
   settingsSections: {
     main: [ReminderSection, TendingSection],
     data: [YourDataSection],
+    signedOut: [YourDataSection],
   },
   landing: {
     head: roadmapLandingHead,

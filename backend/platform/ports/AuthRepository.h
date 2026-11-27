@@ -3,6 +3,7 @@
 #include "platform/domain/Auth.h"
 #include "platform/domain/Ids.h"
 #include "platform/ports/Clock.h"
+#include "platform/ports/SessionReplicas.h"
 
 #include <optional>
 #include <string>
@@ -28,6 +29,8 @@ struct StoredSignInCode {
 struct StoredSession {
   UserId user;
   UnixMs expiresAt = 0;
+  // The replica the session last pushed for (SessionReplicas); nullopt before its first accepted push.
+  std::optional<std::string> syncReplica;
 };
 
 // `id` is the public handle the revoke endpoint addresses; `tokenHash` never leaves this layer.
@@ -63,8 +66,8 @@ struct AccountCloseResult {
   std::vector<std::string> revokedSessions;
 };
 
-// Digests, not secrets, are the keys throughout.
-struct AuthRepository {
+// Digests, not secrets, are the keys throughout. It keeps sessions, and so each one's replica.
+struct AuthRepository : SessionReplicas {
   virtual ~AuthRepository() = default;
 
   virtual std::optional<User> findUserByEmail(const Email& email) = 0;

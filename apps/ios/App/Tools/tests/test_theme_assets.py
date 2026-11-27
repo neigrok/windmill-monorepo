@@ -10,9 +10,9 @@ THEME = APP / "Sources/Theme/Theme.xcassets"
 
 
 def contract_rows():
-    contract = (REPOSITORY / "docs/design/ios/ios-redesign.md").read_text()
+    contract = "".join((REPOSITORY / "docs/design/ios" / name).read_text() for name in ("ios-redesign.md", "roadmap.md"))
     return {f"{room}/{role}": (dark, light) for room, role, dark, light in
-            re.findall(r"\| `(gym|journal|shell)/([\w-]+)` \| ([^|]+) \| ([^|]+) \|", contract)
+            re.findall(r"\| `(gym|journal|shell|roadmap)/([\w-]+)` \| ([^|]+) \| ([^|]+) \|", contract)
             if re.search(r"#[0-9A-F]{6}", dark)}
 
 
@@ -49,7 +49,8 @@ class ThemeAssetsTests(unittest.TestCase):
         for accent, grounds in [("gym/accent", ["canvas", "card", "raised", "on-accent"]),
                                 ("shell/brand", ["canvas", "card", "raised", "on-brand"]),
                                 ("shell/danger", ["canvas", "card", "raised"]),
-                                ("journal/lamp", ["canvas", "card"])]:
+                                ("journal/lamp", ["canvas", "card"]),
+                                ("roadmap/accent", ["canvas", "card", "raised", "on-accent"])]:
             room = accent.split("/")[0]
             for ground in grounds:
                 for appearance, column in [("dark", 0), ("light", 1)]:
@@ -61,7 +62,7 @@ class ThemeAssetsTests(unittest.TestCase):
 
     def test_palettes_name_exactly_the_theme_colour_sets(self):
         palettes = (APP / "Sources/Theme/Palettes.swift").read_text()
-        named = set(re.findall(r'Color\("((?:gym|journal|shell)/[\w-]+)"\)', palettes))
+        named = set(re.findall(r'Color\("((?:gym|journal|shell|roadmap)/[\w-]+)"\)', palettes))
         assets = {path.parent.name + "/" + path.name.removesuffix(".colorset") for path in THEME.glob("*/*.colorset")}
         self.assertEqual(named, assets)
 
@@ -79,5 +80,5 @@ class ThemeAssetsTests(unittest.TestCase):
         self.assertIn("      - path: Sources/Theme\n", widget)
         self.assertNotIn("Resources", widget)
         groups = lambda catalogue: sorted(path.name for path in catalogue.iterdir() if path.is_dir() and not path.suffix)
-        self.assertEqual(["gym", "journal", "shell"], groups(THEME))
+        self.assertEqual(["gym", "journal", "roadmap", "shell"], groups(THEME))
         self.assertEqual(["onboarding"], groups(APP / "Resources/Assets.xcassets"))

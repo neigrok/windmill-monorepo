@@ -59,9 +59,12 @@ fun Engine.nextPush(limit: Int = Constants.PUSH_MAX_INTENTS): Json? = write(Engi
     }
     sent().take(max).takeIf { it.isNotEmpty() }?.let { replica.pushRequest(it.map { it.intent }) }
 }
+// §9.2: a hello's offset sample, the pause of an answer handled as a 401, which forgets the server's schema, and the schema a 200
+// served as the account advertises, which gates what a version declares (§2.4).
 fun Engine.onHello(response: SyncResponse, timing: RequestTiming) { write(EngineOperation.hello) { replica ->
     response.body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
-    if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("authPaused" to Json.of(true))
+    if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("authPaused" to Json.of(true), "serverSchema" to null)
+    else if (response.status == 200 && replica.account != null) response.body?.get("schema")?.let { replica.meta = replica.meta.with("serverSchema" to it) }
 } }
 fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: RequestTiming, dieAfter: Int = Int.MAX_VALUE): Json? {
     val body = response.body
@@ -197,6 +200,7 @@ private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result:
     }
     if (effects != null) applyReceipt(replica, entry, effects, result.items("write"))
     replica.retainOutcome(entry.id, Attempt(epoch, n, ok = true, entry.acceptedEffects))
+    replica.stepPreimagesOver(entry)
     replica.resolveReferences(entry, epoch)
     replica.applyInverseResult(entry, result, epoch)
     resolveIfCovered(replica, entry)

@@ -32,7 +32,17 @@ struct HttpFixture : AppleLinkingFixture {
       else request->addCookie("wm_session", session);
     }
     drogon::HttpResponsePtr response;
-    (api.*method)(request, [&](auto r) { response = std::move(r); });
+    (api.*method)(wm::test::DrogonLoopback::received(request), [&](auto r) { response = std::move(r); });
+    return response;
+  }
+  // GET /v1/me as Drogon parses it from the wire, which is where /v1/me reads its caller from.
+  drogon::HttpResponsePtr me(const std::string& session, bool bearer = false) {
+    const std::string credential = bearer ? "Authorization: Bearer " + session : "Cookie: wm_session=" + session;
+    wm::test::DrogonLoopback::Connection wire;
+    const auto request = wire.exchange("GET /v1/me HTTP/1.1\r\nHost: localhost\r\n" + credential + "\r\n\r\n").request;
+    if (!request) throw std::runtime_error("Drogon answered GET /v1/me without handing it over");
+    drogon::HttpResponsePtr response;
+    api.me(request, [&](auto r) { response = std::move(r); });
     return response;
   }
   drogon::HttpResponsePtr start(bool native, const std::string& session = "", bool bearer = false) {
@@ -92,7 +102,7 @@ TEST(apple_both_http_doors_return_only_a_ticket_until_creation_for_every_new_add
     CHECK_EQ(body["privateEmail"].asBool(), relay);
     CHECK_EQ(body["user"]["name"].asString(), std::string("Sam Gold"));
     CHECK(created->getHeader("set-cookie").starts_with("wm_session=" + body["session"].asString() + ";"));
-    CHECK(f.auth->authenticate(body["session"].asString()));
+    CHECK(f.auth->revalidate(f.auth->digestOf(body["session"].asString())));
     refusal(f.create("s1"), drogon::k410Gone, "apple-ticket-expired", "Continue with Apple again",
             "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.");
   }
@@ -222,7 +232,7 @@ TEST(apple_me_lists_link_metadata_and_remove_only_unbinds_callers_apple_door) {
   f.session(mine, "s-mine");
   f.repo.tryBindIdentity(f.identity(), mine.id);
   f.repo.bindIdentity(Provider::apple, "other-subject", other.id, "other-relay@privaterelay.appleid.com");
-  const auto me = f.call(&AuthApi::me, "{}", "s-mine", true);
+  const auto me = f.me("s-mine", true);
   Json::Value expected(Json::arrayValue), email, apple;
   email["kind"] = "email"; email["email"] = mine.email.value;
   apple["kind"] = "apple"; apple["email"] = f.identity().email.value; apple["relay"] = true;
@@ -231,12 +241,12 @@ TEST(apple_me_lists_link_metadata_and_remove_only_unbinds_callers_apple_door) {
   const auto removed = f.call(&AuthApi::removeApple, "{}", "s-mine");
   CHECK_EQ(removed->getStatusCode(), drogon::k204NoContent);
   noCookie(removed);
-  CHECK(f.auth->authenticate("s-mine"));
+  CHECK(f.auth->revalidate(f.auth->digestOf("s-mine")));
   CHECK(f.repo.findUserById(mine.id));
   CHECK(f.repo.findIdentity(Provider::apple, "other-subject"));
   CHECK_EQ(f.call(&AuthApi::removeApple, "{}", "s-mine")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(f.call(&AuthApi::removeApple)->getStatusCode(), drogon::k401Unauthorized);
-  const auto remaining = *f.call(&AuthApi::me, "{}", "s-mine")->getJsonObject();
+  const auto remaining = *f.me("s-mine")->getJsonObject();
   REQUIRE_EQ(remaining["signInMethods"].size(), Json::ArrayIndex{1});
   CHECK_EQ(remaining["signInMethods"][0], email);
 }

@@ -24,6 +24,12 @@ struct HueCollision {
   std::vector<std::string> others;
 };
 
+// A hue of the legend a roadmap shows, with the kind that owns it, or none for a hue a step wears that no kind claims.
+struct ShownHue {
+  std::string hue;
+  std::optional<std::string> kind;
+};
+
 // A roadmap's present kinds. Where two wear one hue, the one born first (then the least id) owns it.
 class LegendRead {
 public:
@@ -35,10 +41,14 @@ public:
   const Kind* ownerOf(const std::string& hue) const;
   std::vector<HueOwner> owners() const;
   std::vector<HueCollision> collisions() const;
+  // The legend a roadmap shows: each hue's owner in the kinds' order, then each hue a present step wears that no kind
+  // claims, in the palette's order.
+  std::vector<ShownHue> shown() const;
 
 private:
   std::vector<Kind> kinds_;
   std::map<std::string, std::vector<Kind>> byHue_;
+  std::vector<std::string> worn_;
 };
 
 // MCP's search: a `kind` names a present kind, which narrows to its hue beside any `color`; the query is folded to ASCII

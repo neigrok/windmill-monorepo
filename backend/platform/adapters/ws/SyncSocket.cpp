@@ -1,6 +1,7 @@
 #include "platform/adapters/ws/SyncSocket.h"
 #include "platform/application/WriteObservation.h"
 
+#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/SyncApi.h"
 
 #include "platform/application/Heartbeat.h"
@@ -28,19 +29,11 @@ constexpr auto kSessionEnded = static_cast<drogon::CloseCode>(1008);
 // Where the gate leaves what it served an upgrade as, for handleNewConnection.
 constexpr char kUpgradeAttribute[] = "wm.sync.upgrade";
 
-// What the gate served an upgrade as: its principal, and every credential it sent, each token's digest in its place.
+// What the gate served an upgrade as: its principal, and every credential it sent, each held as its token's digest.
 struct Upgrade {
   std::optional<UserId> principal;
   SentCredentials sent;
 };
-
-// The credential the upgrade's sent credentials make, each digest proven against its session now.
-Credential provenCredential(AuthService& auth, const SentCredentials& sent) {
-  return sent.resolve([&auth](const std::string& digest) -> std::optional<UserId> {
-    const std::optional<User> user = auth.revalidate(digest);
-    return user ? std::optional(user->id) : std::nullopt;
-  });
-}
 
 // One connection's frames as JCS text, queued on its loop until the socket closes. It holds the connection weakly:
 // the connection's context holds it.
@@ -119,46 +112,54 @@ void installSyncSocket(SyncSocketDeps deps) {
 void uninstallSyncSocket() { g_installed.reset(); }
 
 UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const Json::Value& envelope) {
+  WriteObservation upgrade("sync.live.upgrade", "platform", "websocket");
   try {
-    const Credential credential = provenCredential(auth, sent);
-    if (credential.fails()) return {std::nullopt, SyncReply::unauthenticated(envelope)};
-    return {credential.servedAs(), std::nullopt};
+    const SentCaller caller = SentCaller::of(sent, auth);
+    if (caller.credential.fails()) {
+      upgrade.finish("unauthenticated");
+      return {caller, SyncReply::unauthenticated(envelope)};
+    }
+    upgrade.skip();
+    return {caller, std::nullopt};
   } catch (const std::exception& error) {
-    WriteObservation failure("sync.live.upgrade", "platform", "websocket");
-    failure.fail(error);
+    upgrade.fail(error);
   } catch (...) {
-    WriteObservation failure("sync.live.upgrade", "platform", "websocket");
-    failure.failUnknown();
+    upgrade.failUnknown();
   }
   return {std::nullopt, SyncReply::unavailable(envelope)};
 }
 
 void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
   if (!g_installed) return pass();
-  const SyncSocketDeps& deps = g_installed->deps;
-  const std::string origin = req->getHeader("origin");
-  if (!origin.empty() && !deps.allowedOrigins.contains(origin)) {
-    LOG_WARN << "sync live upgrade refused: origin is not allow-listed";
-    return refuse(forbidden());
-  }
-  const Json::Value envelope = SyncReply::envelope(deps.clock->nowMs(), deps.epoch);
-  if (const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
-    return refuse(responseOf(*refused));
+  admitUpgrade(g_installed->deps, req, std::move(refuse), std::move(pass));
+}
 
-  const SentCredentials sent = SentCredentials::fromOccurrences(req->headerOccurrences()).withTokens(
-      [&auth = *deps.auth](const std::string& token) { return auth.digestOf(token); });
+void admitUpgrade(const SyncSocketDeps& deps, const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse,
+                  drogon::FilterChainCallback&& pass) {
+  // A refusal the gate answers before a worker reads the credentials: one WARN line, and no access line follows it.
+  const auto refused = [&refuse](const std::string& outcome, const drogon::HttpResponsePtr& answer) {
+    WriteObservation upgrade("sync.live.upgrade", "platform", "websocket");
+    upgrade.finish(outcome);
+    refuse(answer);
+  };
+  const std::string origin = req->getHeader("origin");
+  if (!origin.empty() && !deps.allowedOrigins.contains(origin)) return refused("untrusted-origin", forbidden());
+  const Json::Value envelope = SyncReply::envelope(deps.clock->nowMs(), deps.epoch);
+  if (const std::optional<SyncReply> schema = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
+    return refused(schema->body["error"].asString(), responseOf(*schema));
+
+  const SentCredentials sent = sentCredentialsOf(req, *deps.auth);
   trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent] {
     const UpgradeProof proof = proveUpgrade(*auth, sent, envelope);
-    const std::optional<SyncReply> refusal = proof.refusal;
-    const Upgrade upgrade{proof.principal, sent};
-    loop->queueInLoop([req, refuse, pass, refusal, upgrade] {
-      if (refusal) return refuse(responseOf(*refusal));
-      req->attributes()->insert(kUpgradeAttribute, upgrade);
+    loop->queueInLoop([req, refuse, pass, proof, sent] {
+      if (proof.caller) proof.caller->leaveOn(req);
+      if (proof.refusal) return refuse(responseOf(*proof.refusal));
+      req->attributes()->insert(kUpgradeAttribute, Upgrade{proof.caller->credential.servedAs(), sent});
       pass();
     });
   });
-  if (!posted) refuse(responseOf(SyncReply::unavailable(envelope)));
+  if (!posted) refused("unavailable", responseOf(SyncReply::unavailable(envelope)));
 }
 
 void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
@@ -175,7 +176,7 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
     const std::shared_ptr<ConnectionSocket> socket = connection->socket;
     std::vector<std::string> digests;
     for (const SentCredential& credential : upgrade.sent.each()) {
-      if (credential.token) digests.push_back(*credential.token);
+      if (credential.digest) digests.push_back(*credential.digest);
     }
     if (!digests.empty()) {
       connection->session = sessions->enter(digests, clock->nowMs(), [live, socket] {
@@ -184,7 +185,7 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
       });
     }
     try {
-      const Credential again = provenCredential(*auth, upgrade.sent);
+      const Credential again = SentCaller::of(upgrade.sent, *auth).credential;
       if (again.fails() || again.servedAs() != upgrade.principal) return socket->close(kSessionEnded);
     } catch (...) {
       socket->close(kTryAgainLater);

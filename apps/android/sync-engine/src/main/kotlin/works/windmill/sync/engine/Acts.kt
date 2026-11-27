@@ -3,6 +3,7 @@ package works.windmill.sync.engine
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.Command
 
 internal class ActRefusal(val refusal: ActCommitOutcome.Refused) : RuntimeException()
 internal class ActBodyError(val error: Throwable) : RuntimeException()
@@ -44,8 +45,7 @@ internal fun <T> Engine.commitActTransaction(prepare: (ActContext) -> Pair<ActRe
                 // An opted segment runs as one scoped intent: under its own scopedEffects command, or else its scope kind's one capture command.
                 val opted = index in undo.orEmpty()
                 if (opted && gesture.command?.let { registry.command(it.name)?.scopedEffects != true } == true) throw CommitFailure.malformed("undo-command-scoped-effects")
-                val capture = if (opted && gesture.command == null) registry.commands.map(::CommandDef)
-                    .singleOrNull { it.engine == "capture" && it.scope == registry.scopeKind(scope) }?.name ?: throw CommitFailure.malformed("undo-capture-command") else null
+                val capture = if (opted && gesture.command == null) captureCommand(scope) else null
                 val before = replica.meta
                 val outcome = try { commitGesture(replica, scope, gesture, at, localCount, firstOrder, capture) }
                     catch (_: IllegalArgumentException) { throw CommitFailure.malformed("invalid-value") }
@@ -77,11 +77,13 @@ private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val p
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's initial snapshot (§7.3 Undo of
 // an act), each with the seq of the row it was read over, the confirmed row or else the dead row the record's spent id keeps (null where
-// neither holds one), and the epoch that seq counts in; a life's also keeps the record as read, which a revival draws. A slot unset there takes the target's explicit default; with none, the act fails before anything changes.
+// neither holds one), stepped over each of the device's own acknowledged writes of the record whose receipt continues it, and the epoch
+// that seq counts in; a life's also keeps the record as read, which a revival draws. A slot unset there takes the target's explicit default; with none, the act fails before anything changes.
 // A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least one recipe. By segment index.
 private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
     val segments = request.undo ?: return null
     val plan = linkedMapOf<Int, UndoPlan>()
+    val acknowledged = replica.acknowledgedWrites()
     for (segment in segments) {
         if (segment.index !in request.scopes.indices || segment.index in plan) throw CommitFailure.malformed("undo-segment")
         val scope = request.scopes[segment.index]
@@ -92,10 +94,11 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
         }
         val preimages = segment.recipes.filterIsInstance<UndoRecipe.Fields>().flatMap { it.targets }.map { (target, defaultValue) ->
             val read = view[target.key]
-            Preimage(target, read?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
+            val preimage = Preimage(target, read?.drawnValue(target.slot) ?: defaultValue ?: throw CommitFailure.malformed("undo-default"),
                 store.row(replica.id, target.scope, target.key)?.seq ?: replica.spentId(target.scope, target.key)?.get("seq")?.long(),
                 replica.meta["serverEpoch"]?.orNull()?.str(),
                 read?.takeIf { target.slot.kind == Slot.Kind.life }?.drawnRecord())
+            acknowledged[target.record].orEmpty().fold(preimage) { stepped, entry -> stepped.steppedOver(entry) }
         }
         plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
     }
@@ -103,8 +106,14 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
     return plan
 }
 
+// A scope kind's one capture command. None or several is a programming error, never a choice by name.
+private fun Engine.captureCommand(scope: ScopeRef): String = registry.commands.map(::CommandDef)
+    .singleOrNull { it.engine == "capture" && it.scope == registry.scopeKind(scope) }?.name ?: throw CommitFailure.malformed("undo-capture-command")
+
 // The act's journal record, from the segments that left an entry: one source entry each, in commit order, with the value the act left in
-// each target, which a Redo writes back. An act that left none records nothing.
+// each target, which a Redo writes back. An act that left none records nothing. Each ordinary entry still held or ready that a journaled
+// preimage read over takes its scope kind's capture command, so its ACK carries the receipt a restore's walk steps over; an entry already
+// sent keeps its intent, and so does one the command would carry past a push alone.
 private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int, UndoPlan>, receipts: List<ActSegmentReceipt>) {
     val sources = plan.toSortedMap().mapNotNull { (index, segment) ->
         val localIds = receipts[index].localIds
@@ -113,7 +122,18 @@ private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int
         val written = segment.preimages.mapNotNull { (target) -> view[target.key]?.drawnValue(target.slot)?.let { Written(target, it) } }
         localIds.singleOrNull()?.let { SourceEntry(it, segment.scope, segment.recipes, segment.preimages, written) }
     }
-    if (sources.isNotEmpty()) replica.journal.add(ReversibleAct(actId, true, sources))
+    if (sources.isEmpty()) return
+    replica.journal.add(ReversibleAct(actId, true, sources))
+    for ((target) in sources.flatMap { it.preimages }) {
+        for (entry in replica.entries()) {
+            val queued = entry.gestureId != actId && entry.state in setOf("held", "ready") && entry.intent.command == null
+            if (!queued || entry.scope != target.scope || entry.intent.deltas.none { it.key == target.key }) continue
+            val captured = entry.intent.copy(command = Command(captureCommand(target.scope), Json.objectOf()))
+            if (widestBytes(replica, captured) > pushMaxBytes) continue
+            entry.intent = captured
+            entry.predictions = listOf(Projection(entry.scope, emptyList()))
+        }
+    }
 }
 
 // An act's prepare context (§7.1). A composed act stages its parts' segments on a tentative copy of the replica, which each later load reads

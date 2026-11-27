@@ -87,6 +87,30 @@ struct ModelTests {
     }
   }
 
+  // A load that found every inverse request settled read nothing more of the journal: settling ended slots finds none,
+  // and reading or writing the journal traps as it does after a load that left it out.
+  @Test func readingOrWritingTheJournalTheLoadLeftOutTraps() async {
+    var settled = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: .settled, wholeScopes: false)
+    settled.settleEnded(code: "undone")
+    #expect(settled.writes.isEmpty)
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: .unread, wholeScopes: false)
+      _ = replica.journal
+    }
+    await #expect(processExitsWith: .failure) {
+      var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: .unread, wholeScopes: false)
+      replica.updateJournal { $0.acts.append(ReversibleAct(actId: "g1", sourceEntries: [])) }
+    }
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: .settled, wholeScopes: false)
+      _ = replica.journal
+    }
+    await #expect(processExitsWith: .failure) {
+      var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: .settled, wholeScopes: false)
+      replica.updateJournal { $0.acts.append(ReversibleAct(actId: "g1", sourceEntries: [])) }
+    }
+  }
+
   @Test func readingTheWholeOutboxOfAPartialLoadTraps() async {
     await #expect(processExitsWith: .failure) {
       let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(heldGestures: true),

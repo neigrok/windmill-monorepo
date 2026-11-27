@@ -1,7 +1,7 @@
 package works.windmill.gym.coach.onboarding
 
 import kotlinx.serialization.Serializable
-import works.windmill.agent.AllowanceShortfall
+import works.windmill.gym.coach.turn.AllowanceShortfall
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.platform.net.WindmillJson
 

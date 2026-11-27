@@ -15,9 +15,9 @@ import { stampBorn } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
 import { DEVICE_REFUSED } from '../copy.js';
 import { t } from '../i18n/index.js';
-import { countBucket } from '../board/acts.js';
 import { buildRetirement } from '../sync/retirement.js';
 import { track } from '../../../telemetry/beacon.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 
 
 // Stamp the tree so its first open is the canvas, where the arrival ceremony plays.

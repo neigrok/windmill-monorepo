@@ -2,12 +2,12 @@
 
 Status: the rules below are ✅ ruled by the owner on 2026-11-08. The web's boards are on the Roadmap
 file's [Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) page; each
-carries its own status. The iPhone's boards are 🧪 Proposal:
+carries its own status. The iPhone's boards are ✅ Ready for dev:
 [section 11 · Coach in the room](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1449-15828) of
 the Roadmap · iOS page ([written half](ios/roadmap.md)). The
 [wave NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4928) records the eleven rulings.
-How it is built is in [Roadmap Coach](../foundation/roadmap-coach.md), which replaces the
-[engineering NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) where they differ.
+How it is built is in [Roadmap Coach](../foundation/roadmap-coach.md), which the
+[engineering NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) follows.
 
 Roadmap Coach replaces tending, the roadmap's AI that edits the tree at once from one sentence. Coach is a
 chat that knows your roadmaps and your progress. It answers questions ("what should I do next", "is my
@@ -25,6 +25,7 @@ self-development, with roadmap tools as its local executors.
 | 07 · Web desktop | [`685:43559`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=685-43559) | The docked panel; Review turns on Preview on the Board or Graph, with Apply in its review bar; panel states |
 | 08 · Web phone | [`686:4715`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=686-4715) | The Coach page, the review bottom sheet, the roadmap sheet entry, Coach about one step |
 | 09 · Coach on the open screen, web | [`758:47973`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=758-47973) · [`763:10290`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-10290) · [`763:17577`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-17577) · [`763:19784`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=763-19784) | Managing the open screen with Coach on desktop (09, 09a, 09c) and on mobile web (09b) |
+| 10 · Four states the spec adds | [`1621:2723`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1621-2723) | A reader's Coach on the web, a card applied and then undone, a replaced card, the sign-in question when both sides hold conversations |
 | 🧩 Components | [`668:5160`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5160) | Composer, change symbols, read receipt, graph diff |
 
 Web boards are drawn at 1440 × 960 and 390 × 844, iPhone boards at 402 × 874. Fixture: *Learn to sail*

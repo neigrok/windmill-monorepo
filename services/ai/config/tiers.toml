@@ -70,3 +70,13 @@ calls_per_minute = 60
 output_ceiling = 16000
 text = ["large", "medium", "small"]
 transcription = true
+
+[background]
+amount = "2"
+month = "30"
+day = "3"
+hour = "1"
+in_flight = 1
+calls_per_minute = 30
+output_ceiling = 16000
+text = ["medium", "medium", "small"]

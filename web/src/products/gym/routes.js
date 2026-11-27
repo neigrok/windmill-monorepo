@@ -4,8 +4,9 @@
 import { createElement, lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
-import { gymLiveHint, gymCommandResult } from './gymRuntime.js';
+import { adoptGymDeviceRows, createGymApi, gymCommandResult, gymDeviceWork, gymLiveHint, signInWork, watchBrowserCopies } from './gymRuntime.js';
 import { t } from './i18n/entry/index.js';
+import { forgetRetiredCoach } from './coach/retiredCoach.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -19,6 +20,18 @@ const importGymLanding = () => import('./marketing/GymLanding.jsx').then((m) => 
 const GymLanding = lazy(importGymLanding);
 
 const GymSettingsSection = lazy(() => import('./settings/GymSettingsSection.jsx').then((m) => ({ default: m.GymSettingsSection })));
+
+// Whether the account's replica holds a row of Coach's the sign-out must act on; with none, Coach's module stays unloaded.
+// What Coach keeps only in the page leaves with the seat itself (`CoachTurns.leaveSeat`).
+function coachKeeps(engine, matches) {
+  return Object.keys(engine.device?.activeReplica?.deviceRows?.('gym') ?? {}).some(matches);
+}
+
+// Whether the replica a sign-in would bind is the anon one and holds gym's work, a signed-out workout among it; with none,
+// the hook before the seat changes reads nothing.
+function holdsSignedOutTraining(engine) {
+  return engine.getSnapshot().state === 'anon' && engine.anonymousRecords().scopes.includes('self/gym');
+}
 
 function home() {
   return '#/gym';
@@ -49,11 +62,29 @@ export const gymRoutes = {
   render,
   preloadApp: importGymApp,
   // How the gym rides the browser engine; the shell composes every product's hooks into it.
-  sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult },
+  // As a sign-out begins, Coach ends its running turn and forgets what it kept in the browser (gym Coach on the AI
+  // service §5). Before the seat changes, each signed-out workout is saved for adoption; the sign-in question, asked
+  // whenever the account holds gym records of its own, counts every kind of gym work the browser holds, the saved
+  // workouts and form drafts join the account entry by entry, and from the engine's opening the copies the account took
+  // are let go (web-device-parity §3).
+  sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult,
+    prepare: (engine) => watchBrowserCopies(engine),
+    pendingDeviceWork: gymDeviceWork,
+    adoptDeviceRows: adoptGymDeviceRows,
+    signInWork,
+    seatWillChange: (engine) => (holdsSignedOutTraining(engine) ? createGymApi(engine).saveSignedOutWorkouts() : null),
+    signOutBegins: (engine) => {
+      forgetRetiredCoach();
+      return coachKeeps(engine, (key) => key === 'runningTurn') ? import('./coach/coachTurns.js').then((coach) => coach.coachSeatWillChange(engine)) : null;
+    },
+    // As the sign-out is decided, the rows Coach keeps that its finish takes: the mark, and the pictures no unsent question names.
+    signOutForgets: (engine) => coachKeeps(engine, (key) => key === 'runningTurn' || key === 'runningRound' || key.startsWith('picture:'))
+      ? import('./coach/coachTurns.js').then((coach) => coach.coachRowsToForget(engine)) : null },
   // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
-  // beside the account's close.
+  // beside the account's close. They run on the browser's own copy, so signed out shows them too.
   settingsSections: {
     main: [GymSettingsSection],
+    signedOut: [GymSettingsSection],
   },
   landing: {
     head: gymLandingHead,

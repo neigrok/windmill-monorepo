@@ -128,10 +128,10 @@ package final class Simulator {
       self.name = name
       self.account = account
       self.device = device
-      let (contents, lowerings) = (contents, lowerings)
+      let (contents, lowerings, registry) = (contents, lowerings, device.fleet.registry)
       device.commits.observe { [weak device] in
         guard let replicas = try? device?.store.read({ try $0.device().replicas }) else { return }
-        contents.record(replicas.flatMap(\.outbox))
+        contents.record(replicas.flatMap(\.outbox), registry: registry)
         lowerings.record(replicas)
       }
     }
@@ -1322,7 +1322,7 @@ package final class Simulator {
         }
       case .digestMismatch(let kind, let seq):
         if !phone.digestCorrupted { found.append("INV-15 \(phone.name): a digest mismatch in a \(kind) scope at \(seq)") }
-      case .pushMalformed, .activeReplicaChanged, .inverseSettled:
+      case .pushMalformed, .activeReplicaChanged, .inverseSettled, .adoptionGaveUp:
         break
       }
     }
@@ -1384,7 +1384,8 @@ package final class Simulator {
 
 // MARK: - What entries hold
 
-// The records an entry writes and the command it carries, as the notice holding it must hold them (INV-3).
+// The records an entry writes and the command it runs of its own, as the notice holding it must hold them (INV-3). A
+// capture command is its deltas' own, and no notice need carry it.
 struct EntryContent: Sendable {
   let keys: [RecordKey]
   let command: String?
@@ -1398,10 +1399,10 @@ final class ContentLedger: Sendable {
 
   subscript(localId: String) -> EntryContent? { contents.withLock { $0[localId] } }
 
-  func record(_ outbox: [OutboxEntry]) {
+  func record(_ outbox: [OutboxEntry], registry: Registry) {
     contents.withLock { contents in
       for entry in outbox {
-        contents[entry.localId] = EntryContent(keys: entry.intent.deltas.map(\.key), command: entry.intent.command?.name)
+        contents[entry.localId] = EntryContent(keys: entry.intent.deltas.map(\.key), command: registry.ownCommand(of: entry)?.name)
       }
     }
   }

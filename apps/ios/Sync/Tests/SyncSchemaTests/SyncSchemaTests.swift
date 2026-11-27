@@ -15,7 +15,7 @@ struct SyncSchemaTests {
     let types: [JSON] = try registries.flatMap { (registry: JSON.Object) throws -> [JSON] in try registry.member("types").asArray() }
     let commands: [JSON] = try registries.flatMap { (registry: JSON.Object) throws -> [JSON] in try registry.member("commands").asArray() }
     let expected: JSON = [
-      "registry": "windmill", "version": 13, "minVersion": 11, "products": .object(JSON.Object(uniqueKeysWithValues: products)),
+      "registry": "windmill", "version": 15, "minVersion": 15, "products": .object(JSON.Object(uniqueKeysWithValues: products)),
       "types": .array(types), "commands": .array(commands),
     ]
     #expect(SyncSchema.registry.json == expected)
@@ -26,7 +26,7 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [13, 13, 11])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [15, 15, 15])
   }
 
   @Test func everyTypeAndCommandHasItsName() {
@@ -104,8 +104,9 @@ struct SyncSchemaTests {
   }
   @Test func journalDeviceRowsAreLocalOnlyAndPagesAreServerWritten() throws {
     let journal = try #require(SyncSchema.registry.product("journal"))
-    #expect(journal.device.count == 2)
+    #expect(journal.device.count == 3)
     #expect(journal.device.allSatisfy { $0.localOnly })
+    #expect(journal.device.contains { $0.keyPattern.matches("carry:0123456789abcdef") })
     #expect(journal.device.contains { $0.keyPattern.matches("contentClock") })
     #expect(journal.device.contains { $0.keyPattern.matches("pendingClaim:a") })
     #expect(SyncSchema.registry.type(Journal.Types.page)?.fields.allSatisfy { $0.writer == .server } == true)
@@ -114,7 +115,7 @@ struct SyncSchemaTests {
 
   @Test func theGymCoachDeviceRowsAreTheRunningTurnAndItsLocalOnlyPictures() throws {
     let gym = try #require(SyncSchema.registry.product("gym"))
-    #expect(gym.device.map(\.name) == ["movement", "movementOrder", "offer", "picture", "rack", "runningTurn"])
+    #expect(gym.device.map(\.name) == ["movement", "movementOrder", "offer", "picture", "rack", "runningRound", "runningTurn"])
     #expect(gym.device.filter(\.localOnly).map(\.name) == ["picture"])
     let runningTurn = try #require(gym.device.first { $0.name == "runningTurn" })
     #expect(runningTurn.keyPattern.matches("runningTurn"))

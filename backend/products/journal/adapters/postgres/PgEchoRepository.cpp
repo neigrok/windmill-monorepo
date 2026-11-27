@@ -95,7 +95,6 @@ std::string statusText(CurationStatus status) {
     case CurationStatus::ok: return "ok";
     case CurationStatus::emptyOk: return "empty_ok";
     case CurationStatus::transport: return "transport";
-    case CurationStatus::rateLimited: return "rate_limited";
     case CurationStatus::budgetLimited: return "budget_limited";
     case CurationStatus::truncated: return "truncated";
     case CurationStatus::schemaInvalid: return "schema_invalid";

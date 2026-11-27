@@ -5,6 +5,28 @@ import { TurnRunner, HostUnavailable } from '../../../src/platform/agent/turn.js
 import { AiClient } from '../../../src/platform/ai/client.js';
 import { TransportFailure } from '../../../src/platform/ai/wire.js';
 
+test('a tool goes to the AI service strict as the profile says, and unsaid where the profile is silent', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const [read, write] = story.profile.tools;
+  const profile = { ...story.profile, tools: [{ ...read, strict: false }, write] };
+  const requests = [];
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, connected: () => true, text: async ({ request }) => {
+      requests.push(request);
+      return { event: 'ended', data: { stop: 'completed', message: { role: 'assistant', parts: [{ text: 'Hi' }], carry: 'c' } } };
+    } },
+    telemetry: { failure() {}, turn() {}, ability() {} },
+    runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, text: async () => {}, end: async () => {} },
+  });
+  assert.equal((await runner.run(story.input, profile)).state, 'completed');
+  assert.deepEqual(requests.map((request) => request.tools), [[
+    { name: read.name, description: read.description, input: read.input, strict: false },
+    { name: write.name, description: write.description, input: write.input },
+  ]]);
+  await assert.rejects(runner.run(story.input, { ...profile, tools: [{ ...read, strict: 'yes' }] }), /invalid profile tool/);
+});
+
 test('the seat barrier resolves when the active record has disappeared', async () => {
   const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
   const events = [];
@@ -186,3 +208,20 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
     if (trace.end && exists) assert.equal(state, trace.end.state);
   });
 }
+
+test('a host fault mid-turn ends it failed as host-fault and reports the error the host raised, once', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const fault = new Error('store refused');
+  const reports = [];
+  const ends = [];
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, connected: () => true, text: async ({ onText }) => { await onText('Hi'); return { failure: { code: null } }; } },
+    telemetry: { failure: (operation, error) => reports.push([operation, error]) },
+    runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, text: async () => { throw fault; },
+      end: async (lease, end) => { ends.push(end); } },
+  });
+  assert.deepEqual(await runner.run(story.input, story.profile), { state: 'failed', text: 'Hi', truncated: false, code: 'host-fault' });
+  assert.deepEqual(ends, [{ state: 'failed', text: 'Hi', truncated: false, code: 'host-fault' }]);
+  assert.deepEqual(reports, [['agent-host', fault]]);
+});

@@ -10,7 +10,7 @@ import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { CountSpec, Fault, Path, Violation } from '../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { applySpec, momentOf, viewRecords } from './vectors.js';
+import { VECTOR_REPLICA, applySpec, momentOf, viewRecords } from './vectors.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('./vectors.js').Vector} Vector */
@@ -55,14 +55,16 @@ export class ProductCorpus {
     return scopes === undefined ? single : scopes[scope] ?? { drawn: [] };
   }
 
-  // A case's records in one scope as the kit's views, with the scene's device rows; `ids` are minted in order.
+  // A case's records in one scope as the kit's views, with its device rows: a single scene's under `records.device`, a
+  // scene of several scopes' under `device`. `ids` are minted in order, opaque ones included.
   /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../src/platform/domain-kit/entities.js').RecordID} mintId */
   views(vector, scope, mintId) {
-    const { device = {}, firstPullComplete = true } = vector.input;
+    const { firstPullComplete = true } = vector.input;
     const records = this.records(vector, scope);
+    const device = (vector.input.scopes === undefined ? records.device : vector.input.device) ?? {};
     const stored = viewRecords(records.stored ?? records.drawn);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, spent: records.spent ?? [],
-      devices: device, firstPullComplete, mintId });
+      devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId, opaqueID: () => String(mintId('an opaque identity')) });
   }
 
   /** @param {Vector} vector */

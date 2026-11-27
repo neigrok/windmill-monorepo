@@ -101,6 +101,7 @@ struct FakeAuthRepository : AuthRepository {
     UnixMs lastSeenMs = 0;
     UnixMs createdAtMs = 0;
     std::string ip;
+    std::optional<std::string> syncReplica;
   };
   std::map<std::string, LinkRow> links;             // digest -> row
   std::map<std::string, SessionRecord> sessions;    // digest -> record
@@ -356,7 +357,7 @@ struct FakeAuthRepository : AuthRepository {
   std::optional<StoredSession> findSession(const std::string& digest) override {
     auto it = sessions.find(digest);
     if (it == sessions.end()) return std::nullopt;
-    return StoredSession{it->second.user, it->second.expiresAt};
+    return StoredSession{it->second.user, it->second.expiresAt, it->second.syncReplica};
   }
   bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                       const std::string& userAgent, const std::string& ip) override {
@@ -369,6 +370,13 @@ struct FakeAuthRepository : AuthRepository {
     return true;
   }
   void deleteSession(const std::string& digest) override { sessions.erase(digest); }
+  Recorded recordSyncReplica(const std::string& sessionDigest, const UserId& account, const std::string& replica) override {
+    auto it = sessions.find(sessionDigest);
+    if (it == sessions.end() || it->second.user != account) return Recorded::absent;
+    if (it->second.syncReplica == replica) return Recorded::unchanged;
+    it->second.syncReplica = replica;
+    return Recorded::changed;
+  }
 
   std::vector<SessionRow> listSessions(const UserId& userId) override {
     std::vector<SessionRow> out;
@@ -519,7 +527,8 @@ struct FakeOAuthRepository : OAuthRepository {
     codes[digest] = code;
     return true;
   }
-  std::optional<StoredCode> takeCode(const std::string& digest) override {
+  // Every session reads as live: whether a code's session is, the Postgres store decides (PgOAuthRepositoryTest).
+  std::optional<StoredCode> takeCode(const std::string& digest, UnixMs) override {
     auto it = codes.find(digest);
     if (it == codes.end()) return std::nullopt;
     StoredCode code = it->second;
@@ -649,7 +658,6 @@ struct FakeAiUsageRepository : AiUsageRepository {
     UserId user;
     std::string product;
     long long sinceMs = 0;
-    AiOperationFilter filter;
   };
 
   std::map<std::string, long long> spentByProduct;
@@ -663,9 +671,8 @@ struct FakeAiUsageRepository : AiUsageRepository {
 
   void record(const AiSpend& spend) noexcept override { recorded.push_back(spend); }
 
-  long long spentSinceNanos(const UserId& user, const std::string& product,
-                            long long sinceMs, const AiOperationFilter& filter = {}) override {
-    asked.push_back(Query{user, product, sinceMs, filter});
+  long long spentSinceNanos(const UserId& user, const std::string& product, long long sinceMs) override {
+    asked.push_back(Query{user, product, sinceMs});
     auto it = spentByProduct.find(product);
     return it == spentByProduct.end() ? 0 : it->second;
   }

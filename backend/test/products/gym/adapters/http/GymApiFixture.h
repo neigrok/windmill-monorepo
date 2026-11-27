@@ -14,6 +14,7 @@
 #include "test/products/gym/Fakes.h"
 #include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <pqxx/pqxx>
 
@@ -118,7 +119,7 @@ inline drogon::HttpRequestPtr getRequest(const std::string& path, const std::str
   request->setMethod(drogon::Get);
   request->setPath(path);
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 inline drogon::HttpRequestPtr postRequest(const std::string& path, const Json::Value& body,
@@ -129,7 +130,7 @@ inline drogon::HttpRequestPtr postRequest(const std::string& path, const Json::V
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 inline Json::Value startBody(const std::string& id = "ses_11111111",

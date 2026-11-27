@@ -36,6 +36,7 @@ enum BoardFixture {
     }
     if await WorkoutFixture.prepare(board, model: model) { return }
     if await RecoveryFixture.prepare(board, model: model) { return }
+    if await RoadmapFixture.prepare(board, model: model) { return }
     model.keepDismissed = false
     if board.hasPrefix("shell-") {
       if board == "shell-anonymous" { model.welcome = true; return }

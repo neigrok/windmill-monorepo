@@ -31,22 +31,25 @@ bool equalsIgnoringAsciiCase(std::string_view text, std::string_view lowerCase) 
 }
 
 // `Bearer <token>`: the scheme in any case, one space, and a token holding no whitespace.
-std::optional<std::string> bearerToken(std::string_view value) {
+std::optional<std::string_view> bearerToken(std::string_view value) {
   constexpr std::string_view scheme = "bearer";
   if (value.size() < scheme.size() + 2 || !equalsIgnoringAsciiCase(value.substr(0, scheme.size()), scheme) || value[scheme.size()] != ' ')
     return std::nullopt;
   const std::string_view token = value.substr(scheme.size() + 1);
   if (std::any_of(token.begin(), token.end(), isWhitespace)) return std::nullopt;
-  return std::string(token);
+  return token;
 }
 
 }
 
-SentCredentials SentCredentials::fromOccurrences(const HeaderOccurrences& occurrences) {
+SentCredentials SentCredentials::fromOccurrences(const HeaderOccurrences& occurrences, const DigestOf& digestOf) {
   std::vector<SentCredential> each;
+  const auto keep = [&each, &digestOf](SentCredential::Kind kind, std::optional<std::string_view> token) {
+    each.push_back({kind, token ? std::optional(digestOf(std::string(*token))) : std::nullopt});
+  };
   for (const auto& [name, rawValue] : occurrences) {
     const std::string_view value = trimmed(rawValue);
-    if (equalsIgnoringAsciiCase(name, "authorization")) each.push_back({SentCredential::Kind::authorization, bearerToken(value)});
+    if (equalsIgnoringAsciiCase(name, "authorization")) keep(SentCredential::Kind::authorization, bearerToken(value));
     if (!equalsIgnoringAsciiCase(name, "cookie")) continue;
     std::string_view pieces = value;
     while (true) {
@@ -55,7 +58,7 @@ SentCredentials SentCredentials::fromOccurrences(const HeaderOccurrences& occurr
       const std::size_t equals = piece.find('=');
       if (trimmed(piece.substr(0, equals)) == kSessionCookie) {
         const std::string_view token = equals == std::string_view::npos ? std::string_view() : trimmed(piece.substr(equals + 1));
-        each.push_back({SentCredential::Kind::cookie, token.empty() ? std::nullopt : std::optional(std::string(token))});
+        keep(SentCredential::Kind::cookie, token.empty() ? std::nullopt : std::optional(token));
       }
       if (end == std::string_view::npos) break;
       pieces.remove_prefix(end + 1);
@@ -64,37 +67,32 @@ SentCredentials SentCredentials::fromOccurrences(const HeaderOccurrences& occurr
   return SentCredentials(std::move(each));
 }
 
-SentCredentials SentCredentials::withTokens(const std::function<std::string(const std::string& token)>& replace) const {
-  std::vector<SentCredential> replaced = each_;
-  for (SentCredential& credential : replaced) {
-    if (credential.token) credential.token = replace(*credential.token);
-  }
-  return SentCredentials(std::move(replaced));
-}
-
-Credential SentCredentials::resolve(const ResolveToken& resolve) const {
+Credential SentCredentials::resolve(const ResolveDigest& resolve) const {
   if (each_.empty()) return Credential::none();
   const auto ofKind = [this](SentCredential::Kind kind) {
     return std::count_if(each_.begin(), each_.end(), [kind](const SentCredential& credential) { return credential.kind == kind; });
   };
   if (ofKind(SentCredential::Kind::authorization) > 1 || ofKind(SentCredential::Kind::cookie) > 1) return Credential::sent(std::nullopt);
   std::optional<UserId> account;
+  std::optional<std::string> session;
   for (const SentCredential& credential : each_) {
-    const std::optional<UserId> resolved = credential.token ? resolve(*credential.token) : std::nullopt;
+    const std::optional<UserId> resolved = credential.digest ? resolve(*credential.digest) : std::nullopt;
     if (!resolved || (account && *account != *resolved)) return Credential::sent(std::nullopt);
     account = resolved;
+    if (!session || credential.kind == SentCredential::Kind::cookie) session = credential.digest;
   }
-  return Credential::sent(account);
+  return Credential::sent(account, session);
 }
 
-Credential::Credential(bool sent, std::optional<UserId> account) : sent_(sent), account_(std::move(account)) {}
+Credential::Credential(bool sent, std::optional<UserId> account, std::optional<std::string> session)
+    : sent_(sent), account_(std::move(account)), session_(std::move(session)) {}
 
 Credential Credential::none() {
-  return Credential(false, std::nullopt);
+  return Credential(false, std::nullopt, std::nullopt);
 }
 
-Credential Credential::sent(std::optional<UserId> account) {
-  return Credential(true, std::move(account));
+Credential Credential::sent(std::optional<UserId> account, std::optional<std::string> session) {
+  return Credential(true, std::move(account), std::move(session));
 }
 
 bool Credential::fails() const {

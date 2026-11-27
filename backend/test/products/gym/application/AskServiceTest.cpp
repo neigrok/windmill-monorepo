@@ -718,17 +718,6 @@ TEST(a_subscriber_over_the_free_ceiling_but_under_their_own_still_gets_an_answer
   CHECK_EQ(h.agent.runs, 1);
 }
 
-TEST(a_maxed_journal_sweep_never_stops_ask_answering) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  Coach h;
-  // The background bucket is its own: a sweep the lifter did not ask for cannot take Ask from them.
-  h.usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
-  h.usage.spentByProduct[""] = kSweepMonthlyAiNanos;
-
-  CHECK(h.question("how did the squats go?").refusal == AskRefusal::none);
-  CHECK_EQ(h.agent.runs, 1);
-}
-
 TEST(the_reply_carries_the_servers_own_read_line_and_the_proposals_the_run_minted) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
@@ -1017,6 +1006,31 @@ TEST(coach_requires_notes_and_catalog_and_gives_corrected_documents_a_new_action
            std::vector<std::string>{});
   CHECK_EQ(answer.generation->routineDrafts.size(), 1u);
   CHECK(answer.generation->results.empty());
+}
+
+// Ask does not hold the model to the schema, so a day it copies from list_routines arrives with the read's own fields:
+// they are dropped before the arguments are checked, and the day drafts as if they had never been sent.
+TEST(coach_drafts_a_routine_sent_with_what_list_routines_reads_back) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  for (const char* document : {
+           R"({"id":"rt_model0001","name":"Upper body","position":0,"revision":1,"lastTrainedAt":1700000000000,)"
+           R"("pendingProposal":{"id":"prop_00000001"},"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})",
+           R"({"id":"rt_model0001","name":"Upper body","position":0,)"
+           R"("entries":[{"exerciseId":"bench-press","position":1,"sets":[{"reps":8}]}]})"}) {
+    Coach h;
+    h.agent.plan = {{"list_notes", Json::Value(Json::objectValue)}, {"list_exercises", Json::Value(Json::objectValue)},
+                    {"create_routine", parse(document)}};
+    const auto answer = h.question(ThreadId{"thr_readback1"}, "Create my routine", h.user, "req_readback1");
+    REQUIRE(answer.answer.ok);
+    REQUIRE(answer.generation.has_value());
+    CHECK_EQ(answer.answer.steps, (std::vector<AskStep>{{"list_notes", false}, {"list_exercises", false},
+                                                         {"create_routine", false}}));
+    REQUIRE_EQ(answer.generation->routineDrafts.size(), 1u);
+    const CoachRoutineDraft& draft = answer.generation->routineDrafts.front();
+    CHECK_EQ(draft.name, std::string("Upper body"));
+    CHECK_EQ(draft.entries,
+             (std::vector<RoutineEntry>{RoutineEntry{1, ExerciseId{"bench-press"}, {SetTarget{8, std::nullopt}}, std::nullopt}}));
+  }
 }
 
 TEST(coach_active_generation_replays_pending_identity_and_guards_conversation_deletion) {

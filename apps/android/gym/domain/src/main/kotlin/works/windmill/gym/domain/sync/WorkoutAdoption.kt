@@ -145,15 +145,9 @@ object SavedSets {
     }
 }
 
-// A start that does not join the account's open workout: the saved copy keeps its own identity.
-fun nonJoiningStart(session: Session): ServerCommand = GymCommand(Gym.Commands.start, buildMap {
-    put("id", session.id.json); put("startedAt", Json.of(session.startedAt.ms)); put("joinOpenSession", Json.of(false))
-    session.routineId?.let { put("routineId", it.json) }
-})
-
-// `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
-// `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start with every set
-// it holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy,
+// `prepare` turns a signed-out workout into one import, or a start, before the replica changes hands; a start an older
+// build queued joining is replaced by one that does not. `keep` imports the saved copy as finished at its last set;
+// `restart` resubmits an open one's start with every set it holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy,
 // whose changed loads meet their floors and which replaces the saved one only when the retry is queued.
 class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWorkout? = null) : Action<AdoptWorkout.Loaded, Unit, GymRefusal> {
     enum class Mode { prepare, keep, restart }
@@ -190,7 +184,7 @@ class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWo
                     is Decision.Refuse -> return Decision.Refuse(decision.refusal)
                     is Decision.Unchanged -> return Decision.Unchanged(Unit)
                 } else if (start.command.args["joinOpenSession"] != Json.of(false)) {
-                    Plan(nonJoiningStart(workout.session), listOf(Prediction.create(Session, id, workout.session.fields()))).also { it.supersede(listOf(start.gestureId)) }
+                    Plan(StartSessionCommand(id, workout.session.routineId, workout.session.startedAt), listOf(Prediction.create(Session, id, workout.session.fields()))).also { it.supersede(listOf(start.gestureId)) }
                 } else Plan()
             }
             Mode.keep, Mode.restart -> {
@@ -222,7 +216,7 @@ class AdoptWorkout(val id: Id<Session>, val mode: Mode, val revised: SignedOutWo
         if (state.stored.any { SessionRules.drawn(it, state.sets, state.moment.now).isOpen }) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, id.ref))
         SessionRules.instant(session.startedAt, "session.startedAt", Path("startedAt"))
         if (session.startedAt > state.moment.now) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
-        val plan = Plan(nonJoiningStart(session), listOf(Prediction.create(Session, id, session.fields())))
+        val plan = Plan(StartSessionCommand(id, session.routineId, session.startedAt), listOf(Prediction.create(Session, id, session.fields())))
         AppendSet.appended(workout.sets, session, state, plan)?.let { return Decision.Refuse(it) }
         return Decision.Write(plan, Unit)
     }

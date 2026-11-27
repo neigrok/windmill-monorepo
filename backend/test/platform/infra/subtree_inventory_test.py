@@ -79,6 +79,12 @@ EXPECTED = {
     "depth": {"deepest": 4, "1": 1, "2": 1, "3": 1, "4+": 1},
     "depthIfResolved": {"deepest": 4, "1": 5, "2": 1, "3": 5, "4+": 1},
     "accounts": {"withPointers": 2, "needingChoice": 2},
+    "engine": {
+        "visibility": {
+            account: {place: {"private": 0, "public": 0, "unset": 0, "other": 0}
+                      for place in ("roots", "subtrees")}
+            for account in ("house", "people")},
+        "pointersWithoutOpens": {"restore": 0, "clientPut": 0}},
 }
 
 
@@ -204,6 +210,137 @@ class InventoryTest(ToolTest):
         self.assertEqual(json.loads(result.stdout), EXPECTED)
 
 
+# The engine's roadmap tables alone: each filled bucket holds a number no other bucket of its object holds, and the
+# house's differ from people's bucket by bucket, so none can be read for another. An unlisted visibility or reach counts
+# as other, as every value admission refuses does. Rows the tool leaves out stand beside.
+@unittest.skipUnless(os.environ.get("WM_PG_TEST"), "SKIP: set WM_PG_TEST and DATABASE_URL for Postgres cases")
+class EngineCountsTest(ToolTest):
+    @classmethod
+    def setUpClass(cls):
+        house = "00000000-0000-4000-8000-00000000d3e0"
+        client = "r_a1b2c3d4e5f6"
+        client_ending_in_srv = "r_a1b2c3d4esrv"
+        # (count, owner, alive, subtree, meta): `count` roadmaps alike, a subtree under its owner's first roadmap;
+        # meta is (visibility, reach), None where the roadmap's tree scope holds none.
+        groups = [
+            (2, MINE, True, False, ("private", "private")),
+            (1, MINE, True, False, ("private", "public")),
+            (1, MINE, True, False, ("unlisted", "unlisted")),
+            (1, THEIRS, True, False, ("unlisted", "unlisted")),
+            (4, MINE, True, False, ("public", "public")),
+            (1, MINE, True, False, None),
+            (4, MINE, True, False, (None, None)),
+            (5, MINE, True, False, ("secret", "secret")),
+            (2, MINE, True, True, (None, "private")),
+            (3, MINE, True, True, (None, "unlisted")),
+            (1, THEIRS, True, True, (None, "public")),
+            (2, house, True, False, ("private", "private")),
+            (1, house, True, False, ("unlisted", "unlisted")),
+            (3, house, True, False, ("public", "public")),
+            (4, house, True, False, (None, None)),
+            (5, house, True, False, ("secret", "secret")),
+            (1, house, True, True, (None, "private")),
+            (2, house, True, True, (None, "unlisted")),
+            (3, house, True, True, (None, "public")),
+            (1, MINE, False, False, ("unlisted", "unlisted")),
+            (1, MINE, False, True, (None, "unlisted")),
+            (1, house, False, False, ("public", "public")),
+        ]
+        roadmaps, first = [], {}
+        for count, owner, alive, subtree, meta in groups:
+            for _ in range(count):
+                id = f"t_ee{len(roadmaps) + 1:014x}"
+                first.setdefault(owner, id)
+                roadmaps.append((id, owner, alive, first[owner] if subtree else None, meta))
+        cls.roadmaps = roadmaps
+        mine = [id for id, owner, alive, parent, meta in roadmaps if owner == MINE and alive and not parent]
+        theirs = next(id for id, owner, alive, parent, meta in roadmaps if owner == THEIRS)
+        gone = next(id for id, owner, alive, parent, meta in roadmaps if owner == MINE and not alive)
+        # (roadmap, account, step, life, the life stamp's actor, opens)
+        cls.pointers = [
+            (mine[0], MINE, "undone-in-mine", "alive", "srv", None),
+            (theirs, THEIRS, "undone-in-theirs", "alive", "srv", None),
+            (mine[0], MINE, "put-again-1", "alive", client, None),
+            (mine[1], MINE, "put-again-2", "alive", client_ending_in_srv, None),
+            (mine[2], MINE, "put-again-3", "alive", client_ending_in_srv, None),
+            (mine[0], MINE, "restored-whole", "alive", "srv", mine[3]),
+            (mine[1], MINE, "put-whole", "alive", client, mine[3]),
+            (mine[1], MINE, "cleared", "dead", client, None),
+            (gone, MINE, "in-a-deleted-roadmap", "alive", client, None),
+        ]
+        cls.named = {MINE, THEIRS, house, client, client_ending_in_srv, "secret", "holder", "mine@example.test",
+                     "theirs@example.test", "house@windmill.invalid"}
+        cls.named |= {id for id, *rest in roadmaps}
+        cls.named |= {step for tree, account, step, *rest in cls.pointers}
+        alive = {id: living for id, owner, living, parent, meta in roadmaps}
+        stamp = f"'1:0:{client}'"
+        rows = [f"INSERT INTO users (id, email) VALUES ({literal(MINE)}, 'mine@example.test'), "
+                f"({literal(THEIRS)}, 'theirs@example.test'), ({literal(house)}, 'house@windmill.invalid');"]
+        rows += [f"INSERT INTO sync_scopes (key, kind, owner) VALUES ('acct:{account}/roadmap', 'product', "
+                 f"{literal(account)}::uuid);" for account in (MINE, THEIRS, house)]
+        rows += [f"INSERT INTO sync_scopes (key, kind, owner, state, dead_at) VALUES ('tree:{id}', 'tree', "
+                 f"{literal(owner)}::uuid, {literal('alive' if living else 'dead')}, {'NULL' if living else '1'});"
+                 for id, owner, living, parent, meta in roadmaps]
+        rows += [f"INSERT INTO sync_scopes (key, kind, owner, state, dead_at) VALUES ('acct:{account}/overlay/{tree}', "
+                 f"'overlay', {literal(account)}::uuid, {literal('alive' if alive[tree] else 'dead')}, "
+                 f"{'NULL' if alive[tree] else '1'});"
+                 for tree, account in sorted({(tree, account) for tree, account, *rest in cls.pointers})]
+        rows += [f"INSERT INTO roadmap_trees (scope_key, id, seq, rc, ru, born, life, life_stamp, parent) VALUES "
+                 f"('acct:{owner}/roadmap', {literal(id)}, 1, 1, 1, {stamp}, {literal('alive' if living else 'dead')}, "
+                 f"{stamp}, {literal(json.dumps({'tree': parent, 'step': 'holder'}) if parent else None)});"
+                 for id, owner, living, parent, meta in roadmaps]
+        rows += [f"INSERT INTO roadmap_metas (scope_key, id, seq, rc, ru, visibility, visibility_stamp, reach, "
+                 f"reach_stamp) VALUES ('tree:{id}', 'meta', 1, 1, 1, {literal(meta[0])}, "
+                 f"{stamp if meta[0] else 'NULL'}, {literal(meta[1])}, {stamp if meta[1] else 'NULL'});"
+                 for id, owner, living, parent, meta in roadmaps if meta]
+        rows += [f"INSERT INTO roadmap_pointers (scope_key, id, seq, rc, ru, life, life_stamp, opens, opens_stamp) "
+                 f"VALUES ('acct:{account}/overlay/{tree}', {literal(step)}, 1, 1, 1, {literal(life)}, '5:0:{actor}', "
+                 f"{literal(opens)}, {stamp if opens else 'NULL'});"
+                 for tree, account, step, life, actor, opens in cls.pointers]
+        cls.url = own_database(cls, "engine", "\n".join(rows))
+
+    def snapshot(self):
+        return psql(self.url,
+                    "-c", "SELECT md5(string_agg(s::text, ',' ORDER BY key)) FROM sync_scopes s",
+                    "-c", "SELECT md5(string_agg(t::text, ',' ORDER BY id)) FROM roadmap_trees t",
+                    "-c", "SELECT md5(string_agg(m::text, ',' ORDER BY scope_key)) FROM roadmap_metas m",
+                    "-c", "SELECT md5(string_agg(p::text, ',' ORDER BY scope_key, id)) FROM roadmap_pointers p")
+
+    def test_it_counts_every_alive_roadmap_by_owner_and_visibility_and_every_pointer_without_opens_by_door(self):
+        before = self.snapshot()
+        for options in ("", "-c default_transaction_read_only=on"):
+            with self.subTest(options=options):
+                result = self.invoke({**self.env, "DATABASE_URL": self.url, "PGOPTIONS": options})
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual(result.stdout.count(b"\n"), 1)
+                self.assertEqual(json.loads(result.stdout), {
+                    "trees": 0,
+                    "roots": 0,
+                    "owned": 0,
+                    "hanging": 0,
+                    "multiOpened": {"trees": 0, "sameTree": 0, "acrossTrees": 0, "maxOpeners": 0},
+                    "cycles": {"trees": 0, "selfPointers": 0, "alsoMultiOpened": 0,
+                               "loops": {"1": 0, "2": 0, "3-8": 0, "9+": 0}, "byEntries": {"0": 0, "1": 0, "2+": 0}},
+                    "dangling": {"missing": 0, "deleted": 0, "foreign": 0, "notATreeId": 0},
+                    "depth": {"deepest": 0, "1": 0, "2": 0, "3": 0, "4+": 0},
+                    "depthIfResolved": {"deepest": 0, "1": 0, "2": 0, "3": 0, "4+": 0},
+                    "accounts": {"withPointers": 0, "needingChoice": 0},
+                    "engine": {
+                        "visibility": {
+                            "house": {
+                                "roots": {"private": 2, "public": 3, "unset": 4, "other": 6},
+                                "subtrees": {"private": 1, "public": 3, "unset": 0, "other": 2}},
+                            "people": {
+                                "roots": {"private": 3, "public": 4, "unset": 5, "other": 7},
+                                "subtrees": {"private": 2, "public": 1, "unset": 0, "other": 3}}},
+                        "pointersWithoutOpens": {"restore": 2, "clientPut": 3}},
+                })
+                self.completion(result, "ok")
+                for name in self.named:
+                    self.assertNotIn(name.encode(), result.stdout, name)
+                    self.assertNotIn(name.encode(), result.stderr, name)
+        self.assertEqual(self.snapshot(), before)
+
 
 # A chain of 200,001 trees whose last two open each other. Each tree opens the one before it in id order, so the walk
 # for loops, which starts from the first id and climbs to each tree's openers, has the whole chain to climb at once.
@@ -235,6 +372,12 @@ class LongChainTest(ToolTest):
             "depth": {"deepest": 199998, "1": 1, "2": 1, "3": 1, "4+": 199995},
             "depthIfResolved": {"deepest": 200000, "1": 1, "2": 1, "3": 1, "4+": 199997},
             "accounts": {"withPointers": 1, "needingChoice": 1},
+            "engine": {
+                "visibility": {
+                    account: {place: {"private": 0, "public": 0, "unset": 0, "other": 0}
+                              for place in ("roots", "subtrees")}
+                    for account in ("house", "people")},
+                "pointersWithoutOpens": {"restore": 0, "clientPut": 0}},
         })
 
 

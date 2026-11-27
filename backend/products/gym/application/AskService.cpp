@@ -281,7 +281,7 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
   }
 }
 
-ToolResult AskTools::dispatch(const std::string& name, const Json::Value& arguments,
+ToolResult AskTools::dispatch(const std::string& name, const Json::Value& sent,
                               const ToolCaller& caller) {
   std::optional<ToolDeclaration> declared;
   for (ToolDeclaration& candidate : name == "ask_setup_details" ? declareTools() : inner_.declareTools())
@@ -293,6 +293,9 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
       return ToolResult::failure(name + ": " + retired->sentence);
     return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
   }
+  // The model is not held to the schema here, so a document it copied from list_routines arrives whole.
+  Json::Value stripped;
+  const Json::Value& arguments = withoutReadBack(*declared, sent, stripped);
   if (name == "create_routine" && !writes(name))
     return ToolResult::failure(name + ": this version of the app cannot review routine drafts. Describe the routine in your answer "
                                "and tell the lifter to update the app or build it in Routines.");

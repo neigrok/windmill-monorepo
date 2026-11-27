@@ -120,32 +120,37 @@ public:
   LinkResult linkAccount(const UserId& caller, const std::string& linkSecret,
                          const SessionContext& ctx = {});
 
-  // Rolls the session window forward and heals the row's metadata from ctx. A closed account is
-  // refused even if a stale session row survives.
-  std::optional<User> authenticate(const std::string& sessionSecret, const SessionContext& ctx = {});
-
-  // The same check keyed by digest, for connections that must not hold the raw secret.
+  // A session is keyed by its token's digest; a request's token is digested as it is read (SentCredentials).
   std::string digestOf(const std::string& sessionSecret);
+  // The account of the live session `digest` keys, read with nothing written. A closed account is refused even if a stale
+  // session row survives.
+  std::optional<User> holderOf(const std::string& digest);
+  // Rolls the session `digest` keys forward and heals its metadata from ctx.
+  void touch(const std::string& digest, const SessionContext& ctx = {});
+  // holderOf, and the session touched when it holds an account.
   std::optional<User> revalidate(const std::string& digest, const SessionContext& ctx = {});
-  void signOut(const std::string& sessionSecret);
+  // The replica the session whose token's digest is `sessionDigest` last pushed for (web-device-parity.md §7, Cleared);
+  // nullopt before its first accepted push, or when there is no such session.
+  std::optional<std::string> syncReplicaOf(const std::string& sessionDigest);
+  void signOut(const std::string& sessionDigest);
 
   // nullopt is a blank or over-cap name; the updated user otherwise.
   std::optional<User> updateName(const UserId& userId, const std::string& rawName);
 
-  std::vector<SessionView> listSessions(const UserId& userId, const std::string& currentSecret);
+  std::vector<SessionView> listSessions(const UserId& userId, const std::string& currentDigest);
 
   // `revokedCurrent` tells the edge to also clear the cookie; `notFound` is a foreign or unknown id.
   enum class RevokeOutcome { revoked, revokedCurrent, notFound };
   RevokeOutcome revokeSession(const UserId& userId, const std::string& sessionId,
-                              const std::string& currentSecret);
+                              const std::string& currentDigest);
 
   // Every session but the caller's own current one.
-  void signOutEverywhere(const UserId& userId, const std::string& currentSecret);
+  void signOutEverywhere(const UserId& userId, const std::string& currentDigest);
 
   // Drops every session and disconnects every tool. Returns the instant the account finally closes.
   UnixMs closeAccount(const UserId& userId);
   AccountCloseResult closeAccount(const UserId& userId, const std::string& operationId,
-      const std::string& proof, UnixMs requestedAt, const std::string& sessionSecret);
+      const std::string& proof, UnixMs requestedAt, const std::string& sessionDigest);
   ClosureReceipt closureReceipt(const UserId& userId, const std::string& operationId,
       const std::string& proof, UnixMs requestedAt);
 

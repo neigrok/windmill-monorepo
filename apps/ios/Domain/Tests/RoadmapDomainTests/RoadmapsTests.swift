@@ -8,35 +8,31 @@ import SyncSchema
 import Testing
 
 // A roadmap's own acts: each case of roadmaps-actions.json by its complete decision, and what the device predicts of the
-// server's writes against the model server holding the same records; and one roadmap read from a phone's engine: through
-// a step another device deleted, in the server's order, and as the corpus reads the same records.
+// server's writes against the model server holding the same records; one roadmap read from a phone's engine: through a
+// step another device deleted, in the server's order, and as the corpus reads the same records; and, as the web's harness
+// tells them (harness.test.js), a roadmap's delete and its note, a subtree's standing across another phone's delete, and
+// two phones' visibilities.
 struct RoadmapsTests {
   @Test(arguments: try Contract.vectors("roadmap/domain/roadmaps-actions.json"))
   func action(_ vector: Vector) throws {
     for scene in [vector, vector.withRecordsReversed] {
-      let actual = try Self.decision(scene)
+      let actual = try RoadmapAct.decision(scene)
       #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
     }
   }
 
-  static func decision(_ vector: Vector) throws -> JSON {
-    let corpus = ProductCorpus(RoadmapRules.book)
-    let input = try vector.input.member("input")
-    switch try vector.input.member("action").asString() {
-    case "CreateRoadmap":
-      let steps = try input["steps"].map(ImportedSteps.init(form:)) ?? ImportedSteps()
-      let kinds = try input.optional("kinds") { try $0.asArray().map(NewKind.init(form:)) }
-      return try corpus.act(CreateRoadmap(title: input.member("title").asString(), steps: steps, kinds: kinds), vector, result: \.form, refusal: \.form)
-    case "DeleteRoadmap": return try corpus.act(DeleteRoadmap(tree: input.id("tree")), vector, result: { .null }, refusal: \.form)
-    case "SetVisibility":
-      let act = SetVisibility(tree: try input.id("tree"), visibility: try input.member("visibility").asString())
-      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
-    case "CreateSubtree":
-      return try corpus.act(CreateSubtree(tree: input.id("tree"), step: input.id("step")), vector, result: \.form, refusal: \.form)
-    case "WriteRoadmap":
-      let act = WriteRoadmap(tree: try input.id("tree"), title: try input.optionalString("title"), guide: try input.optionalString("guide"))
-      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
-    case let name: throw ContractError("no roadmap action \(name)")
+  // The corpus's two revivals before a subtree hold no note. Every write of the note first lets go of each entry whose
+  // write has landed and that says nothing: the web's module decides each case with the device noting step `b`, which has
+  // landed, as it decides the case itself, and Swift is held to that decision.
+  @Test(arguments: ["a subtree on a step this device deleted itself", "a subtree on a step another device deleted"])
+  func aSubtreesRevivalLetsGoOfWhatTheNoteHeldThatLandedAndSaysNothing(_ revival: String) throws {
+    let vector = try #require(try Contract.vectors("roadmap/domain/roadmaps-actions.json").first { $0.name.hasPrefix(revival) })
+    var input = try vector.input.asObject()
+    input["device"] = ["landing:t_0000000000000001": ["nodes": ["b"], "edges": [], "revived": [], "names": []]]
+    let scene = Vector(file: vector.file, name: vector.name, input: .object(input), expect: vector.expect)
+    for decided in [scene, scene.withRecordsReversed] {
+      let actual = try RoadmapAct.decision(decided)
+      #expect(actual == vector.expect, "got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
     }
   }
 
@@ -46,7 +42,7 @@ struct RoadmapsTests {
 
   // A root of one step, made on the phone and taken by the server.
   static func rooted(on phone: Harness) throws -> (tree: ID<RoadmapEntry>, step: ID<RoadmapStep>) {
-    let planted = ImportedSteps(steps: [ImportedStep(key: "first", label: "Basics")])
+    let planted = ImportedSteps(steps: [ImportedStep(key: "first", .init(label: "Basics"))])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       throw ContractError("the roadmap was not created")
     }
@@ -97,7 +93,7 @@ struct RoadmapsTests {
   @Test func aLinkFromAStepAnotherPhoneDeletedIsReadThroughItInTheServersOrder() throws {
     let phone = Self.phone()
     let planted = ImportedSteps(
-      steps: [ImportedStep(key: "basics", label: "Basics"), ImportedStep(key: "lifetimes", label: "Lifetimes"), ImportedStep(key: "traits", label: "Traits")],
+      steps: [ImportedStep(key: "basics", .init(label: "Basics")), ImportedStep(key: "lifetimes", .init(label: "Lifetimes")), ImportedStep(key: "traits", .init(label: "Traits"))],
       links: [(from: "basics", to: "lifetimes"), (from: "lifetimes", to: "traits")])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
@@ -160,7 +156,7 @@ struct RoadmapsTests {
   @Test func aRoadmapReadFromAPhonesEngineEqualsTheCorpusReadOfItsRecords() throws {
     let phone = Self.phone()
     let planted = ImportedSteps(
-      steps: ["Basics", "Ownership", "Traits", "Tools", "Macros"].map { ImportedStep(key: $0, label: $0) }, links: [(from: "Basics", to: "Ownership")])
+      steps: ["Basics", "Ownership", "Traits", "Tools", "Macros"].map { ImportedStep(key: $0, .init(label: $0)) }, links: [(from: "Basics", to: "Ownership")])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
       return
@@ -278,6 +274,96 @@ struct RoadmapsTests {
     #expect(try phone.stored(RoadmapEntry.self).isEmpty)
     #expect(try phone.notices(RoadmapRefusal.self).isEmpty)
   }
+
+  // §6 the device's note of the steps it made goes with the roadmap's delete, at once and not with its hold.
+  @Test func aRoadmapsDeleteLetsGoOfTheNoteOfItAtOnce() throws {
+    let (phone, _, tree, _) = try StepsTests.chained(["Basics", "Lifetimes"])
+    let note = { () throws -> JSON? in try phone.runner.read(RoadmapEntry.scope) { try $0.device("landing:\(tree)") } }
+    #expect(try note() != nil)
+    guard case .committed = try phone.runner.runAct(DeleteRoadmap(tree: tree)) else {
+      Issue.record("the roadmap was not deleted")
+      return
+    }
+    #expect(try note() == nil)
+  }
+
+  // A root and its subtree, public, that the server holds and a tablet of the same account has pulled.
+  static func branch() throws -> (phone: Harness, tablet: Harness, tree: ID<RoadmapEntry>, step: ID<RoadmapStep>, subtree: ID<RoadmapEntry>) {
+    let phone = Self.phone()
+    let (tree, step) = try Self.rooted(on: phone)
+    guard case .committed(let made, _) = try phone.runner.runAct(CreateSubtree(tree: tree, step: step)),
+          case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "public")) else {
+      throw ContractError("the subtree or the visibility was not committed")
+    }
+    phone.sync()
+    let tablet = phone.device()
+    phone.sync()
+    return (phone, tablet, tree, step, made.subtree)
+  }
+
+  // The meta's `visibility` and `reach` of each roadmap, as a device draws them and as the server holds them.
+  static func reaches(of roadmaps: [ID<RoadmapEntry>], on device: Harness) throws -> [[String]] {
+    try roadmaps.map { (roadmap: ID<RoadmapEntry>) throws -> [String] in
+      let meta = try device.drawn(RoadmapMeta.self, in: roadmap.tree)
+      return meta.map(\.visibility) + meta.map(\.reach)
+    }
+  }
+
+  static func serverReaches(of roadmaps: [ID<RoadmapEntry>], on device: Harness) throws -> [JSON?] {
+    let rows = device.server.state.rows
+    return try roadmaps.map { (roadmap: ID<RoadmapEntry>) throws -> JSON? in
+      let scope = try #require(ScopeKey(roadmap.tree, account: "acct-1"))
+      return rows[scope]?[RecordKey(RoadmapMeta.type, RoadmapMeta.singleton.record)]?.lattice.fields["reach"]?.value
+    }
+  }
+
+  // The tablet deletes the step that owns the subtree and leaves the app, so its hold is released and sent: the server ends
+  // the subtree's standing and makes it private. The phone has not heard; its change of the step carries the step's life,
+  // the server revives it, the subtree stands again in the reach of its root, and both draw it so.
+  @Test func aStepDeletedOnAnotherPhoneEndsItsSubtreesStandingAndAChangeMadeWithoutKnowingBringsItBackOnBoth() throws {
+    let (phone, tablet, tree, step, subtree) = try Self.branch()
+    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "public"]])
+    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "public"]])
+    guard case .committed = try tablet.runner.runAct(DeleteStep(tree: tree, step: step)) else {
+      Issue.record("the step was not deleted")
+      return
+    }
+    tablet.leave()
+    #expect(try Self.serverReaches(of: [subtree], on: phone) == ["private"])
+    guard case .committed = try phone.runner.runAct(ChangeStep(tree: tree, step: step, changes: RoadmapStep.Changes(label: "The basics"))) else {
+      Issue.record("the step was not changed")
+      return
+    }
+    phone.sync()
+    #expect(try Self.serverReaches(of: [subtree], on: phone) == ["public"])
+    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "public"]])
+    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "public"]])
+    let owner = try tablet.drawn(RoadmapStep.self, in: tree.tree).map { [$0.id.json, .string($0.label), $0.branch?.json ?? .null] }
+    #expect(owner == [[step.json, "The basics", subtree.json]])
+  }
+
+  // The phone makes the public branch private and public again and, a second later, the tablet makes it private and sends
+  // first. The phone's public is sent after it under an older stamp and loses, on the server and on both devices, so the
+  // branch stays private.
+  @Test func aStalePublicSentAfterANewerPrivateLosesOnTheServerAndOnBoth() throws {
+    let (phone, tablet, tree, _, subtree) = try Self.branch()
+    guard case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "private")),
+          case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "public")) else {
+      Issue.record("the phone's visibility was not written")
+      return
+    }
+    phone.advance(ms: 1000)
+    guard case .committed = try tablet.runner.runAct(SetVisibility(tree: tree, visibility: "private")) else {
+      Issue.record("the tablet's visibility was not written")
+      return
+    }
+    tablet.leave()
+    phone.sync()
+    for device in [phone, tablet] {
+      #expect(try Self.reaches(of: [tree, subtree], on: device) == [["private", "private"], ["private", "private"]])
+    }
+    #expect(try Self.serverReaches(of: [tree, subtree], on: phone) == ["private", "private"])
+  }
 }
 
 extension RoadmapEntry.Parent {
@@ -287,14 +373,7 @@ extension RoadmapEntry.Parent {
 extension ImportedSteps {
   // `{steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}`.
   init(form: JSON) throws {
-    let steps = try form.member("steps").asArray().map { step in
-      let links = try step.optional("links") { links in
-        try links.asArray().map { Step.Link(url: try $0.member("url").asString(), label: try $0.member("label").asString()) }
-      }
-      return ImportedStep(key: try step.member("key").asString(), label: try step.optionalString("label") ?? "",
-                          icon: try step.optionalString("icon") ?? "", color: try step.optionalString("color") ?? "terracotta",
-                          description: try step.optionalString("description") ?? "", links: links ?? [])
-    }
+    let steps = try form.member("steps").asArray().map { ImportedStep(key: try $0.member("key").asString(), try RoadmapStep.Changes(form: $0)) }
     let links = try form.member("links").asArray().map { link in
       let ends = try link.asArray().map { try $0.asString() }
       guard ends.count == 2 else { throw ContractError("a link is [fromKey, toKey], found \(link)") }

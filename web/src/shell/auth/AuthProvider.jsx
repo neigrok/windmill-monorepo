@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
-import { fetchMe, logout } from './AuthClient.js';
+import { clearLapsedCookie, fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
 import { DeviceSeat, DocumentDataScope, ProductQuestions } from './accountChange.js';
 import { requestNavigation } from '../navigation.js';
@@ -20,14 +20,24 @@ export function useAuth() {
   if (!value) throw new Error('useAuth must be used within an AuthProvider');
   return value;
 }
-function hint() {
-  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null')?.user ?? null; } catch { return null; }
+// The browser's last settled account, which the static pages read and write too: `{ status: 'signed-in', user }`, or
+// `{ status: 'ghost' }` naming in `cleared` the account whose lapsed session's cookie the browser already cleared. Only a
+// signed-in hint drops that mark, since the cookie comes back only through a sign-in.
+function hinted() {
+  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null') ?? {}; } catch { return {}; }
 }
-function remember(user) {
-  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost' })); }
+function hint() {
+  return hinted().user ?? null;
+}
+function remember(user, cleared = hinted().cleared) {
+  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost', ...(cleared ? { cleared } : {}) })); }
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
-const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
+// Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
+// as a signed-out one's, learns when the server is out of reach (the engine's `connection`). It answers `fetchMe`'s read.
+function readAccount(engine) {
+  return fetchMe({ heard: (answered) => { if (engine && !engine.closed) engine.answered(answered); } });
+}
 // The sign-in decisions still due: those the answers leave open, and those answered for work that changed since, which
 // the engine asks again (an answer that pins no work is given to the question as it stands).
 function unanswered(result, answers) {
@@ -55,8 +65,10 @@ export default function AuthProvider({ children }) {
   const upgradeRequired = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().upgradeRequired ?? false, () => false);
   // A newer bundle's upgrade closed this tab's store: what is typed now stays on the screen alone.
   const superseded = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().superseded ?? false, () => false);
-  const [seat] = useState(() => new DeviceSeat(PRODUCTS,
-    (error) => captureError('auth', 'auth-credential-held', error?.stack ?? '', '/auth')));
+  const [seat] = useState(() => new DeviceSeat(PRODUCTS, {
+    reportCredential: (error) => captureError('auth', 'auth-credential-held', error?.stack ?? '', '/auth'),
+    reportWillChange: (product, outcome, error) => captureError('auth', 'auth-seat-will-change', error?.stack ?? '', '/auth', { product, outcome }),
+  }));
   const [productQuestions] = useState(() => new ProductQuestions(PRODUCTS,
     (question, error) => captureError('auth', 'auth-product-words', error?.stack ?? '', '/auth', { question })));
   const [dataScope] = useState(() => new DocumentDataScope({
@@ -119,7 +131,7 @@ export default function AuthProvider({ children }) {
     }
     if (revision === roomOwnership.current.revision)
       dataScope.reconcile(syncSession.engine, roomOwnership.current.scopeTicket ?? dataScope.ticket);
-    syncSession.publish({ signedIn: Boolean(value.account) });
+    syncSession.publish({ signedIn: Boolean(value.account), account: value.account?.id ?? null });
     if (value.confirmed) remember(value.user);
   }, [seat, dataScope]);
   const signedOut = useCallback(() => {
@@ -137,6 +149,8 @@ export default function AuthProvider({ children }) {
     settle(null, { signedOut: true });
     channel.current?.postMessage({ type: 'signed-out' });
   }, [settle]);
+  // A product's `forgetDevice` hears `closed` when the departing account was closed: its closure stays recorded until this
+  // cleanup is done, through a reload too.
   const cleanupDevice = useCallback(async (engine, next = null, navigation = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
@@ -144,14 +158,17 @@ export default function AuthProvider({ children }) {
       roomOwnership.current.scopeTicket = dataScope.begin(next ? { kind: 'account', id: next } : { kind: 'anonymous' });
     roomOwnership.current.blocked = true;
     flushSync(() => setRoomChanging(true));
-    await seat.finishDeviceCleanup({ previous: change.previous, next, ...(navigation ? { navigation } : {}) });
+    const closed = engine.device.meta.closingAccount?.account === change.previous;
+    await seat.finishDeviceCleanup({ previous: change.previous, next, ...(closed ? { closed } : {}), ...(navigation ? { navigation } : {}) });
     await engine.clearDeviceCleanup(change);
   }, [seat, dataScope]);
   const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
     const engine = syncSession.engine;
+    await seat.willChange(engine);
     const captured = dataScope.read.getSnapshot();
     let ticket = roomOwnership.current.scopeTicket;
-    const result = await engine.finishSignOut({ ...options, deviceCleanup: true, beforeSignOutCommit: () => {
+    const forgetDeviceRows = await productQuestions.signOutForgets(engine);
+    const result = await engine.finishSignOut({ ...options, deviceCleanup: true, forgetDeviceRows, beforeSignOutCommit: () => {
       const current = dataScope.read.getSnapshot();
       if (current !== captured && !(current.phase === 'changing' && dataScope.ticket === ticket && current.epoch === ticket?.epoch))
         throw new Error('stale document data transition');
@@ -162,14 +179,14 @@ export default function AuthProvider({ children }) {
     } });
     if (result.complete) await cleanupDevice(engine, next, navigation);
     return result;
-  }, [cleanupDevice, dataScope]);
+  }, [cleanupDevice, dataScope, productQuestions, seat]);
   const finishClosure = useCallback(async () => {
     const engine = syncSession.engine;
     const { account, sessionId } = engine.device.meta.closingAccount;
     const replica = engine.device.activeReplica.meta;
     if (replica.state === 'bound' && replica.account === account) {
       const revision = roomOwnership.current.revision;
-      const me = await fetchMe();
+      const me = (await readAccount(engine))?.user;
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-closure');
       confirmRoom(me);
       if (me === undefined) throw new Error('account-closure-unavailable');
@@ -204,6 +221,8 @@ export default function AuthProvider({ children }) {
       // A cookie replaced elsewhere cannot move this account's work to its successor.
       await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     }
+    // A refresh of the account the replica is bound to changes no seat.
+    if (engine.device.activeReplica.meta.state !== 'bound') await seat.willChange(engine);
     let result = await engine.signIn(me.id, answers);
     if (!result.complete) {
       const automatic = (await Promise.all(unanswered(result, answers).map(async (question) => {
@@ -220,14 +239,12 @@ export default function AuthProvider({ children }) {
     pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
       const due = unanswered(result, answers)[0];
-      const count = due ? await productQuestions.adoptionCount(engine, due) : undefined;
-      const words = due ? await productQuestions.signInWords(engine, due) ?? null : null;
-      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [syncOf(due.product).signedOutWork.type]: count } }), words } : null);
+      setQuestion(due ? { ...due, words: await productQuestions.signInWords(engine, due) } : null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
     pending.current = null; setQuestion(null); setError(false); settle(me, undefined, revision);
-  }, [settle, finishSignOut, productQuestions]);
+  }, [settle, finishSignOut, productQuestions, seat]);
   const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
@@ -251,7 +268,21 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const me = await fetchMe();
+    let read = await readAccount(engine);
+    // The read that lapses the seat finds a cookie no live session holds: it goes, once a lapse, so no door refuses this
+    // browser for it (AUTH.md). The read made under the cookie lock, a sign-in another tab made meanwhile included, is the
+    // one this takes; a clear that made none keeps this 401, so the seat lapses and the next page tries again.
+    if (seat.lapses(read?.user, engine, { signedOut })) {
+      const account = seat.previousAccount;
+      const cleared = await clearLapsedCookie(() => readAccount(engine),
+        { cleared: () => hinted().cleared === account, record: () => remember(null, account) });
+      if (cleared) {
+        if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
+        track('auth_session_cleared', { outcome: cleared.outcome });
+        read = cleared.read ?? read;
+      }
+    }
+    const me = read?.user;
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
@@ -264,7 +295,13 @@ export default function AuthProvider({ children }) {
       else if (!seat.confirmed) settle(undefined, undefined, confirmedRevision);
       return undefined;
     }
-    if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision); return me; }
+    if (me) {
+      await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision);
+      // The replica the session last pushed for: the engine keeps it and finds a cleared store under the account's seat, now
+      // or once a sign-in question's answer binds it (web-device-parity.md §7 Cleared).
+      await engine.sessionReplica(me.id, read.syncReplica);
+      return me;
+    }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
     if (ended && engine.device.activeReplica.meta.state === 'bound') await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
@@ -290,6 +327,7 @@ export default function AuthProvider({ children }) {
       enqueue(async () => {
         setBusy(true); setError(false);
         try {
+          await productQuestions.signOutBegins(syncSession.engine);
           setQuestion(await productQuestions.signOutWords(syncSession.engine, await syncSession.engine.beginSignOut()));
           track('sync_signout', { outcome: 'pending' });
         } finally { setBusy(false); }
@@ -310,14 +348,17 @@ export default function AuthProvider({ children }) {
       if (!engine.device.meta.closingAccount) {
         const current = (await listSessions()).find((session) => session.current);
         if (!current?.id) throw new Error('account-closure-session-unavailable');
-        if (!engine.releaseSignOut) await engine.beginSignOut();
+        if (!engine.releaseSignOut) {
+          await productQuestions.signOutBegins(engine);
+          await engine.beginSignOut();
+        }
         try { await engine.recordAccountClosure(account, current.id); }
         catch (error) { await engine.cancelSignOut(); throw error; }
         track('sync_signout', { outcome: 'pending' });
       }
       await finishClosure();
     } finally { setBusy(false); }
-  }), [enqueue, finishClosure]);
+  }), [enqueue, finishClosure, productQuestions]);
   const decide = async (choice) => {
     setBusy(true); setError(false);
     try {
@@ -389,7 +430,7 @@ export default function AuthProvider({ children }) {
     // stays. Whose credential it holds the engine hears from every refresh (`tellCredential`).
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
-      const current = await fetchMe();
+      const current = (await readAccount(syncSession.engine))?.user;
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id !== account) { confirmRoom(current); return current === null; }
@@ -409,6 +450,8 @@ export default function AuthProvider({ children }) {
           throw error;
         }
         for (const each of hooks) await each.prepare?.(engine);
+        // A sign-in the engine resumes as it starts (its `pendingSignIn`) changes the seat too.
+        if (engine.device.meta.pendingSignIn) await seat.willChange(engine);
       },
       onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
       pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
@@ -429,7 +472,7 @@ export default function AuthProvider({ children }) {
     const poll = setInterval(wake, 20000);
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
-  }, [refresh, cleanupDevice, confirmRoom]);
+  }, [refresh, cleanupDevice, confirmRoom, seat]);
   // A surface that says the refused-device line itself holds it from the shell while it stands, so it is said once.
   const holdDeviceLine = useCallback(() => {
     setDeviceLineHolders((holders) => holders + 1);
@@ -453,7 +496,6 @@ export default function AuthProvider({ children }) {
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">{t('shell.auth.accountChangeFailed')}</div>}
     <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
-      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork}
       notices={question ? productQuestions.signOutNotices() : []} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);

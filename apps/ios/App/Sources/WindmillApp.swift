@@ -9,6 +9,8 @@ struct WindmillApp: App {
   @State var introduction = false
   @State var launchLink = false
   @State var workoutLink = false
+  // A roadmap's address on the site that came before the model was ready, which it follows once it is.
+  @State var roadmapLink: URL?
   @UIApplicationDelegateAdaptor(OnboardingLaunchDelegate.self) var launchDelegate
   let settings: AppSettings
   let telemetry: AppTelemetry
@@ -58,7 +60,11 @@ struct WindmillApp: App {
       launchLink = true; introduction = false
       if url.scheme == "windmill", url.host == "workout" { workoutLink = true; model?.openActivityWorkout() }
     }
-    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { _ in launchLink = true; introduction = false }
+    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+      launchLink = true; introduction = false
+      guard let url = activity.webpageURL else { return }
+      if let model { model.open(roadmapLink: url) } else { roadmapLink = url }
+    }
     .onChange(of: scenePhase) { _, phase in
       model?.scenePhaseChanged(phase)
       if phase == .background { telemetry.event("app_backgrounded") }
@@ -89,6 +95,7 @@ struct WindmillApp: App {
           introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink)
         }
         if workoutLink { created.openActivityWorkout() }
+        if let roadmapLink { created.open(roadmapLink: roadmapLink) }
         WorkoutActivityIntentHandler.present(created)
         QuickActionHandler.present(created)
         model = created
@@ -104,7 +111,11 @@ extension WindmillApp {
   // The front room's accent: the shell's brand while You, Keep or Where to start? is in front.
   var windowTint: UIColor {
     guard let model, !introduction, !model.welcome, model.sheet == nil else { return ShellPalette.uiBrand }
-    return model.selectedRoom == .journal ? JournalPalette.uiLamp : GymPalette.uiAccent
+    switch model.selectedRoom {
+    case .journal: return JournalPalette.uiLamp
+    case .gym: return GymPalette.uiAccent
+    case .roadmap: return RoadmapPalette.uiAccent
+    }
   }
 }
 
@@ -189,6 +200,7 @@ struct RootScreen: View {
       if let restore = model.restore, !restore.opened { arrival(restore) }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
+      else if model.selectedRoom == .roadmap, let roadmap = model.roadmap { RoadmapRoom(roadmap: roadmap, app: model) }
       else { GymRoom(gym: model.gym, app: model) }
     }
     .onChange(of: model.updateAlert, initial: true) { _, show in if show { UpdateRequiredAlert.present(for: model) } }
@@ -211,19 +223,23 @@ struct RootScreen: View {
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
   }
 
+  // With the Roadmap door the heading stands higher and names all three rooms (Shell 02a).
   var welcome: some View {
-    GeometryReader { geo in
+    let roadmapDoor = model.roadmap != nil
+    return GeometryReader { geo in
       ZStack {
         ShellPalette.canvas.ignoresSafeArea()
         ScrollView {
           VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: max(40, geo.size.height * 0.18))
+            Color.clear.frame(height: max(40, geo.size.height * (roadmapDoor ? 0.10 : 0.18)))
             Text("WINDMILL").font(ShellType.caption).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 8)
             Text("Where to start?").font(ShellType.display).foregroundStyle(ShellPalette.ink).padding(.bottom, 8)
-            Text("Your journal and training, no account needed.").font(ShellType.body).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 24)
+            Text(roadmapDoor ? "Your roadmap, journal and training, no account needed." : "Your journal and training, no account needed.")
+              .font(ShellType.body).foregroundStyle(ShellPalette.inkDim).padding(.bottom, roadmapDoor ? 62 : 24)
             VStack(spacing: 12) {
               RoomDoor(room: .journal, line: "Write tonight’s page") { model.openJournal() }
               RoomDoor(room: .gym, line: "Log today’s sets") { model.openRoom(.gym) }
+              if roadmapDoor { RoomDoor(room: .roadmap, line: "See what’s up next") { model.openRoom(.roadmap) } }
             }.padding(.horizontal, -8)
             if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: RoomSpace.controlHeight).padding(.top, 10) }
             if model.keptWork {
@@ -270,25 +286,42 @@ struct RoomDoor: View {
   let line: LocalizedStringResource
   let open: () -> Void
   var body: some View {
-    let journal = room == .journal
-    let accent = journal ? JournalPalette.lamp : GymPalette.accent
-    let glow = journal ? JournalPalette.lampSoft : GymPalette.accentSoft
+    let door = Colors(room)
     Button(action: open) {
       HStack {
         VStack(alignment: .leading, spacing: 6) {
-          Image(systemName: room.symbol).foregroundStyle(accent).accessibilityHidden(true)
-          Text(room.title).font(ShellType.title).foregroundStyle(journal ? JournalPalette.ink : GymPalette.ink)
-          Text(line).font(ShellType.subheadline).foregroundStyle(journal ? JournalPalette.inkDim : GymPalette.inkDim)
+          Image(systemName: room.symbol).foregroundStyle(door.accent).accessibilityHidden(true)
+          Text(room.title).font(ShellType.title).foregroundStyle(door.ink)
+          Text(line).font(ShellType.subheadline).foregroundStyle(door.inkDim)
         }
         Spacer()
-        Image(systemName: "arrow.right").foregroundStyle(accent).frame(width: 40, height: 40).background(glow, in: Circle())
+        Image(systemName: "arrow.right").foregroundStyle(door.accent).frame(width: 40, height: 40).background(door.glow, in: Circle())
       }.padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
         .background {
-          ZStack { journal ? JournalPalette.canvas : GymPalette.card; LinearGradient(colors: [.clear, glow], startPoint: .topLeading, endPoint: .bottomTrailing) }
+          ZStack { door.ground; LinearGradient(colors: [.clear, door.glow], startPoint: .topLeading, endPoint: .bottomTrailing) }
             .clipShape(RoundedRectangle(cornerRadius: 28))
         }
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(journal ? JournalPalette.line : GymPalette.line, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(door.line, lineWidth: 1))
     }.buttonStyle(.plain).accessibilityIdentifier("open-" + room.rawValue)
+  }
+
+  // A door is drawn in its room's own colours: its ground and the line around it, its inks, and its accent with the glow.
+  struct Colors {
+    let ground: Color, line: Color, ink: Color, inkDim: Color, accent: Color, glow: Color
+
+    init(_ room: AppModel.Room) {
+      switch room {
+      case .journal:
+        (ground, line, ink, inkDim) = (JournalPalette.canvas, JournalPalette.line, JournalPalette.ink, JournalPalette.inkDim)
+        (accent, glow) = (JournalPalette.lamp, JournalPalette.lampSoft)
+      case .gym:
+        (ground, line, ink, inkDim) = (GymPalette.card, GymPalette.line, GymPalette.ink, GymPalette.inkDim)
+        (accent, glow) = (GymPalette.accent, GymPalette.accentSoft)
+      case .roadmap:
+        (ground, line, ink, inkDim) = (RoadmapPalette.canvas, RoadmapPalette.line, RoadmapPalette.ink, RoadmapPalette.inkDim)
+        (accent, glow) = (RoadmapPalette.accent, RoadmapPalette.accentSoft)
+      }
+    }
   }
 }
 
@@ -308,7 +341,7 @@ struct RoomMenu: View {
   var body: some View {
     Menu {
       Picker("Room", selection: Binding(get: { app.selectedRoom }, set: { app.switchRoom($0) })) {
-        ForEach(AppModel.Room.allCases, id: \.self) { room in
+        ForEach(app.rooms, id: \.self) { room in
           Label(room.title, systemImage: room.symbol).tag(room).accessibilityIdentifier("room-" + room.rawValue)
         }
       }.pickerStyle(.inline)

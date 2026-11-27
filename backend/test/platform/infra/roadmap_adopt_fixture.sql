@@ -25,7 +25,7 @@ values
   -- a roadmap stored only as a whole document
   ('t_a000000000000007', 'aaaaaaaa-0000-4000-8000-00000000000a', 'Old document', '1740000000000:0:r_owner', '', '', false,
    'unlisted', 3, null, to_timestamp(1735689600), to_timestamp(1748736000)),
-  -- the reader's own unlisted roadmap, which the owner marks
+  -- the reader's own unlisted roadmap, which the old server reads as private, and which the owner marks
   ('t_b000000000000001', 'bbbbbbbb-0000-4000-8000-00000000000b', 'Bake bread', '1740000000000:0:r_reader', '', '', false,
    'unlisted', 1, null, to_timestamp(1735689600), to_timestamp(1748736000)),
   -- a roadmap nobody owns, which the move is told to expect

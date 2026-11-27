@@ -13,6 +13,13 @@ export function deltasOf(entry) {
   return effectsOf(entry).flatMap(({ d }) => d);
 }
 
+// The command an entry runs of its own, or undefined: a capture command is the ordinary deltas' own (§7.3 Undo of an
+// act, Capture), so an entry carrying one folds, retires and empties as an ordinary entry does.
+export function ownCommandOf(registry, entry) {
+  const { cmd } = entry.intent;
+  return cmd === undefined || registry.command(cmd.name)?.engine === 'capture' ? undefined : cmd;
+}
+
 export function scopedKey(scope, t, id) {
   return `${scope}|${recordKey(t, id)}`;
 }
@@ -72,7 +79,8 @@ export class Dependents {
             || this.names(references.ofRecord(scope, delta)))))
         || (entry.predict ?? []).some((delta) => delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta))));
     const guards = replaced ? (entry.intent.guard ?? []).filter((guard) => this.created.has(scopedKey(entry.scope, guard.t, guard.id))) : [];
-    return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
+    return { removed, cmdGone, guards, any: removed.length > 0 || cmdGone || guards.length > 0,
+      whole: removed.length === deltas.length && (ownCommandOf(this.registry, entry) === undefined || cmdGone) };
   }
 
   // A dependent part joins the sources, so dependency is transitive through the records it creates.
@@ -109,8 +117,9 @@ export function removeDependent(entry, { removed, cmdGone, guards = [] }) {
   return content;
 }
 
-export function isEmpty(entry) {
-  return entry.intent.d === undefined && entry.intent.cmd === undefined;
+// An entry left with no delta and no command of its own: a fold that leaves it so ends it.
+export function isEmpty(registry, entry) {
+  return entry.intent.d === undefined && ownCommandOf(registry, entry) === undefined;
 }
 
 // The silent fold of an undo, a retire and a supersede (§7.3), planned before anything moves: `sources`
@@ -137,9 +146,9 @@ export function silentFoldOf(replica, registry, sources, { replaced = false } = 
 }
 
 // Applies a silent fold: no notice, and an entry left empty ends undone.
-export function foldSilently(replica, ended, parts) {
+export function foldSilently(replica, registry, ended, parts) {
   for (const { entry, part } of parts) {
     removeDependent(entry, part);
-    if (isEmpty(entry)) moveEntry(replica, ended, entry, 'silent-fold');
+    if (isEmpty(registry, entry)) moveEntry(replica, ended, entry, 'silent-fold');
   }
 }

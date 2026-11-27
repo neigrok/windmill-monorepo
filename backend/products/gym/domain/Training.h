@@ -181,6 +181,10 @@ struct Session {
           std::optional<ClosedBy> closedBy = std::nullopt,
           std::optional<std::string> displayName = std::nullopt);
 
+  // The name the workout went by: the history's display override where it has one, else the frozen plan's routine,
+  // and empty for an ad-hoc workout. Never the routine's name today.
+  std::string routineName() const;
+
   bool operator==(const Session&) const = default;
 };
 

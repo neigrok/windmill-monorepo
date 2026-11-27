@@ -220,6 +220,11 @@ Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
     throw InvalidTraining("a session finishes at an instant");
 }
 
+std::string Session::routineName() const {
+  if (displayName) return *displayName;
+  return plan ? plan->routineName : "";
+}
+
 Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double weightKg,
          int reps, std::optional<double> rpe, std::string note, std::uint64_t completedAtMs)
     : id(std::move(id)), session(std::move(session)), exercise(std::move(exercise)),

@@ -120,8 +120,9 @@ struct TransactionsTests {
   }
 
   // A commit reads what it touches by key: the ids it mints once drawn, the entries that touch the records it reads, the
-  // held gestures when it retires, and the commit orders above what it read; a push result's `ok` reads its own entry,
-  // and an epoch the replica already holds reads no entry. Each finds its replica's handle by id once. Every statement
+  // held gestures when it retires, and the commit orders above what it read; a delete and an edit of a capped type read
+  // the one record, not the type; a push result's `ok` reads its own entry, and an epoch the replica already holds reads
+  // no entry. Each finds its replica's handle by id once. Every statement
   // searches an index but each commit's read of the one device row, and none reads more for a fuller store.
   @Test func aCommitAndAPushResultReadByKeyWhateverTheStoreHolds() throws {
     let runs = try [0, 40].map(Self.readsOfACommitAndAResult)
@@ -153,9 +154,6 @@ struct TransactionsTests {
       return [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
               #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'", journal]
     }
-    let cards = #"SELECT row FROM set_row WHERE row_set = 1 AND type = 'card'"#
-    let touchingCards = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'card' AND outbox.replica = 1"#
     let heldGestures = "SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)\n"
       + "WHERE held.replica = 1 AND held.state = 'held' AND gesture.replica = 1"
     let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
@@ -168,11 +166,11 @@ struct TransactionsTests {
       replica, replica, cursors, "SELECT * FROM outbox WHERE replica = 1 AND state = 'sent' AND n = 1", above(2), known, deviceRows, active, handle,
     ]
     let heldDelete: [String] = [
-      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), anyRow, spent, touching("card", "card0001"),
       above(1), known, deviceRows, active,
     ]
     let retiring: [String] = [
-      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), anyRow, spent, touching("card", "card0001"),
       heldGestures, above(2), known, deviceRows, active,
     ]
     let expected: [[String]] = [
@@ -407,6 +405,106 @@ struct TransactionsTests {
       return taken().filter { $0.hasPrefix("SELECT * FROM cursor") }.count
     }
     #expect(loads == [2, 2, 2])
+  }
+
+  // A commit reads of the journal its inverse requests alone while none is unsettled: an act journaled beside it, and the
+  // entry the act names, stay unread, so the commit costs the same whatever the journal holds.
+  @Test func aCommitReadsTheJournalWholeOnlyWhereAnInverseRequestIsUnsettled() throws {
+    let scope = ScopeRef.product("probe")
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let card = Row(key: RecordKey("card", "card0001"), lattice: Lattice(life: Life(.alive, stamp), born: stamp), seq: 1)
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [
+      LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), confirmed: [scope: Rows([card])], wholeScopes: true),
+    ]), registry: Self.probe)
+    let day = RecordAddress(scope: scope, key: RecordKey("day", "2026-09-01"))
+    let undo = ActUndo(segments: [ActUndo.Segment(index: 0, recipes: [.createdRecord(restoreCommand: "probe.restore", record: day)])])
+    let act = try store.commitAct(instance: Self.instance(5000), identities: try QueuedIdentities([:]), prepare: { _, _ in
+      (ActRequest(scopes: [scope], gestureId: "act", undo: undo), ())
+    }, segment: { _, _, _, _ in Gesture(changes: [.put("day", day.key.id, present: true, ["score": 1])]) })
+    guard case .committed? = act.value.outcome else {
+      Issue.record("the act was not journaled")
+      return
+    }
+    let taken = try Self.readsRecorded(by: store)
+    _ = try store.commit(Gesture(changes: [.update("card", "card0001", ["title": "Read"])], gestureId: "read"), in: scope,
+                         instance: Self.instance(5001), identities: try QueuedIdentities([:]))
+    let reads = taken()
+    #expect(reads.contains("SELECT request FROM inverse_request WHERE replica = 1 ORDER BY request_id"))
+    #expect(!reads.contains { $0.hasPrefix("SELECT act FROM journal_act") || $0.hasPrefix("SELECT receipt FROM cancellation") })
+    #expect(!reads.contains { $0.contains("'act/0'") })
+  }
+
+  // An act's staging writes inside a savepoint the act rolls back, so what a staged part ended is stored again when the
+  // act commits, and each entry the staging wrote is read again as stored: a part that retires a held removal ends it,
+  // and folds the entry that carried its life, again as the act commits.
+  @Test func anActEndsAgainWhatItsStagingEndedAndRolledBack() throws {
+    let scope = ScopeRef.product("probe")
+    let day: RecordID = "2026-09-01"
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [
+      LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true),
+    ]), registry: Self.probe)
+    let gestures = [Gesture(changes: [.put("day", day, present: true, ["score": 1])], gestureId: "made"),
+                    Gesture(changes: [.delete("day", day)], hold: true, gestureId: "held"),
+                    Gesture(changes: [.put("day", day, present: nil, ["score": 2])], gestureId: "carried")]
+    for (index, gesture) in gestures.enumerated() {
+      _ = try store.commit(gesture, in: scope, instance: Self.instance(5000 + Int64(index)), identities: try QueuedIdentities([:]))
+    }
+    let retiring = Gesture(changes: [.put("day", day, present: true, ["score": 3])], retire: [RecordRef(type: "day", id: day)], gestureId: "act")
+    var staged: [String] = []
+    let act = try store.commitAct(instance: Self.instance(5010), identities: try QueuedIdentities([:]),
+                                  prepare: { (tx: StoreTransaction, staging: ActStaging) throws -> (ActRequest?, Void) in
+      let refused = try staging.stage(retiring, in: scope)
+      #expect(refused == nil)
+      staged = try tx.replica("rp_1")!.outbox.map(\.localId)
+      return (ActRequest(scopes: [scope], gestureId: "act"), ())
+    }, segment: { _, _, _, _ in retiring })
+    guard case .committed(let receipt)? = act.value.outcome else {
+      Issue.record("the act did not commit")
+      return
+    }
+    #expect(staged == ["made/0", "staged/0"])
+    #expect(receipt.retired == ["held"])
+    #expect(try store.read { tx in try tx.replica("rp_1")!.outbox.map(\.localId) } == ["made/0", "act/0"])
+  }
+
+  // A retire folds every dependent of the removal it ends, as over the whole replica: here a command whose prediction
+  // carries the removal's life folds, and with it a later entry reached only through what that prediction creates, a card
+  // the entry changes or a run its lap names, which no record the retire reads touches. The commit reads every entry
+  // once its fold reaches that far, beside a change of a capped type or alone.
+  @Test(arguments: ["beside a change of a capped type", "alone", "alone, a later lap naming a predicted run"])
+  func aRetireFoldsWhatAFoldedPredictionReachesAsOverTheWholeReplica(_ shape: String) throws {
+    let scope = ScopeRef.product("probe")
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let card = Row(key: RecordKey("card", "card0001"), lattice: Lattice(life: Life(.alive, stamp), born: stamp, fields: [
+      "title": Register("One", stamp), "tier": Register("draft", stamp)]), seq: 1, rc: 1, ru: 1)
+    let day = Row(key: RecordKey("day", "2026-09-01"), lattice: Lattice(life: Life(.alive, stamp), fields: ["score": Register(1, stamp)]),
+                  seq: 2, rc: 2, ru: 2)
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.hlc = HLC(ms: 1000)
+    var whole = LoadedReplica(meta: meta, confirmed: [scope: Rows([card, day])], wholeScopes: true)
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [whole]), registry: Self.probe)
+    let planner = CommitPlanner(registry: Self.probe)
+    let naming = shape.hasSuffix("predicted run")
+    let created: Change = naming ? .create("run", id: .given("run00009"), ["startedAt": 5000])
+      : .create("card", id: .given("card0009"), ["title": "Nine", "tier": "draft"])
+    let later: Change = naming ? .create("lap", id: .given("lapaaaa9"), ["runId": "run00009", "weight": 5])
+      : .update("card", "card0009", ["tier": "done"])
+    let beside: [Change] = shape.hasPrefix("beside") ? [.update("card", "card0001", ["tier": "review"])] : []
+    let gestures: [Gesture] = [
+      Gesture(changes: [.put("day", "2026-09-01", present: false)], hold: true, gestureId: "removal"),
+      Gesture(changes: [], command: Command(name: "probe.copy", args: ["src": "b_00000001", "dst": "b_00000002"]),
+              predict: [.put("day", "2026-09-01", present: nil, ["score": 2]), created], gestureId: "command"),
+      Gesture(changes: [later], gestureId: "later"),
+      Gesture(changes: beside, retire: [RecordRef(type: "day", id: "2026-09-01")], gestureId: "retiring"),
+    ]
+    for (index, gesture) in gestures.enumerated() {
+      let instance = Self.instance(5000 + Int64(index))
+      let written = Result { try store.commit(gesture, in: scope, instance: instance, identities: try QueuedIdentities([:])).value }
+      let decided = Result { try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false) }
+      #expect(Self.agree(written, decided), "\(shape), \(gesture.gestureId!)")
+      #expect(try store.read { try $0.device(rows: true).activeReplica.json } == whole.json, "\(shape), \(gesture.gestureId!)")
+    }
+    #expect(whole.outbox.map(\.localId) == (beside.isEmpty ? [] : ["retiring/0"]))
   }
 
   // The store's Actions, each over what it loads, decide as the planners over the whole replica and leave the same

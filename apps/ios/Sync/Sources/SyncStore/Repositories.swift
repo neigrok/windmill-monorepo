@@ -7,12 +7,16 @@ import SyncReplica
 // `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type and no handle. Its loaders
 // build the working copies planners change; its queries serve the readers. Each finds a replica by its id once, then
 // reads by its handle. The cursors, staging digests, known scopes and device rows of a replica are always loaded whole;
-// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them. A legacy
-// entry is found in a scope by its own columns, an opted one by its projections (`outbox_projection`).
+// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them, each
+// decoded once a transaction. The journal loads whole, with the entries it names, for a planner that reads it; a commit's
+// load reads its inverse requests and the rest only where one is unsettled; a reader's load leaves it, so a read costs
+// the same whatever the journal holds. A legacy entry is found in a scope by its own columns, an opted one by its
+// projections (`outbox_projection`).
 
 public struct StoreTransaction {
   let db: Database
   let registry: Registry
+  let decoded = DecodedEntries()
 
   // MARK: Device and replicas
 
@@ -32,11 +36,12 @@ public struct StoreTransaction {
     try String.fetchAll(db, sql: "SELECT id FROM replica ORDER BY handle")
   }
 
-  // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too.
+  // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too, and
+  // `journal` what it names of the journal, with the entries that names.
   public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries selection: EntrySelection = .every,
-                      notices: Bool = false) throws -> LoadedReplica? {
+                      notices: Bool = false, journal readsJournal: JournalSelection = .whole) throws -> LoadedReplica? {
     guard let (handle, meta, journaled) = try record(of: id) else { return nil }
-    let journal = journaled ? try self.journal(of: handle) : Journal()
+    let journal = try self.journal(of: handle, readsJournal, journaled: journaled)
     var entries = selection
     entries.localIds.formUnion(journal.namedLocalIds)
     let cursors = try cursors(of: handle)
@@ -59,18 +64,23 @@ public struct StoreTransaction {
       isActive: try isActive(handle))
   }
 
-  // K-3 a replica's journal, each record by its id.
-  func journal(of handle: ReplicaHandle) throws -> Journal {
+  // K-3 what `selection` names of a replica's journal, each record by its id; `journaled` is the replica row's word that
+  // the journal holds any.
+  func journal(of handle: ReplicaHandle, _ selection: JournalSelection, journaled: Bool) throws -> LoadedJournal {
+    guard selection != .unread else { return .unread }
+    guard journaled else { return .whole(Journal()) }
     let records = { (table: String, column: String, id: String) throws -> [JSON] in
       try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT \(column) FROM \(table) WHERE replica = ? ORDER BY \(id)"), arguments: [handle.value])
         .map { (record: GRDB.Row) throws -> JSON in try Blob.json(record[column]) }
     }
-    return Journal(
+    let inverses = try records("inverse_request", "request", "request_id").map { (json: JSON) throws -> InverseRequest in try InverseRequest(json: json) }
+    if selection == .whereUnsettled && inverses.allSatisfy({ $0.state == .settled }) { return .settled }
+    return .whole(Journal(
       acts: try records("journal_act", "act", "act_id").map { (json: JSON) throws -> ReversibleAct in try ReversibleAct(json: json) },
-      inverses: try records("inverse_request", "request", "request_id").map { (json: JSON) throws -> InverseRequest in try InverseRequest(json: json) },
+      inverses: inverses,
       cancellations: try records("cancellation", "receipt", "inverse_act_id").map { (json: JSON) throws -> CancellationReceipt in
         try CancellationReceipt(json: json)
-      })
+      }))
   }
 
   // Every replica with its notices: what the lifecycle planners read. `rows` loads every row too.
@@ -99,8 +109,7 @@ public struct StoreTransaction {
     return LoadedReplica(
       meta: meta, outbox: try outbox(of: handle), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
       known: try known(of: handle), notices: try notices(of: handle), deviceRows: try deviceRows(of: handle),
-      journal: journaled ? try journal(of: handle) : Journal(),
-      wholeScopes: true, isActive: try isActive(handle))
+      journal: try journal(of: handle, .whole, journaled: journaled), wholeScopes: true, isActive: try isActive(handle))
   }
 
   public func holdsScope(_ scope: ScopeRef, in id: String) throws -> Bool {
@@ -136,6 +145,7 @@ public struct StoreTransaction {
     meta.serverEpoch = record["server_epoch"]
     meta.ackThrough = record["ack_through"]
     meta.authPaused = record["auth_paused"]
+    meta.serverSchema = record["server_schema"]
     return (ReplicaHandle(value: record["handle"]), meta, record["journaled"])
   }
 
@@ -225,7 +235,12 @@ public struct StoreTransaction {
     return targets
   }
 
+  // An entry as its row stores it, decoded once a transaction.
   func entry(_ record: GRDB.Row) throws -> OutboxEntry {
+    try decoded.entry(record["local_id"]) { try decode(record) }
+  }
+
+  func decode(_ record: GRDB.Row) throws -> OutboxEntry {
     guard let state = EntryState(rawValue: record["state"]) else { throw StoreError.corrupt("entry state") }
     let baseTexts = try (record["base_texts"] as Data?).map { try Blob.json($0).asObject().members } ?? []
     var entry = OutboxEntry(
@@ -433,6 +448,31 @@ public struct StoreTransaction {
       }
     }
     return ((touches + projections).sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
+  }
+}
+
+// The unit of work's identity map of the outbox: each entry one transaction decoded, by its local id's bytes, so the
+// transaction decodes a stored entry once however many of its loads read it. Inside a transaction a stored entry changes
+// only by the transaction's own writes, since SQLite gives it the database alone (the writer) or one snapshot (a read),
+// and every put or delete of an entry goes through the transaction's `BatchWriter`, which marks it written. A written
+// entry is never held but decoded at each load, so what the map answers for a row a load found is that row as stored,
+// never an older copy, a savepoint rolled back included. It lives and dies with its transaction.
+final class DecodedEntries {
+  private var held: [[UInt8]: OutboxEntry] = [:]
+  private var written: Set<[UInt8]> = []
+
+  func entry(_ localId: String, decoding decode: () throws -> OutboxEntry) throws -> OutboxEntry {
+    let id = Array(localId.utf8)
+    if let entry = held[id] { return entry }
+    let entry = try decode()
+    if !written.contains(id) { held[id] = entry }
+    return entry
+  }
+
+  func wrote(_ localId: String) {
+    let id = Array(localId.utf8)
+    held[id] = nil
+    written.insert(id)
   }
 }
 

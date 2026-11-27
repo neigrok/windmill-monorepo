@@ -114,6 +114,20 @@ Json::Value AiPasses::claims(const AiBudgetPrincipal& principal, const std::opti
   return value;
 }
 
+std::string AiPasses::serverPass(const UserId& account, long long now) const {
+  if (!validAiBudgetId(account.str()) || now < 0 || now > std::numeric_limits<long long>::max() - kAiPassLifetimeMs)
+    throw std::invalid_argument("Invalid AI pass claims");
+  Json::Value value(Json::objectValue);
+  value["aud"] = "ai";
+  value["env"] = environment_;
+  value["iat"] = Json::Int64(now);
+  value["exp"] = Json::Int64(now + kAiPassLifetimeMs);
+  value["sub"]["account"] = account.str();
+  value["plan"] = "none";
+  value["client"] = "server";
+  return sign(value);
+}
+
 std::string AiPasses::signPayload(const std::string& payload) const {
   const std::string signedText = "wm-pass.v1." + kid_ + "." + drogon::utils::base64Encode(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), true, false);
   if (signedText.size() + 87 > 2048) throw std::invalid_argument("AI pass exceeds length limit");

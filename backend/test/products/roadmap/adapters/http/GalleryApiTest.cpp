@@ -7,6 +7,7 @@
 #include "test/testing.h"
 
 #include "platform/application/WriteObservation.h"
+#include "test/DrogonLoopback.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -114,7 +115,7 @@ drogon::HttpRequestPtr galleryReq(const std::string& session = "", const std::st
   if (!session.empty()) req->addCookie("wm_session", session);
   if (!limit.empty()) req->setParameter("limit", limit);
   if (!cursor.empty()) req->setParameter("cursor", cursor);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr sendIndex(GalleryApi& api, const drogon::HttpRequestPtr& req) {
@@ -217,7 +218,6 @@ TEST(the_json_index_serves_an_anonymous_caller_the_walls_own_rows) {
   const UserId owner = h.signIn("s1", "owner@example.com");
   h.seed("t_popular", "Popular", owner, Visibility::public_, 5, 100);
   h.seed("t_quiet", "Quiet", owner, Visibility::public_, 5, 100);
-  h.seed("t_unlisted", "Unlisted", owner, Visibility::unlisted, 5, 100);
   h.seed("t_private", "Private", owner, Visibility::private_, 5, 100);
   h.seedFork("t_copy", "t_popular");
   h.seed("t_copy", "Copy", owner, Visibility::private_, 5, 100);
@@ -281,7 +281,7 @@ TEST(a_listed_fork_names_its_source_only_while_that_source_is_public) {
   CHECK_EQ(named["entries"][1]["id"].asString(), std::string("t_fork"));
   CHECK_EQ(named["entries"][1]["sourceTitle"].asString(), std::string("Learn Rust"));
 
-  h.trees->setVisibility(TreeId{"t_source"}, Visibility::unlisted);
+  h.trees->setVisibility(TreeId{"t_source"}, Visibility::private_);
   const Json::Value anonymousSource = bodyOf(sendIndex(h.api, galleryReq()));
   CHECK_EQ(anonymousSource["count"].asUInt(), 1u);
   CHECK_EQ(anonymousSource["entries"][0]["id"].asString(), std::string("t_fork"));

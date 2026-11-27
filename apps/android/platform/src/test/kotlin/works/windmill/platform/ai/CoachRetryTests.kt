@@ -18,7 +18,7 @@ class CoachRetryTests {
         val failures = mutableListOf<FailureOperation>()
         override fun turn(report: TurnReport) {}
         override fun ability(report: AbilityReport) {}
-        override fun failure(operation: FailureOperation) { failures += operation }
+        override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) { failures += operation }
     }
     private fun fixture() = Json.parse(File(System.getProperty("windmill.contract"), "ai/wire/fixtures.json").readText())
     private fun terminal() = Json.Obj(fixture().member("textEvents").arr()[3].obj().toList() + ("id" to Json.of(2)))
@@ -203,12 +203,13 @@ class CoachRetryTests {
             AiHttp(server.url("/").newBuilder().host("127.0.0.1").build(), { AiCredentials(null, null) }, allowLocalHttp = true).use { transport ->
                 val client = CoachAiClient(transport, reports, now = { now }, wait = { ms, _ -> waits += ms; now += ms; true })
                 val answer = client.text("AAAAAAAAAAAAAAAAAAAAAA", Json.objectOf(), emptyList(), "other", "vector.coach", 1, StopSignal()) {}
+                // A pass door answering a 5xx that names no refusal did not answer: never a lost connection, and reported once by its status class.
                 if (dispatched) assertTrue(answer is AiAnswer.Terminal)
-                else assertEquals(AiAnswer.Failure(AiFailure("transport", null, Admission.none)), answer)
+                else assertEquals(AiAnswer.Failure(AiFailure("pass", "unavailable", Admission.none)), answer)
             }
             assertEquals(if (dispatched) listOf(1000L, 2000L) else emptyList(), waits)
             assertEquals(if (dispatched) 5 else 1, server.requestCount)
-            assertEquals(emptyList<FailureOperation>(), reports.failures)
+            assertEquals(listOf(FailureOperation.aiPass), reports.failures)
         }
     }
 

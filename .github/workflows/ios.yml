@@ -3,7 +3,7 @@ name: iOS CI
 # Tests the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain), Coach (Agent and WindmillKit) and the engine's
 # public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app and the product app in Release for
 # the simulator. App unit tests and three class-based UI shards (ios-ui-tests.yml) run in parallel; ships nothing. The corpus runners read
-# packages/api-contract/{sync,domain-kit,gym,journal,roadmap,agent,ai} by walking up from #filePath, and the
+# packages/api-contract/{sync,domain-kit,catalog,gym,journal,agent,ai}, roadmap's domain, layout and plan and its Coach's catalog, abilities and limits, roadmap-addresses.json and roadmap-link-urls.json by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
 # change to any of those contracts runs this workflow too.
 
@@ -16,9 +16,17 @@ on:
       - 'packages/api-contract/agent/**'
       - 'packages/api-contract/ai/**'
       - 'packages/api-contract/domain-kit/**'
+      - 'packages/api-contract/catalog/**'
       - 'packages/api-contract/gym/**'
       - 'packages/api-contract/journal/**'
-      - 'packages/api-contract/roadmap/**'
+      - 'packages/api-contract/roadmap/domain/**'
+      - 'packages/api-contract/roadmap/layout/**'
+      - 'packages/api-contract/roadmap/plan/**'
+      - 'packages/api-contract/roadmap/catalog.json'
+      - 'packages/api-contract/roadmap/abilities/**'
+      - 'packages/api-contract/roadmap/limits.json'
+      - 'packages/api-contract/roadmap-addresses.json'
+      - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '.github/workflows/ios-ui-tests.yml'
@@ -31,9 +39,17 @@ on:
       - 'packages/api-contract/agent/**'
       - 'packages/api-contract/ai/**'
       - 'packages/api-contract/domain-kit/**'
+      - 'packages/api-contract/catalog/**'
       - 'packages/api-contract/gym/**'
       - 'packages/api-contract/journal/**'
-      - 'packages/api-contract/roadmap/**'
+      - 'packages/api-contract/roadmap/domain/**'
+      - 'packages/api-contract/roadmap/layout/**'
+      - 'packages/api-contract/roadmap/plan/**'
+      - 'packages/api-contract/roadmap/catalog.json'
+      - 'packages/api-contract/roadmap/abilities/**'
+      - 'packages/api-contract/roadmap/limits.json'
+      - 'packages/api-contract/roadmap-addresses.json'
+      - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '.github/workflows/ios-ui-tests.yml'
@@ -86,7 +102,8 @@ jobs:
           xcodegen --version
 
       # Every UI class runs in exactly one shard, except the opt-in ones, which must keep their guard: the design
-      # captures, and the nightly classes, which iOS nightly runs instead.
+      # captures, the Graph's and the Board's benchmarks, which Tools/graph_bench.sh and Tools/board_bench.sh run, and the
+      # nightly classes, which iOS nightly runs instead.
       - name: Check UI shard coverage
         run: |
           python3 - <<'PY'
@@ -102,6 +119,8 @@ jobs:
               "DesignCapture": ("DesignCapture/DesignCapture.swift", "WM_DESIGN_CAPTURE"),
               "NightlyFlowTests": ("NightlyFlowTests.swift", "WM_NIGHTLY_UI"),
               "GymNightlyFlowTests": ("GymNightlyFlowTests.swift", "WM_NIGHTLY_UI"),
+              "RoadmapGraphBenchmarks": ("RoadmapGraphBenchmarks.swift", "WM_GRAPH_BENCH"),
+              "RoadmapBoardBenchmarks": ("RoadmapBoardBenchmarks.swift", "WM_BOARD_BENCH"),
           }
           for name, (file, variable) in opt_in.items():
               guard = f'try XCTSkipUnless(ProcessInfo.processInfo.environment["{variable}"] == "1"'
@@ -140,11 +159,11 @@ jobs:
           xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator' \
             -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/SyncProbe" ARCHS=arm64
 
-      # Sources/GymDomain/Coach/Catalog.generated.swift is generated from the gym ability catalog and checked in; a stale
-      # file fails here.
-      - name: Check the generated ability catalog
+      # Sources/GymDomain/Coach/Catalog.generated.swift and Sources/RoadmapDomain/Coach/Catalog.generated.swift are generated
+      # from the gym and roadmap ability catalogs and checked in; a stale file fails here.
+      - name: Check the generated ability catalogs
         working-directory: apps/ios/Domain
-        run: swift run --explicit-target-dependency-import-check error GymCatalogGen --check
+        run: swift run --explicit-target-dependency-import-check error CatalogGen --check
 
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit
@@ -251,9 +270,10 @@ jobs:
         working-directory: apps/ios/App
         run: python3 Tools/string_catalogs.py --check --derived-data "$RUNNER_TEMP/app-release"
 
+  # A runner's build of the app takes 7 to 28 minutes, and the unit tests about 15.
   app-unit-tests:
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: apps/ios/App
@@ -287,23 +307,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: gym-integration
+          - shard: integration-roadmap
             tests: >-
               -only-testing:WindmillUITests/GymIntegrationFlowTests
-              -only-testing:WindmillUITests/GymRecoveryFlowTests
-              -only-testing:WindmillUITests/JournalIntegrationFlowTests
-              -only-testing:WindmillUITests/JournalEchoFlowTests
+              -only-testing:WindmillUITests/RoadmapFlowTests
+              -only-testing:WindmillUITests/RoadmapLandingFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
               -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
               -only-testing:WindmillUITests/GymWorkoutFlowTests
+              -only-testing:WindmillUITests/GymRecoveryFlowTests
               -only-testing:WindmillUITests/JournalFlowTests
+              -only-testing:WindmillUITests/JournalIntegrationFlowTests
+              -only-testing:WindmillUITests/JournalEchoFlowTests
+              -only-testing:WindmillUITests/RoadmapNestedFlowTests
           - shard: shell-offline-system
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
+              -only-testing:WindmillUITests/RoadmapSharingFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests
     uses: ./.github/workflows/ios-ui-tests.yml

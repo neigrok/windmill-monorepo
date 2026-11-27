@@ -123,9 +123,10 @@ export class LastTime {
   // Not read yet: no workout found, and the account's history is not all here to say there is none.
   get isUnread() { return !this.isComplete && this.session === null; }
 
-  /** @param {Id<ExerciseValue>} exerciseId @param {TrainingLog} log */
-  static of(exerciseId, log) {
-    for (const session of log.drawnSessions) {
+  // The newest of the given closed sessions, in their order, holding a set of the movement.
+  /** @param {Id<ExerciseValue>} exerciseId @param {TrainingLog} log @param {readonly SessionValue[]} [among] */
+  static of(exerciseId, log, among = log.drawnSessions) {
+    for (const session of among) {
       if (session.isOpen) continue;
       const sets = log.setsFor(session.id).filter((set) => set.exerciseId.equals(exerciseId));
       if (sets.length > 0) return new LastTime(exerciseId, session, sets, log.firstPullComplete);
@@ -216,6 +217,10 @@ export class PerformedFact {
   get json() {
     return { setId: this.setId.json, weightKg: this.weightKg, reps: this.reps, ...(this.rpe === null ? {} : { rpe: this.rpe }) };
   }
+
+  // The heaviest set first: the highest load, ties to more reps, then to the lowest set id.
+  /** @param {PerformedFact} a @param {PerformedFact} b */
+  static heavierFirst(a, b) { return b.weightKg - a.weightKg || b.reps - a.reps || Id.compare(a.setId, b.setId); }
 }
 
 export class EstimatedFact {
@@ -251,6 +256,21 @@ export class MovementSessionFact {
     return { exerciseId: this.exerciseId.json, workingSetCount: this.workingSetCount, heaviest: this.heaviest.json,
       ...(this.estimate === null ? {} : { estimate: this.estimate.json }), ...(this.estimatesComplete ? {} : { estimatesComplete: false }) };
   }
+
+  // One movement's sets of one workout: its heaviest set, most reps, the set earning its estimate and most reps at zero load.
+  /** @param {readonly TrainingSetValue[]} sets */
+  static of(sets) {
+    const performed = sets.map((set) => new PerformedFact(set));
+    const heaviest = [...performed].sort(PerformedFact.heavierFirst)[0];
+    const mostReps = [...performed].sort((a, b) => b.reps - a.reps || b.weightKg - a.weightKg || Id.compare(a.setId, b.setId))[0];
+    const first = sets[0];
+    precondition(first !== undefined && heaviest !== undefined && mostReps !== undefined, 'a movement fact is read from its sets');
+    const bodyweight = performed.filter((set) => set.weightKg === 0).sort((a, b) => b.reps - a.reps || Id.compare(a.setId, b.setId))[0];
+    const estimates = sets.filter((set) => GymEstimate.qualifies(set.weightKg, set.reps, set.rpe)).map((set) => new EstimatedFact(set, set.e1rm));
+    const estimate = estimates.sort((a, b) => b.score.compare(a.score) || Id.compare(a.setId, b.setId))[0] ?? null;
+    return new MovementSessionFact(first.exerciseId, sets.length, heaviest, mostReps, estimate, bodyweight ?? null,
+      estimates.every((value) => value.e1rm !== null));
+  }
 }
 
 export class ProgressSession {
@@ -263,6 +283,21 @@ export class ProgressSession {
   }
 
   get json() { return { sessionId: this.sessionId.json, startedAt: this.startedAt.ms, movements: this.movements.map((movement) => movement.json) }; }
+
+  // A workout's movements, a fact each, in the byte order of their ids; none for a workout holding no set.
+  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets */
+  static of(session, sets) {
+    /** @type {Map<string, TrainingSetValue[]>} */
+    const groups = new Map();
+    for (const set of sets) {
+      const key = jcs(set.exerciseId.json);
+      const group = groups.get(key);
+      if (group) group.push(set);
+      else groups.set(key, [set]);
+    }
+    const movements = [...groups.values()].map((group) => MovementSessionFact.of(group)).sort((a, b) => Id.compare(a.exerciseId, b.exerciseId));
+    return new ProgressSession(session.id, session.startedAt, movements);
+  }
 }
 
 export class StatsProgress {
@@ -282,28 +317,9 @@ export class StatsProgress {
       const log = source;
       this.asOf = asOf ?? log.moment.now;
       this.isComplete = log.firstPullComplete;
-      this.sessions = Object.freeze(log.drawnSessions.filter((session) => !session.isOpen).flatMap((session) => {
-        /** @type {Map<string, TrainingSetValue[]>} */
-        const groups = new Map();
-        for (const set of log.setsFor(session.id)) {
-          const key = jcs(set.exerciseId.json);
-          const group = groups.get(key);
-          if (group) group.push(set);
-          else groups.set(key, [set]);
-        }
-        const movements = [...groups.values()].flatMap((sets) => {
-          const heaviest = [...sets].sort((a, b) => b.weightKg - a.weightKg || b.reps - a.reps || Id.compare(a.id, b.id))[0];
-          const mostReps = [...sets].sort((a, b) => b.reps - a.reps || b.weightKg - a.weightKg || Id.compare(a.id, b.id))[0];
-          if (!heaviest || !mostReps) return [];
-          const bodyweight = sets.filter((set) => set.weightKg === 0).sort((a, b) => b.reps - a.reps || Id.compare(a.id, b.id))[0];
-          const estimates = sets.filter((set) => GymEstimate.qualifies(set.weightKg, set.reps, set.rpe)).map((set) => new EstimatedFact(set, set.e1rm));
-          const estimate = estimates
-            .sort((a, b) => b.score.compare(a.score) || Id.compare(a.setId, b.setId))[0] ?? null;
-          return [new MovementSessionFact(heaviest.exerciseId, sets.length, new PerformedFact(heaviest), new PerformedFact(mostReps), estimate,
-            bodyweight ? new PerformedFact(bodyweight) : null, estimates.every((value) => value.e1rm !== null))];
-        }).sort((a, b) => Id.compare(a.exerciseId, b.exerciseId));
-        return movements.length === 0 ? [] : [new ProgressSession(session.id, session.startedAt, movements)];
-      }).sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
+      this.sessions = Object.freeze(log.drawnSessions.filter((session) => !session.isOpen)
+        .map((session) => ProgressSession.of(session, log.setsFor(session.id))).filter((session) => session.movements.length > 0)
+        .sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
     }
     /** @type {Map<string, { id: Id<ExerciseValue>, points: MovementPoint[] }>} */
     const movements = new Map();

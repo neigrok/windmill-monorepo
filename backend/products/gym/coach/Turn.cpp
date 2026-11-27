@@ -3,6 +3,7 @@
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/http/CoachImage.h"
+#include "products/gym/coach/CoachWords.h"
 
 #include <drogon/utils/Utilities.h>
 
@@ -22,10 +23,11 @@ bool turnIdShape(const std::string& id) {
   });
 }
 
-// §4.1 step 3: the four list reads, and from catalog/2 the open workout's get_session.
+// §4.1 step 3: the reads the words lead (the four list reads and the open workout's get_session),
+// get_session from catalog/2.
 bool isContextRead(const std::string& name, int catalog) {
-  if (name == "get_session") return catalog >= 2;
-  return name == "list_sessions" || name == "list_notes" || name == "list_exercises" || name == "list_routines";
+  if (name == "get_session" && catalog < 2) return false;
+  return CoachWords::shipped().isContextRead(name);
 }
 
 // `catalog/N` for a version the server serves; nothing for any other.

@@ -109,7 +109,8 @@ PROOF   600 on its own 50 ≥ 4.5:1 (the hue as text on a light surface)
         dark brand = the ramp's 400 step, chosen as the room's light: terracotta
         400 #D08A5E (6.50:1) · lamp 400 #E0B972 (9.87:1) · verdigris 400 #5FCDB4
         (9.46:1), each against --text-on-accent (#1B1408); the lighter 200/300
-        steps are hover, not brand (iris is gym's LIGHT brand only)
+        steps are hover, not brand; gym's light brand is the same hue's deep
+        600 #137A6C (white 5.21:1), its text the 700 #106B5F
 ```
 
 ## 4a. Grounds — each product names a place

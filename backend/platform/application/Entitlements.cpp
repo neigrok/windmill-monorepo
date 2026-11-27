@@ -42,10 +42,8 @@ bool EmailList::contains(std::string_view email) const {
 }
 
 Entitlements::Entitlements(subscriptions::EntitlementReader& copy, Clock& clock, AiUsageRepository& usage,
-                           Allowlists lists, std::vector<std::string> passiveOperations,
-                           std::shared_ptr<AiBudgetService> budgets)
-    : budgets_(std::move(budgets)), copy_(copy), clock_(clock), usage_(usage),
-      passiveOperations_(std::move(passiveOperations)), lists_(std::move(lists)) {}
+                           Allowlists lists, std::shared_ptr<AiBudgetService> budgets)
+    : budgets_(std::move(budgets)), copy_(copy), clock_(clock), usage_(usage), lists_(std::move(lists)) {}
 
 bool Entitlements::isOwner(const std::string& email) const {
   return lists_.owners.contains(email);
@@ -84,13 +82,7 @@ AiAllowance Entitlements::aiAllowanceFor(const UserId& user, const std::string& 
   const long long limit =
       hasWindmillOne(user, email) ? kProMonthlyAiNanos : kFreeMonthlyAiNanos;
   // An empty product is every product.
-  return AiAllowance{limit, usage_.spentSinceNanos(
-      user, "", windowFloorMs(), {AiOperationMatch::Exclude, passiveOperations_})};
-}
-
-AiAllowance Entitlements::sweepAllowanceFor(const UserId& user, const std::string& product) const {
-  return AiAllowance{kSweepMonthlyAiNanos, usage_.spentSinceNanos(
-      user, product, windowFloorMs(), {AiOperationMatch::Include, passiveOperations_})};
+  return AiAllowance{limit, usage_.spentSinceNanos(user, "", windowFloorMs())};
 }
 
 }

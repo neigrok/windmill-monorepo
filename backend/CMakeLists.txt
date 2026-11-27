@@ -57,6 +57,7 @@ target_compile_definitions(utf8proc PUBLIC UTF8PROC_STATIC)
 add_library(windmill_platform
   platform/ai_passes/AiPasses.cpp
   platform/ai_passes/AiPassApi.cpp
+  platform/ai_service/AiServiceClient.cpp
   platform/ai_installations/AiInstallations.cpp
   platform/ai_installations/PgAiInstallations.cpp
   platform/ai_installations/AiInstallationApi.cpp
@@ -224,8 +225,14 @@ wm_register_sync_product(windmill_journal wm::journal::engine journal.registry.j
 wm_register_sync_product(windmill_roadmap wm::roadmap::engine roadmap.registry.json)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
-# The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
-wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
+# The gym ability catalogs the tool declarations are read from: catalog/3, every door's, and catalog/2, which the turns
+# of builds released before it open until the cutover (gym-coach-on-ai-service.md §3, §8).
+wm_embed_registry(windmill_gym wm::gym catalog3Text "${WM_API_CONTRACT_DIR}/gym/catalog-3.json")
+wm_embed_registry(windmill_gym wm::gym catalog2Text "${WM_API_CONTRACT_DIR}/gym/catalog.json")
+# The words a Coach turn's model reads (gym/coach/README.md), the same files every app ships.
+wm_embed_registry(windmill_gym wm::gym::coach coachPromptText "${WM_API_CONTRACT_DIR}/gym/coach/prompt.md")
+wm_embed_registry(windmill_gym wm::gym::coach coachFirstContentText "${WM_API_CONTRACT_DIR}/gym/coach/first-content.json")
+wm_embed_registry(windmill_gym wm::gym::coach coachRefusalsText "${WM_API_CONTRACT_DIR}/gym/coach/refusals.json")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
 target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal windmill_roadmap)
@@ -372,6 +379,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/BodyweightTest.cpp
   test/products/gym/application/ThreadServiceTest.cpp
   test/products/gym/coach/AbilityCatalogTest.cpp
+  test/products/gym/coach/CoachWordsTest.cpp
   test/products/gym/coach/TurnGateTest.cpp
   test/products/gym/coach/TurnServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
@@ -381,6 +389,7 @@ target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_pr
 # message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
+  WM_GYM_RELEASED_TURN_TOOLS="${CMAKE_SOURCE_DIR}/test/products/gym/coach/released-turn-tools.json"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
   WM_ROADMAP_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/roadmap/domain"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
@@ -511,8 +520,8 @@ target_sources(windmill_journal PRIVATE
   products/journal/adapters/http/EchoApi.cpp
   products/journal/adapters/http/VoiceApi.cpp
   products/journal/adapters/llm/OpenAiTranscriber.cpp
-  products/journal/adapters/llm/AnthropicCurator.cpp
-  products/journal/adapters/llm/AnthropicSegmenter.cpp
+  products/journal/adapters/llm/AiServiceCurator.cpp
+  products/journal/adapters/llm/AiServiceSegmenter.cpp
   products/journal/adapters/llm/HttpEmbedder.cpp
   products/journal/routes.cpp)
 
@@ -548,6 +557,7 @@ target_sources(windmill_gym PRIVATE
   products/gym/application/AskService.cpp
   products/gym/coach/Turn.cpp
   products/gym/coach/AbilityCatalog.cpp
+  products/gym/coach/CoachWords.cpp
   products/gym/coach/TurnGate.cpp
   products/gym/coach/PhoneToolHost.cpp
   products/gym/coach/AnthropicCoachModel.cpp
@@ -568,7 +578,8 @@ target_link_libraries(windmill_rotate_sync_epoch PRIVATE windmill_platform)
 add_executable(windmill_resum_sync_digests platform/infra/resum_sync_digests.cpp)
 target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
 
-# Counts how the pointers between existing roadmap trees meet one owned subtree per step; it reads and never writes.
+# Counts how the pointers between existing roadmap trees meet one owned subtree per step, and the engine's roadmaps by
+# owner and visibility and its pointers alive with no `opens`; it reads and never writes.
 add_executable(windmill_subtree_inventory platform/infra/subtree_inventory.cpp)
 target_link_libraries(windmill_subtree_inventory PRIVATE windmill_roadmap)
 
@@ -658,7 +669,8 @@ target_compile_definitions(windmill_mcp_tests PRIVATE
   WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
   WM_DOOR_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus_door.json"
   WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
-  WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities")
+  WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities"
+  WM_GYM_ABILITIES_3_DIR="${WM_API_CONTRACT_DIR}/gym/abilities-3")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
 
 # The probe's Postgres adapter and the dev stack's endpoints, on the probe library (never linked into windmill_server).
@@ -697,12 +709,14 @@ target_compile_definitions(windmill_sync_scale PRIVATE WM_PG_TEST_URL_ENV="WM_SC
 add_executable(windmill_adapters_tests
   test/http_main.cpp
   test/platform/adapters/http/AuthApiTest.cpp
+  test/platform/adapters/http/CallerTest.cpp
   test/platform/adapters/http/AccountDeletionTest.cpp
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
   test/platform/ai_passes/AiPassesTest.cpp
   test/platform/ai_passes/AiPassApiTest.cpp
+  test/platform/ai_service/AiServiceClientTest.cpp
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
@@ -738,6 +752,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/postgres/PgAiBudgetRepositoryTest.cpp
   test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
   test/platform/adapters/postgres/PgAccountClosureTest.cpp
+  test/platform/adapters/postgres/PgOAuthRepositoryTest.cpp
   test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
   test/products/roadmap/adapters/json/SubgraphJsonTest.cpp
@@ -765,8 +780,8 @@ add_executable(windmill_adapters_tests
   test/products/journal/adapters/http/NudgeApiTest.cpp
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp
-  test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
-  test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
+  test/products/journal/adapters/llm/AiServiceCuratorTest.cpp
+  test/products/journal/adapters/llm/AiServiceSegmenterTest.cpp
   test/products/journal/adapters/llm/OpenAiTranscriberTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
@@ -802,7 +817,7 @@ add_executable(windmill_adapters_tests
   test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgNotesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgBodyweightRepositoryTest.cpp)
-target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync)
+target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync windmill_probe)
 # The gym door harness re-plants the catalog seed exactly as the schema writes it.
 target_compile_definitions(windmill_adapters_tests PRIVATE WM_API_CONTRACT_DIR="${WM_API_CONTRACT_DIR}" WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
   WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"

@@ -41,8 +41,10 @@ class Profile(val json: Json) {
         val description = json.member("description").str()
         val input = json.member("input")
         val countsAsWrite = json.member("countsAsWrite").bool()
+        // Whether the provider holds the call to its schema; a tool that does not say leaves it to the AI service.
+        val strict: Boolean? = json["strict"]?.bool()
         init { require(Regex("[A-Za-z0-9_-]{1,64}").matches(name) && input.member("type").str() == "object") }
-        val wire get() = Json.objectOf("name" to Json.of(name), "description" to Json.of(description), "input" to input)
+        val wire get() = Json.Obj(listOf("name" to Json.of(name), "description" to Json.of(description), "input" to input) + listOfNotNull(strict?.let { "strict" to Json.of(it) }))
     }
     class Group(json: Json) {
         val name = json.member("name").str()
@@ -145,10 +147,11 @@ data class AbilityReport(val name: String, val outcome: String, val code: String
     val json get() = Json.objectOf("name" to Json.of(name), "outcome" to Json.of(outcome), "code" to (code?.let(Json::of) ?: Json.Null))
 }
 enum class FailureOperation(val label: String) { aiCall("ai-call"), aiPass("ai-pass"), host("agent-host") }
+// `cause` is the throwable that failed, where one did; `code` a bounded word for a failure no throwable stands for: a defect's code, or what a door answered.
 interface Telemetry {
     fun turn(report: TurnReport)
     fun ability(report: AbilityReport)
-    fun failure(operation: FailureOperation)
+    fun failure(operation: FailureOperation, cause: Throwable? = null, code: String? = null)
 }
 
 fun isStaleTurn(state: String, serverUpdatedAt: Long?, syncLive: Boolean, serverNow: Long?): Boolean =

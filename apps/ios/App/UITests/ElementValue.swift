@@ -34,6 +34,62 @@ extension XCUIApplication {
                                  "room-" + room.lowercased(), room, "room-menu")).firstMatch
   }
 
+  // A step's row in the Roadmap room, on the Board or on a step's page, by the step's name: its label leads with the
+  // name, or with its colour and then the name, which ends the label of a Done step's row on a page; another row's
+  // reason may hold the name too.
+  func roadmapStep(_ name: String) -> XCUIElement {
+    descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND (label BEGINSWITH %@ OR label CONTAINS %@ OR label ENDSWITH %@)",
+                                                     "roadmap-step", name + ", ", ", " + name + ", ", ", " + name)).firstMatch
+  }
+
+  // The Roadmap room's title menu, open once it leads with *2 Set Aside*, which it answers. Nothing else in the room says a
+  // change is set aside, so until the phone has heard the server refuse them the menu closes through All Roadmaps and
+  // back, and opens again.
+  func titleMenuLeadingWithSetAside(_ roadmap: String = "Learn to sail", file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    let title = navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", roadmap)).firstMatch
+    let row = buttons["2 Set Aside"]
+    for _ in 0..<10 {
+      XCTAssertTrue(title.waitForHittable(timeout: 10), file: file, line: line)
+      title.tap()
+      XCTAssertTrue(buttons["All Roadmaps…"].waitForExistence(timeout: 5), file: file, line: line)
+      if row.waitForExistence(timeout: 3) { return row }
+      buttons["All Roadmaps…"].tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForExistence(timeout: 10), file: file, line: line)
+      navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10), file: file, line: line)
+    }
+    XCTFail("the title menu never led with Set Aside", file: file, line: line)
+    return row
+  }
+
+  // A step in the step form's Requires or Opens list, by its name.
+  func roadmapChoice(_ name: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "roadmap-choice", name)).firstMatch
+  }
+
+  // A kind in the step form's Kind list, by its name, which leads its label before its description.
+  func roadmapKind(_ name: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ AND (label == %@ OR label BEGINSWITH %@)", "roadmap-kind", name, name + ", ")).firstMatch
+  }
+
+  // The pushed list on screen in the step form goes back to the form.
+  func leaveRoadmapList(_ title: String) {
+    let back = navigationBars[title].buttons.element(boundBy: 0)
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(buttons["roadmap-form-commit"].waitForExistence(timeout: 5))
+  }
+
+  // A step's page in the Roadmap room, on screen once its name is the one page name there: a page going away keeps its
+  // own for a moment. The names are counted, which asks the app for no element that may just have gone; this page's
+  // first, since once it has come only another page's name can leave.
+  func roadmapStepPage(_ name: String, timeout: TimeInterval = 10) -> Bool {
+    let names = staticTexts.matching(identifier: "roadmap-step-name")
+    let named = names.matching(NSPredicate(format: "label == %@", name))
+    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in named.count == 1 && names.count == 1 }, object: nil)
+    return XCTWaiter.wait(for: [alone], timeout: timeout) == .completed
+  }
+
   // The ledger's logged row for a set number, its label *Set N, logged, …*.
   func loggedSet(_ number: Int) -> XCUIElement {
     buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set \(number),")).firstMatch
@@ -70,10 +126,40 @@ extension XCUIApplication {
     return false
   }
 
+  // Paste Steps, from the long press of the room's +; the system then asks, in SpringBoard's alert, before the room reads
+  // what another app copied, answered as `allowing` says. Once allowed, the system asks no more of the same copied text,
+  // so an allowing paste answers only where it is asked, and a refusing one needs text copied since.
+  func pasteSteps(allowing allowed: Bool? = nil, file: StaticString = #filePath, line: UInt = #line) {
+    let plus = buttons["roadmap-new-step"]
+    XCTAssertTrue(plus.waitForHittable(timeout: 10), file: file, line: line)
+    plus.press(forDuration: 1.0)
+    let item = buttons["Paste Steps"]
+    XCTAssertTrue(item.waitForExistence(timeout: 5), file: file, line: line)
+    item.tap()
+    guard let allowed else { return }
+    let answer = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons[allowed ? "Allow Paste" : "Don’t Allow Paste"]
+    let asked = answer.waitForExistence(timeout: allowed ? 3 : 10)
+    XCTAssertTrue(asked || allowed, "the system asks before the room reads another app's text", file: file, line: line)
+    if asked { answer.tap() }
+  }
+
+  // The system's Paste button in New Roadmap's *A Copied Plan* row, which takes the row's label and frame: its capsule
+  // stands at the row's trailing end, where a tap reaches it.
+  func pastePlan() {
+    let row = buttons["roadmap-new-paste"]
+    XCTAssertTrue(row.waitForHittable(timeout: 5))
+    row.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5)).tap()
+  }
+
   func cancelConfirmation() {
     let cancel = buttons["Cancel"]
     if cancel.exists { cancel.tap(); return }
-    // Over a sheet at its medium detent each presentation keeps a dismiss region; the question's is the last, on top.
+    dismissPopover()
+  }
+
+  // A question raised as a popover closes unanswered by a tap outside it. Over a sheet each presentation keeps a dismiss
+  // region; the question's is the last, on top.
+  func dismissPopover() {
     let regions = otherElements.matching(identifier: "PopoverDismissRegion")
     XCTAssertTrue(regions.firstMatch.waitForExistence(timeout: 5))
     regions.element(boundBy: regions.count - 1).coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()

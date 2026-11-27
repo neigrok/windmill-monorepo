@@ -103,7 +103,7 @@ fn sample_budgets() -> Vec<Budget> {
     vec![
         Budget {
             id: 1,
-            kind: "account_month".to_owned(),
+            kind: BudgetKind::AccountMonth,
             period: Some(Period::new(1798761600000, 1801440000000).unwrap()),
             limit: usd("0.5"),
             spent: usd("0.01"),
@@ -111,7 +111,7 @@ fn sample_budgets() -> Vec<Budget> {
         },
         Budget {
             id: 2,
-            kind: "grant".to_owned(),
+            kind: BudgetKind::Grant,
             period: Some(Period::new(1800000000000, 1802592000000).unwrap()),
             limit: usd("7"),
             spent: usd("0.1"),
@@ -147,7 +147,9 @@ async fn every_refusal_status_and_whole_body_matches_shared_contract() {
         );
         let response = refusal(
             code,
-            (!case["body"]["allowance"].is_null()).then(|| wire::allowance(&free_allowance())),
+            (!case["body"]["allowance"].is_null())
+                .then(|| wire::allowance(&free_allowance()))
+                .flatten(),
         );
         assert_eq!(
             response.status().as_u16(),
@@ -249,10 +251,17 @@ fn every_tier_grace_period_and_exhaustion_serializes_the_whole_allowance() {
     for (name, value) in cases {
         assert_eq!(
             wire::allowance(&value),
-            fixture["allowances"][name],
+            Some(fixture["allowances"][name].clone()),
             "{name}"
         );
     }
+    assert_eq!(
+        wire::allowance(&Allowance {
+            tier: Tier::Background,
+            ..free_allowance()
+        }),
+        None
+    );
 }
 
 #[test]
@@ -268,6 +277,16 @@ fn request_parsers_accept_complete_contract_and_reject_unknown_fields() {
         let mut invalid = fixture["textRequest"].clone();
         invalid[key] = json!("forbidden");
         assert!(TextRequest::parse(&serde_json::to_vec(&invalid).unwrap()).is_err());
+    }
+    for (said, strict) in [(None, true), (Some(false), false), (Some(true), true)] {
+        let mut request = fixture["textRequest"].clone();
+        let tool = request["tools"][0].as_object_mut().unwrap();
+        tool.remove("strict");
+        if let Some(said) = said {
+            tool.insert("strict".into(), json!(said));
+        }
+        let parsed = TextRequest::parse(&serde_json::to_vec(&request).unwrap()).unwrap();
+        assert_eq!(parsed.tools[0].strict, strict);
     }
     let request: wire::FundRequest =
         serde_json::from_value(fixture["internalRequests"]["fund"].clone()).unwrap();
@@ -367,6 +386,24 @@ fn every_call_state_and_operator_metadata_matches_the_complete_contract() {
         ..sample_call()
     };
     assert_eq!(wire::call(&live), fixture["internalCalls"]["transcription"]);
+    let background = Call {
+        id: 43,
+        caller_id: CallerId::new("backgroundcallvector00".to_owned()).unwrap(),
+        tier: Tier::Background,
+        requested: ModelClass::Medium,
+        route: ModelRoute {
+            provider: Provider::Anthropic,
+            model: "claude-sonnet-5".to_owned(),
+            served: ModelClass::Medium,
+        },
+        label: "echoes".to_owned(),
+        client: Client::Server,
+        ..sample_call()
+    };
+    assert_eq!(
+        wire::call(&background),
+        fixture["internalCalls"]["background"]
+    );
     let principal = PrincipalLedger {
         budgets: sample_budgets(),
         grants: sample_grants(),
@@ -375,14 +412,32 @@ fn every_call_state_and_operator_metadata_matches_the_complete_contract() {
     };
     assert_eq!(wire::principal(principal), fixture["internalPrincipal"]);
     let shared = SharedLedger {
-        budgets: vec![Budget {
-            id: 3,
-            kind: "free_month".to_owned(),
-            limit: usd("100"),
-            spent: usd("50"),
-            held: usd("1"),
-            ..sample_budgets().remove(0)
-        }],
+        budgets: vec![
+            Budget {
+                id: 3,
+                kind: BudgetKind::FreeMonth,
+                limit: usd("100"),
+                spent: usd("50"),
+                held: usd("1"),
+                ..sample_budgets().remove(0)
+            },
+            Budget {
+                id: 4,
+                kind: BudgetKind::BackgroundMonth,
+                limit: usd("30"),
+                spent: usd("1.5"),
+                held: usd("0.25"),
+                ..sample_budgets().remove(0)
+            },
+            Budget {
+                id: 5,
+                kind: BudgetKind::BackgroundDay,
+                period: Some(Period::new(1799971200000, 1800057600000).unwrap()),
+                limit: usd("3"),
+                spent: usd("0.5"),
+                held: usd("0.25"),
+            },
+        ],
         fuses: vec![
             ProviderFuse {
                 provider: Provider::Anthropic,
@@ -403,6 +458,11 @@ fn every_call_state_and_operator_metadata_matches_the_complete_contract() {
                 paused: false,
             },
         ],
+        background_hour: BackgroundCeiling {
+            spent: usd("0.4"),
+            held: usd("0.16015"),
+            limit: usd("1"),
+        },
     };
     assert_eq!(wire::shared(shared), fixture["shared"]);
 }
@@ -751,7 +811,7 @@ async fn internal_metadata_and_thousand_row_cursors_match_complete_http_contract
         return;
     };
     let fixture = fixtures();
-    sqlx::query("INSERT INTO ai_budgets(id,budget_key,kind,principal_kind,principal_id,period_start,period_end,limit_nanos,spent,held) VALUES(1,'account','account_month','account','account-vector',1798761600000,1801440000000,500000000,10000000,20000000),(2,'grant','grant','account','account-vector',1800000000000,1802592000000,7000000000,100000000,200000000),(3,'shared','free_month',NULL,NULL,1798761600000,1801440000000,100000000000,50000000000,1000000000)").execute(&test.pool).await.unwrap();
+    sqlx::query("INSERT INTO ai_budgets(id,budget_key,kind,principal_kind,principal_id,period_start,period_end,limit_nanos,spent,held) VALUES(1,'account','account_month','account','account-vector',1798761600000,1801440000000,500000000,10000000,20000000),(2,'grant','grant','account','account-vector',1800000000000,1802592000000,7000000000,100000000,200000000),(3,'shared','free_month',NULL,NULL,1798761600000,1801440000000,100000000000,50000000000,1000000000),(4,'background-month','background_month',NULL,NULL,1798761600000,1801440000000,30000000000,1500000000,250000000),(5,'background-day','background_day',NULL,NULL,1799971200000,1800057600000,3000000000,500000000,250000000)").execute(&test.pool).await.unwrap();
     sqlx::query("INSERT INTO ai_grants(id,reference,account_id,source,plan,period_start,period_end,budget_id) VALUES(2,'period-vector','account-vector','subscription','one',1800000000000,1802592000000,2)").execute(&test.pool).await.unwrap();
     sqlx::query("INSERT INTO ai_bindings(installation_id,account_id,bound_at) VALUES('installation-vector','account-vector',1800000000000)").execute(&test.pool).await.unwrap();
     sqlx::query("INSERT INTO ai_calls(id,principal_kind,principal_id,caller_id,capability,tier,requested,provider,model,served,price_version,label,client,state,reservation,applied,held,charged,max_tokens,input_tokens,output_tokens,cache_write_tokens,cache_write_1h_tokens,cache_read_tokens,provider_request_id,stop,month_start,instance,created_at,ended_at) SELECT id,'account','account-vector',CASE WHEN id=41 THEN 'abcdefghijklmnopqrstuv' ELSE lpad(id::text,22,'0') END,'text','free','small','anthropic','claude-haiku-4-5','small','2026-11-15','other','web','settled',2000000,232500,0,232500,100,10,20,30,40,50,'req_vector','completed',1798761600000,'fixture',1800000000000,1800000001000 FROM generate_series(1,1001) id").execute(&test.pool).await.unwrap();
@@ -761,10 +821,12 @@ async fn internal_metadata_and_thousand_row_cursors_match_complete_http_contract
             .await,
         (200, fixture["internalCalls"]["settled"].clone())
     );
+    let mut shared = fixture["shared"].clone();
+    shared["backgroundHour"] = json!({ "spent":"0","held":"0","limit":"1" } );
     assert_eq!(
         test.internal("GET", "/internal/v1/budgets", None, false)
             .await,
-        (200, fixture["shared"].clone())
+        (200, shared)
     );
     let expected_calls = (2..=1001)
         .rev()

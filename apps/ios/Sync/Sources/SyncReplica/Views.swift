@@ -3,7 +3,8 @@ import SyncCore
 
 // §7.6 views: a scope's confirmed rows joined with its pending deltas and predictions in commit order, an opted entry's
 // only while its projection into the scope is uncovered. `drawn` folds held entries too, `stored` leaves them out; texts
-// and predicted serials replace the confirmed values.
+// and predicted serials replace the confirmed values. A view folds only the records its load read, so an entry of many
+// records costs a view of one of them that one record's fold.
 
 public struct ViewRecord: Sendable, Hashable {
   public var key: RecordKey
@@ -49,13 +50,18 @@ public struct ScopeView: Sendable {
     coverage = replica.rows(scope)
     loaded = coverage.loaded.mapValues(ViewRecord.init)
     for entry in replica.entriesTouchingReads where entry.state != .held || mode == .drawn {
-      for delta in entry.deltas(in: scope, active: true) { try fold(delta) }
+      for delta in entry.deltas(in: scope, active: true) where coverage.covers(delta.key) { try fold(delta) }
     }
   }
 
   // Whether the load read `key`'s row and entries, so `record` can answer for it.
   public func covers(_ key: RecordKey) -> Bool {
     coverage.covers(key)
+  }
+
+  // Whether the load read every record of `type`, so `records(ofType:)` can answer for it.
+  public func covers(type: String) -> Bool {
+    coverage.covers(type: type)
   }
 
   // The folded record, visible or not; nil when no row, delta or prediction names it.

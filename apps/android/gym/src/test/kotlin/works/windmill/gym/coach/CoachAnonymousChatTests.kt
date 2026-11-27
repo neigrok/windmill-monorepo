@@ -25,16 +25,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.agent.AllowanceShortfall
-import works.windmill.agent.TurnEvent
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnTransport
+import works.windmill.gym.coach.turn.AllowanceShortfall
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.coach.turn.ScriptedInstallation
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.scriptedAllowance
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.coach.turn.TurnPhoneInstallation
 import works.windmill.gym.domain.coach.CoachMessage
@@ -66,7 +62,7 @@ class CoachAnonymousChatTests {
     // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
     private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
 
-    private fun TestScope.room(server: TurnTransport, disk: LocalCoach = LocalCoach(File(temporary.newFolder(), LocalCoach.fileName)), directory: File = temporary.newFolder(),
+    private fun TestScope.room(server: ScriptedTurns, disk: LocalCoach = LocalCoach(File(temporary.newFolder(), LocalCoach.fileName)), directory: File = temporary.newFolder(),
         snapshot: Json? = null, telling: Telemetry = Telemetry.None, installation: AiInstallation? = null, access: suspend () -> AnonymousCoachAccess = { AnonymousCoachAccess.Available }) =
         EngineRoomFixture(directory, work(), snapshot = snapshot, telemetry = telling, localCoach = disk, coachServer = server, coachInstallation = installation, coachAccess = access)
 
@@ -80,12 +76,9 @@ class CoachAnonymousChatTests {
 
     @Test fun aLateRefusalReturnsTheQuestionToItsOwnChatAndLeavesTheNewerChatAlone() = runTest {
         val release = CompletableDeferred<Unit>()
-        val server = script("[]").apply { refuseOpen = TurnRefusal(401, "invalid_installation", null) }
-        val late = object : TurnTransport by server {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
-                release.await()
-                emitAll(server.open(open, seat))
-            }
+        val late = script("[]").apply {
+            refuseOpen = ScriptedTurns.Refusal.of("invalid_installation")
+            beforePass = { release.await() }
         }
         val file = File(temporary.newFolder(), LocalCoach.fileName)
         room(late, LocalCoach(file)).use { room ->
@@ -109,7 +102,7 @@ class CoachAnonymousChatTests {
             assertFalse(coach.isAsking(original))
             assertNull(coach.chat(original)?.conversation)
             assertEquals(emptyList<CoachMessage>(), room.messages())
-            assertEquals(1, server.opened.size)
+            assertEquals(1, late.passes)
             coach.keepPosition(original, 91, false)
             val restored = LocalCoach(file)
             val phone = restored.anonymousOwner()
@@ -142,7 +135,7 @@ class CoachAnonymousChatTests {
             assertEquals(CoachDraft("Earlier input"), coach.draft(chat))
             assertEquals(listOf(chat), coach.history.map { it.id })
             assertTrue(coach.hasConversations)
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             assertEquals(emptyList<CoachMessage>(), room.messages())
             assertEquals(1, issued)
         }
@@ -155,10 +148,10 @@ class CoachAnonymousChatTests {
             Cap("free_day_exhausted", CoachTurnRefusal.Allowance("free_day_exhausted"), "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", "allowance"),
             Cap("free_month_exhausted", CoachTurnRefusal.FreeMonthExhausted(null), "Coach is paused for everyone this month.", "allowance"),
             Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", "allowance"),
-            Cap(TurnRefusal.rateLimited, CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
+            Cap("rate_limited", CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
         )) {
             val telling = TellingRecorder()
-            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null, AllowanceShortfall.spent.takeIf { code == "subject_exhausted" }) }
+            val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of(code, scriptedAllowance(code).takeIf { code == "subject_exhausted" }) }
             val file = File(temporary.newFolder(), LocalCoach.fileName)
             val directory = temporary.newFolder()
             val (chat, other, snapshot) = room(server, LocalCoach(file), directory, telling = telling).use { room ->
@@ -264,7 +257,7 @@ class CoachAnonymousChatTests {
             assertEquals(chat, coach.selectedChatId)
             checkNotNull(restarted.coachTurns).start()
             advanceUntilIdle()
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             coach.saveDraft(chat, CoachDraft("Second question"))
             assertTrue(coach.send(chat, "Second question"))
             advanceUntilIdle()

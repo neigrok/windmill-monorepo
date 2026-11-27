@@ -1,12 +1,8 @@
 package works.windmill.gym.telemetry
 
-import works.windmill.agent.TurnFailure
-import works.windmill.agent.TurnLabel
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnState
-import works.windmill.agent.SeatKind
+import works.windmill.agent.coach.EndState
+import works.windmill.agent.coach.SeatKind
 import works.windmill.gym.coach.turn.GymTurnTelemetry
-import works.windmill.gym.coach.turn.InterruptedCause
 import works.windmill.platform.telemetry.EventSchema
 import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.platform.telemetry.LabelSchema
@@ -50,7 +46,7 @@ object GymActions : EventSchema {
             "cancel" to setOf("rewritten"),
             "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"),
         ),
-        "coach" to listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "continue_draft", "jump_latest", "reconnecting", "answering_elsewhere", "stop_notice", "stop_notice_closed")
+        "coach" to listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "continue_draft", "jump_latest", "reconnecting", "answering_elsewhere")
             .associateWith { setOf("ok") } + mapOf(
                 "copy" to setOf("ok", "failed"), "copy_link" to setOf("ok", "failed"),
                 "open_link" to setOf("ok", "unavailable", "failed"),
@@ -98,15 +94,15 @@ object GymEvents {
                 "screen" to setOf("coach"),
                 "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in", "open_routine", "keep_routines", "connect"),
             )),
-            // Coach §10.2. `name` is a catalog name, which GymTurnTelemetry holds to the injected catalog; the rest are labels and counts.
+            // gym Coach on the AI service §11. `name` is a catalog name, which GymTurnTelemetry holds to the injected catalog; the rest are labels and counts.
             "coach_ability" to EventSchema { properties ->
                 properties.filter { (key, value) -> key == "name" || key == "outcome" && value in GymTurnTelemetry.abilityOutcomes }.keys
             },
             "coach_turn" to LabelSchema(mapOf(
-                "state" to TurnState.entries.filter { it.terminal }.map { it.name }.toSet(),
+                "state" to EndState.entries.map { it.name }.toSet(),
                 "seat" to SeatKind.entries.map { it.name }.toSet(),
-                "code" to TurnRefusal.codes + (TurnFailure.entries - TurnFailure.http).map { it.name } + InterruptedCause.entries.map { it.name } + TurnLabel.gone + TurnLabel.notAStream + GymTurnTelemetry.other,
-            ), counts = setOf("ability_calls", "refusals", "answer_bytes", "duration_ms")),
+                "code" to GymTurnTelemetry.codes + GymTurnTelemetry.other,
+            ), counts = setOf("rounds", "ability_calls", "refusals", "answer_bytes", "duration_ms")),
             "gym_coach_import" to LabelSchema(mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed"))),
             "gym_proposal_outcome" to LabelSchema(mapOf(
                 "target" to setOf("workout"), "action" to setOf("apply", "dismiss"), "outcome" to setOf("decided", "moved", "gone", "settled", "refused", "failed"),

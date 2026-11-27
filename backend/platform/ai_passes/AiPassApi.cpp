@@ -1,4 +1,5 @@
 #include "platform/ai_passes/AiPassApi.h"
+#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/MutationPolicy.h"
 #include <algorithm>
 
@@ -27,7 +28,7 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
     reply(response);
   };
   try {
-    const auto sent = sync::SentCredentials::fromOccurrences(request->headerOccurrences());
+    const auto sent = sentCredentialsOf(request, *auth_);
     std::optional<std::string> installationToken;
     bool cookie = false;
     for (const auto& credential : sent.each()) cookie = cookie || credential.kind == sync::SentCredential::Kind::cookie;
@@ -51,14 +52,10 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
     if (!versionRefusal.empty()) {
       refuse(versionRefusal == "client-update-required" ? drogon::k426UpgradeRequired : drogon::k400BadRequest, versionRefusal.c_str()); return;
     }
-    std::optional<User> account;
-    const auto credentials = sent.resolve([&](const std::string& token) -> std::optional<UserId> {
-      const auto user = auth_->authenticate(token);
-      if (!user) return std::nullopt;
-      account = user;
-      return user->id;
-    });
-    if (credentials.fails() || (!account && !installationToken)) { refuse(drogon::k401Unauthorized, "unauthenticated"); return; }
+    const SentCaller caller = SentCaller::of(sent, *auth_);
+    caller.leaveOn(request);
+    const std::optional<User>& account = caller.user;
+    if (caller.credential.fails() || (!account && !installationToken)) { refuse(drogon::k401Unauthorized, "unauthenticated"); return; }
     std::optional<AiInstallationPrincipal> installation;
     if (installationToken) {
       if (!installations_) { refuse(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable"); return; }

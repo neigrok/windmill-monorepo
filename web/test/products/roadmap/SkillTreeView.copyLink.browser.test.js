@@ -56,12 +56,13 @@ for (const browserName of ['chromium', 'webkit']) {
 
         const field = recovery.getByRole('textbox', { name: 'Step link', exact: true });
         const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
-        const focusedControl = () => page.evaluate(() => {
+        // The focused control once it rests whole in the card: Linux WebKit can scroll a focused control into view a rendering update after focus lands.
+        const focusedControl = async () => (await page.waitForFunction(() => {
           const node = document.activeElement;
           const box = node.getBoundingClientRect();
           const card = node.closest('.st-step-copy-recovery').getBoundingClientRect();
-          return { name: node.getAttribute('aria-label') ?? node.textContent, full: box.top >= card.top + 1 && box.bottom <= card.bottom - 1 };
-        });
+          return box.top >= card.top + 1 && box.bottom <= card.bottom - 1 && { name: node.getAttribute('aria-label') ?? node.textContent, full: true };
+        })).jsonValue();
         if (input === 'keyboard') {
           await field.focus();
           await page.keyboard.press(tab);
@@ -110,10 +111,11 @@ for (const browserName of ['chromium', 'webkit']) {
     });
   }
 
+  // Only a public roadmap offers a step's link: any other visibility, unlisted among them, reads as private.
   for (const options of [
     { role: 'owner', visibility: 'public' },
-    { role: 'owner', visibility: 'unlisted' },
     { role: 'owner', visibility: 'private' },
+    { role: 'owner', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public' },
     { role: 'reader', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public', demo: true },
@@ -135,7 +137,7 @@ for (const browserName of ['chromium', 'webkit']) {
         const step = page.getByRole('article', { name: 'Read the wind', exact: true });
         await step.waitFor();
         await step.getByRole('button', { name: 'More', exact: true }).click();
-        const shareable = options.visibility !== 'private' && !options.demo;
+        const shareable = options.visibility === 'public' && !options.demo;
         assert.deepEqual(await page.getByRole('menuitem').allTextContents(), [
           ...(shareable ? ['Copy link'] : []), 'Open in Graph', ...(options.role === 'owner' ? ['Delete step'] : []),
         ]);

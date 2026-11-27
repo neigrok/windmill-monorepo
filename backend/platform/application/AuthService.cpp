@@ -290,25 +290,27 @@ AuthService::SignedIn AuthService::mintSession(const User& user, const SessionCo
   return SignedIn{user, session.secret};
 }
 
-std::optional<User> AuthService::authenticate(const std::string& sessionSecret, const SessionContext& ctx) {
-  if (sessionSecret.empty()) return std::nullopt;
-  return revalidate(tokens_.digestOf(sessionSecret), ctx);
-}
-
 std::string AuthService::digestOf(const std::string& sessionSecret) {
   return tokens_.digestOf(sessionSecret);
 }
 
-std::optional<User> AuthService::revalidate(const std::string& digest, const SessionContext& ctx) {
+std::optional<User> AuthService::holderOf(const std::string& digest) {
   if (digest.empty()) return std::nullopt;
-  const UnixMs now = clock_.nowMs();
-
   const std::optional<StoredSession> session = repo_.findSession(digest);
-  if (!session || sessionExpired(session->expiresAt, now)) return std::nullopt;
-
+  if (!session || sessionExpired(session->expiresAt, clock_.nowMs())) return std::nullopt;
   const std::optional<User> user = repo_.findUserById(session->user);
   if (!user || user->deletedAt) return std::nullopt;  // unknown or closed account cannot act
+  return user;
+}
 
+std::optional<User> AuthService::revalidate(const std::string& digest, const SessionContext& ctx) {
+  std::optional<User> user = holderOf(digest);
+  if (user) touch(digest, ctx);
+  return user;
+}
+
+void AuthService::touch(const std::string& digest, const SessionContext& ctx) {
+  const UnixMs now = clock_.nowMs();
   WriteObservation observation{"auth.session.refresh", "platform", "server-origin"};
   WriteContext context{observation};
   try {
@@ -323,14 +325,18 @@ std::optional<User> AuthService::revalidate(const std::string& digest, const Ses
     observation.failUnknown();
     throw;
   }
-  return user;
 }
 
-void AuthService::signOut(const std::string& sessionSecret) {
-  if (sessionSecret.empty()) return;
-  const std::string digest = tokens_.digestOf(sessionSecret);
-  repo_.deleteSession(digest);
-  revocations_.revoked({digest});
+std::optional<std::string> AuthService::syncReplicaOf(const std::string& sessionDigest) {
+  if (sessionDigest.empty()) return std::nullopt;
+  const std::optional<StoredSession> session = repo_.findSession(sessionDigest);
+  return session ? session->syncReplica : std::nullopt;
+}
+
+void AuthService::signOut(const std::string& sessionDigest) {
+  if (sessionDigest.empty()) return;
+  repo_.deleteSession(sessionDigest);
+  revocations_.revoked({sessionDigest});
 }
 
 std::optional<User> AuthService::updateName(const UserId& userId, const std::string& rawName) {
@@ -340,8 +346,7 @@ std::optional<User> AuthService::updateName(const UserId& userId, const std::str
   return repo_.findUserById(userId);
 }
 
-std::vector<SessionView> AuthService::listSessions(const UserId& userId, const std::string& currentSecret) {
-  const std::string currentDigest = tokens_.digestOf(currentSecret);
+std::vector<SessionView> AuthService::listSessions(const UserId& userId, const std::string& currentDigest) {
   std::vector<SessionView> views;
   for (const SessionRow& row : repo_.listSessions(userId))
     views.push_back(SessionView{row.id, row.userAgent, effectiveLastSeen(row.lastSeenMs, row.createdAtMs),
@@ -350,16 +355,16 @@ std::vector<SessionView> AuthService::listSessions(const UserId& userId, const s
 }
 
 AuthService::RevokeOutcome AuthService::revokeSession(const UserId& userId, const std::string& sessionId,
-                                                      const std::string& currentSecret) {
+                                                      const std::string& currentDigest) {
   const std::optional<std::string> revokedDigest = repo_.revokeSession(userId, sessionId);
   if (!revokedDigest) return RevokeOutcome::notFound;
   revocations_.revoked({*revokedDigest});
-  if (*revokedDigest == tokens_.digestOf(currentSecret)) return RevokeOutcome::revokedCurrent;
+  if (*revokedDigest == currentDigest) return RevokeOutcome::revokedCurrent;
   return RevokeOutcome::revoked;
 }
 
-void AuthService::signOutEverywhere(const UserId& userId, const std::string& currentSecret) {
-  revocations_.revoked(repo_.revokeSessionsExcept(userId, tokens_.digestOf(currentSecret)));
+void AuthService::signOutEverywhere(const UserId& userId, const std::string& currentDigest) {
+  revocations_.revoked(repo_.revokeSessionsExcept(userId, currentDigest));
   LOG_INFO << "auth: signed out everywhere user=" << userId.str();
 }
 
@@ -371,9 +376,9 @@ UnixMs AuthService::closeAccount(const UserId& userId) {
 }
 
 AccountCloseResult AuthService::closeAccount(const UserId& userId, const std::string& operationId,
-    const std::string& proof, UnixMs requestedAt, const std::string& sessionSecret) {
+    const std::string& proof, UnixMs requestedAt, const std::string& sessionDigest) {
   const AccountClosure operation{operationId, tokens_.digestOf("account-closure:" + proof), requestedAt};
-  auto result = repo_.closeWithReceipt(userId, operation, tokens_.digestOf(sessionSecret), clock_);
+  auto result = repo_.closeWithReceipt(userId, operation, sessionDigest, clock_);
   if (!result.revokedSessions.empty()) revocations_.revoked(result.revokedSessions);
   return result;
 }

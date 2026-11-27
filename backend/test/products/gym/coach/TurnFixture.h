@@ -143,7 +143,7 @@ struct Recorder : TurnSink {
 struct Harness {
   // `durableAllowances`: whether a bound seat reads the USD allowances an anonymous seat always does.
   explicit Harness(bool durableAllowances = false)
-      : entitlements(subscriptions, clock, usage, {}, {}, durableAllowances ? budgets : nullptr) {}
+      : entitlements(subscriptions, clock, usage, {}, durableAllowances ? budgets : nullptr) {}
 
   wm::fake::FakeClock clock;
   OpenSslTokenGenerator tokens;
@@ -162,7 +162,7 @@ struct Harness {
   std::shared_ptr<ScriptedModel> model = std::make_shared<ScriptedModel>();
   std::shared_ptr<onboardingtest::Failures> failures = std::make_shared<onboardingtest::Failures>();
   std::shared_ptr<TurnService> service = std::make_shared<TurnService>(
-      model, gymAbilityCatalog(), server, door, entitlements, installations, clock, 2000, failures, std::chrono::milliseconds(300));
+      model, gymCatalogs(), server, door, entitlements, installations, clock, 2000, failures, std::chrono::milliseconds(300));
 
   TurnPrincipal bound() {
     TurnPrincipal principal;

@@ -18,9 +18,18 @@ public struct LegendRead: Sendable {
     public let others: [String]
   }
 
+  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims.
+  public struct Shown: Sendable {
+    public let hue: String
+    public let kind: Kind?
+  }
+
   public let kinds: [Kind]
   // In hue byte order.
   public let hues: [Hue]
+  // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue a
+  // present step wears that no kind claims, in the palette's order, with no kind.
+  public let shown: [Shown]
   let claimed: Set<[UInt8]>
 
   public init(_ tree: RoadmapTree) {
@@ -35,6 +44,10 @@ public struct LegendRead: Sendable {
     self.kinds = kinds
     self.hues = hues.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     claimed = Set(wearers.keys)
+    let owners = Set(hues.map { Array($0.owner.utf8) })
+    let worn = Set(tree.index.nodes.map { Array($0.color.utf8) })
+    shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0) }
+      + RoadmapRules.hues.filter { worn.contains(Array($0.utf8)) && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil) }
   }
 
   public func claims(_ hue: String) -> Bool { claimed.contains(Array(hue.utf8)) }
@@ -191,7 +204,7 @@ public struct BoardRead: Sendable {
     columns = Column.Name.allCases.map { name in
       let members = cards.indices.filter { cards[$0].column == name }.stablySorted { a, b in
         if name == .done { return dated(graph.dateAt[slots[a]], graph.dateAt[slots[b]], true) }
-        if query.sort != .roadmap { return dated(index.nodes[slots[a]].rc, index.nodes[slots[b]].rc, query.sort == .newest) }
+        if query.sort != .roadmap { return dated(index.nodes[slots[a]].createdAt, index.nodes[slots[b]].createdAt, query.sort == .newest) }
         let (owed, other) = (cards[a].needs?.toGo ?? 0, cards[b].needs?.toGo ?? 0)
         return owed != other ? owed < other : cards[a].unlockCount > cards[b].unlockCount
       }
@@ -223,6 +236,79 @@ public struct BoardRead: Sendable {
     }
     return Array(String(lowered).utf8)
   }
+}
+
+// A roadmap's Activity, or with `step` that step's History (spec §3, R-11): each present step's creation and completion
+// that the copy holds a time for, newest first. At one time a completion stands before a creation, then the roadmap's
+// authored order reversed, the last authored step first. A completion is the graph's, so a step that opens or owns a
+// roadmap is completed, and dated, as the Board's Done has it.
+public struct ActivityRead: Sendable {
+  public struct Row: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+      case created, completed
+    }
+
+    public let kind: Kind
+    public let step: String
+    public let at: Instant
+  }
+
+  public let rows: [Row]
+
+  public init(_ graph: FollowGraph, step: String? = nil) {
+    var rows: [(row: Row, slot: Int)] = []
+    for (slot, node) in graph.tree.index.nodes.enumerated() {
+      if let step, !node.id.utf8.elementsEqual(step.utf8) { continue }
+      if graph.done[slot], let at = graph.dateAt[slot] { rows.append((Row(kind: .completed, step: node.id, at: at), slot)) }
+      if let at = node.createdAt { rows.append((Row(kind: .created, step: node.id, at: at), slot)) }
+    }
+    self.rows = rows.sorted { a, b in
+      if a.row.at != b.row.at { return a.row.at > b.row.at }
+      if a.row.kind != b.row.kind { return a.row.kind == .completed }
+      return a.slot > b.slot
+    }.map(\.row)
+  }
+}
+
+// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+public struct EffectsRead: Sendable {
+  public let kept: String?
+  public let takesEveryStart: Bool
+  public let deletable: Bool
+  let graph: FollowGraph
+  let chosen: [Int]
+  let marked: Bool
+
+  public init(_ graph: FollowGraph, ids: [String]) {
+    let index = graph.tree.index
+    let slots = ids.compactMap(index.slot(of:))
+    let chosen = Set(slots)
+    let present = slots.count == ids.count
+    self.graph = graph
+    self.chosen = Array(chosen)
+    kept = graph.starting.count == 1 ? graph.starting[0] : nil
+    takesEveryStart = !graph.starting.isEmpty && graph.starting.allSatisfy { index.slot(of: $0).map(chosen.contains) == true }
+    deletable = !ids.isEmpty && present && !takesEveryStart
+    let only = chosen.count == 1 ? chosen.first : nil
+    marked = present && only.map { graph.done[$0] && index.markedDone[$0] } == true
+  }
+
+  public var follow: [String] {
+    let index = graph.tree.index
+    // A present step stops the walk: what follows it follows it, not the selection.
+    var passed = Set(chosen)
+    var pending = chosen
+    var followers: [Int] = []
+    while let vertex = pending.popLast() {
+      for next in index.children[vertex] {
+        guard passed.insert(next).inserted else { continue }
+        if next < index.ids.count { followers.append(next) } else { pending.append(next) }
+      }
+    }
+    return followers.sorted().map { index.ids[$0] }
+  }
+
+  public var relocks: [String] { marked ? follow.filter { graph.states[$0] == .available } : [] }
 }
 
 // A step the device linked that is now read through an absent step: its own links that bridge the absence, and what it follows through them.

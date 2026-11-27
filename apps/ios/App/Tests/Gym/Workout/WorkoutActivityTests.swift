@@ -103,7 +103,7 @@ import SyncTesting
   func activityPayloadMapsCorrectedTimestampsToDeviceWallClock(offset: Int64) throws {
     let clock = SimClock(wallMs: fixtures.start.ms), runtime = try WorkoutStateTests.faultRuntime(WorkoutFaultTransport(), clock: clock.engineClock)
     let reading = clock.reading()
-    _ = try runtime.store.sample(serverTime: reading.wall + offset, timing: .init(send: reading, recv: reading))
+    _ = try runtime.store.hear(.ok(try HelloResponse(json: ["serverTime": JSON(integerLiteral: reading.wall + offset), "epoch": "e", "schema": 15, "minSchema": 15])), timing: .init(send: reading, recv: reading))
     #expect(try runtime.storageRead { try $0.device().activeReplica.meta.serverOffsetMs } == offset)
     let gym = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(gym.run(CreateExercise(Exercise(id: fixtures.first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
@@ -159,7 +159,7 @@ import SyncTesting
   @Test func activityPayloadReprojectsDatesWhenTheServerCorrectionChanges() throws {
     let clock = SimClock(wallMs: fixtures.start.ms), runtime = try WorkoutStateTests.faultRuntime(WorkoutFaultTransport(), clock: clock.engineClock)
     let reading = clock.reading(), firstOffset: Int64 = 3_600_000
-    _ = try runtime.store.sample(serverTime: reading.wall + firstOffset, timing: .init(send: reading, recv: reading))
+    _ = try runtime.store.hear(.ok(try HelloResponse(json: ["serverTime": JSON(integerLiteral: reading.wall + firstOffset), "epoch": "e", "schema": 15, "minSchema": 15])), timing: .init(send: reading, recv: reading))
     let gym = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(gym.run(CreateExercise(Exercise(id: fixtures.first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
     let workout = try fixtures.begin(gym), session = try #require(workout.session), controller = WorkoutActivityController(gym: gym)
@@ -168,7 +168,7 @@ import SyncTesting
     #expect(workout.logActivityOffer(offer))
     let retained = workout.sets, before = try controller.content(session: session, offer: workout.activityOffer())
     let corrected = clock.reading(), currentOffset: Int64 = -3_600_000
-    _ = try runtime.store.sample(serverTime: corrected.wall + currentOffset, timing: .init(send: corrected, recv: corrected))
+    _ = try runtime.store.hear(.ok(try HelloResponse(json: ["serverTime": JSON(integerLiteral: corrected.wall + currentOffset), "epoch": "e", "schema": 15, "minSchema": 15])), timing: .init(send: corrected, recv: corrected))
     #expect(try runtime.storageRead { try $0.device().activeReplica.meta.serverOffsetMs } == currentOffset)
     let after = try controller.content(session: session, offer: before.state.offer)
     let shift = Double(firstOffset - currentOffset) / 1000

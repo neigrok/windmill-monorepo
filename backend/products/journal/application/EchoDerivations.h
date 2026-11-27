@@ -40,7 +40,8 @@ struct EchoLiveReport {
   // The vendor declined to judge the page: it does not come back, and is charged to the daily cap.
   int refused = 0;
   int deferred = 0;
-  int skippedOverBudget = 0;
+  // The AI service deferred the page — its background budgets, its own state, or no answer — and the page stays owed.
+  int aiDeferred = 0;
   int alreadyDerived = 0;
   // Saves that never entered the queue because their account already held `pendingPerUser` pages.
   int queueFull = 0;

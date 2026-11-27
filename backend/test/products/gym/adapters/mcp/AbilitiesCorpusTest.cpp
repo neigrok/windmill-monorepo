@@ -1,4 +1,5 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
+#include "products/gym/coach/AbilityCatalog.h"
 
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
@@ -16,8 +17,10 @@
 #include <utility>
 #include <vector>
 
-// packages/api-contract/gym/abilities (gym_coach.md §3.5) over the server executor, compared by JCS bytes and SHA-256;
-// WM_GENERATE_ABILITIES=1 writes each `expect` from the server's answer, so the server is the golden source.
+// packages/api-contract/gym/abilities (gym_coach.md §3.5) and abilities-3 (gym-coach-on-ai-service.md §3) over the server
+// executor, compared by JCS bytes and SHA-256. WM_GENERATE_ABILITIES=1 writes each `expect` of abilities/ from the
+// server's answer, so the server is its golden source, but for a file it does not claim, which it leaves as it stands;
+// abilities-3's refusals are hand-written, the contract every executor is held to, and are never generated.
 using namespace wm;
 using namespace wm::gym;
 
@@ -25,9 +28,30 @@ namespace {
 
 namespace fs = std::filesystem;
 
-const fs::path kAbilities{WM_GYM_ABILITIES_DIR};
+// A corpus, the catalog file its inputs are written to, whether the server writes its answers, and the files it holds for
+// other executors alone, each with the reason the server does not claim it.
+struct Corpus {
+  const char* name;
+  fs::path dir;
+  std::string_view catalogText;
+  bool golden;
+  std::map<std::string, std::string> unclaimed;
+};
+
+const Corpus kCorpora[] = {
+    {"gym_abilities", WM_GYM_ABILITIES_DIR, catalog2Text(), true,
+     {{"list_sessions.json", "catalog/2's row is the phone executors' contract; the server answers catalog/3's"}}},
+    {"gym_abilities_3", WM_GYM_ABILITIES_3_DIR, catalog3Text(), false, {}}};
 
 bool generating() { return std::getenv("WM_GENERATE_ABILITIES") != nullptr; }
+
+// The declared ability of that name in a catalog file.
+Json::Value abilityOf(std::string_view catalogText, const std::string& name) {
+  const Json::Value catalog = sync::parseJson(catalogText);
+  for (const Json::Value& ability : catalog["abilities"])
+    if (ability["name"] == name && ability.get("declared", true).asBool()) return ability;
+  throw std::runtime_error("no declared ability " + name);
+}
 
 Json::Value readJson(const fs::path& path) {
   std::ifstream stream(path, std::ios::binary);
@@ -173,13 +197,20 @@ std::map<fs::path, Json::Value>& generated() {
   return files;
 }
 
-void runCase(const fs::path& file, Json::ArrayIndex index) {
+void runCase(const Corpus& corpus, const fs::path& file, Json::ArrayIndex index) {
+  if (const auto unclaimed = corpus.unclaimed.find(file.filename().string()); unclaimed != corpus.unclaimed.end())
+    SKIP(unclaimed->second);
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   const Json::Value spec = readJson(file)[index];
   REQUIRE_EQ(spec["call"]["name"].asString(), file.stem().string());
   CHECK(spec["seat"] == "bound" || spec["seat"] == "anon");
+  const Json::Value ability = abilityOf(corpus.catalogText, spec["call"]["name"].asString());
   const Json::Value answered = answer(spec);
-  if (generating()) {
+  // An answer is one its catalog says the ability returns, so a structured one stands inside MCP's outputSchema.
+  if (answered.isMember("result"))
+    if (const auto broken = coach::schemaViolation(ability["result"], answered["result"]))
+      ::testing::fail(("the answer breaks its catalog: " + *broken).c_str(), __FILE__, __LINE__);
+  if (generating() && corpus.golden) {
     auto [copy, fresh] = generated().try_emplace(file, readJson(file));
     copy->second[index]["expect"] = answered;
     std::ofstream(file, std::ios::binary | std::ios::trunc) << fileText(copy->second);
@@ -191,47 +222,64 @@ void runCase(const fs::path& file, Json::ArrayIndex index) {
   if (expect.isMember("result")) CHECK_EQ(sync::sha256(sync::jcs(expect["result"])).hex(), expect["sha256"].asString());
 }
 
-// One case per entry of every file, named by its file and its `case`.
+// One case per entry of every file of each corpus, named by its corpus, its file and its `case`.
 [[maybe_unused]] const bool registered = [] {
-  if (!fs::is_directory(kAbilities)) {
-    ::testing::Register{"gym_abilities", [] { ::testing::fail(("no ability corpus at " + kAbilities.string()).c_str(), __FILE__, __LINE__); }};
-    return true;
-  }
-  std::set<fs::path> files;
-  for (const auto& entry : fs::directory_iterator(kAbilities))
-    if (entry.is_regular_file() && entry.path().extension() == ".json") files.insert(entry.path());
-  for (const fs::path& file : files) {
-    const Json::Value cases = readJson(file);
-    for (Json::ArrayIndex i = 0; i < cases.size(); ++i)
-      ::testing::Register{"gym_abilities/" + file.filename().string() + ": " + cases[i]["case"].asString(), [file, i] { runCase(file, i); }};
+  for (const Corpus& corpus : kCorpora) {
+    if (!fs::is_directory(corpus.dir)) {
+      ::testing::Register{corpus.name, [&corpus] {
+        ::testing::fail(("no ability corpus at " + corpus.dir.string()).c_str(), __FILE__, __LINE__);
+      }};
+      continue;
+    }
+    std::set<fs::path> files;
+    for (const auto& entry : fs::directory_iterator(corpus.dir))
+      if (entry.is_regular_file() && entry.path().extension() == ".json") files.insert(entry.path());
+    for (const fs::path& file : files) {
+      const Json::Value cases = readJson(file);
+      for (Json::ArrayIndex i = 0; i < cases.size(); ++i)
+        ::testing::Register{std::string(corpus.name) + "/" + file.filename().string() + ": " + cases[i]["case"].asString(),
+                            [&corpus, file, i] { runCase(corpus, file, i); }};
+    }
   }
   return true;
 }();
 
-}
-
-// Every ability Coach is offered and the server declares has a file, every read at least two cases, and no file
-// speaks for an ability the catalog withholds or the server cannot run.
-TEST(gym_abilities_cover_every_offered_server_ability) {
-  std::set<std::string> offered;
-  std::set<std::string> reads;
-  const Json::Value catalog = sync::parseJson(catalogText());
-  for (const Json::Value& ability : catalog["abilities"]) {
-    if (ability["agent"] == "withheld" || !ability.get("declared", true).asBool()) continue;
-    offered.insert(ability["name"].asString());
-    if (ability["class"] == "read") reads.insert(ability["name"].asString());
-  }
-  std::set<std::string> covered;
-  for (const auto& entry : fs::directory_iterator(kAbilities)) {
+// The files of a corpus, by the ability each speaks for, every case named once.
+std::set<std::string> covered(const fs::path& dir, const std::set<std::string>& reads) {
+  std::set<std::string> names;
+  for (const auto& entry : fs::directory_iterator(dir)) {
     if (entry.path().extension() != ".json") continue;
     const std::string name = entry.path().stem().string();
-    covered.insert(name);
-    CHECK(offered.contains(name));
+    names.insert(name);
     const Json::Value cases = readJson(entry.path());
-    REQUIRE(cases.isArray());
+    CHECK(cases.isArray());
     CHECK(cases.size() >= (reads.contains(name) ? 2u : 1u));
-    std::set<std::string> names;
-    for (const Json::Value& one : cases) CHECK(names.insert(one["case"].asString()).second);
+    std::set<std::string> seen;
+    for (const Json::Value& one : cases) CHECK(seen.insert(one["case"].asString()).second);
   }
-  CHECK(covered == offered);
+  return names;
+}
+
+}
+
+// Every ability Coach is offered and the server declares has a file in each corpus, every read at least two cases. No
+// file of abilities/ speaks for an ability the catalog withholds or the server cannot run; a file of abilities-3/ may
+// speak for a withheld one the server runs for MCP, whose bounds moved into its rule.
+TEST(gym_abilities_cover_every_offered_server_ability) {
+  for (const Corpus& corpus : kCorpora) {
+    std::set<std::string> offered;
+    std::set<std::string> declared;
+    std::set<std::string> reads;
+    const Json::Value catalog = sync::parseJson(corpus.catalogText);
+    for (const Json::Value& ability : catalog["abilities"]) {
+      if (!ability.get("declared", true).asBool()) continue;
+      declared.insert(ability["name"].asString());
+      if (ability["agent"] == "withheld") continue;
+      offered.insert(ability["name"].asString());
+      if (ability["class"] == "read") reads.insert(ability["name"].asString());
+    }
+    const std::set<std::string> files = covered(corpus.dir, reads);
+    for (const std::string& name : offered) CHECK(files.contains(name));
+    for (const std::string& name : files) CHECK((corpus.golden ? offered : declared).contains(name));
+  }
 }

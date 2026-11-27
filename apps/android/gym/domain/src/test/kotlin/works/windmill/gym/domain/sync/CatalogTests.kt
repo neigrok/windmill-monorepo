@@ -8,7 +8,7 @@ import works.windmill.sync.core.Json
 
 class CatalogTests {
     @Test fun theCatalogOffersBySeat() {
-        val catalog = Catalog(Contract.json("gym/catalog.json"))
+        val catalog = Catalog(Contract.json("gym/catalog-3.json"))
         val bound = catalog.offered(Seat.bound).map { it.name }
         assertEquals(listOf("list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats",
             "list_notes", "list_bodyweight", "create_routine", "create_exercise", "save_note", "share_session",
@@ -16,7 +16,9 @@ class CatalogTests {
         assertEquals(bound - listOf("save_note", "share_session", "revoke_share"), catalog.offered(Seat.anon).map { it.name })
         assertEquals(18, bound.size)
         assertEquals(15, catalog.offered(Seat.anon).size)
-        assertEquals("catalog/2", catalog.version)
+        assertEquals("catalog/3", catalog.version)
+        assertEquals(listOf("create_routine", "create_exercise", "propose_routine_change", "propose_routine_removal", "propose_workout_change"),
+            catalog.offered(Seat.bound).filter { it.strict }.map { it.name })
         assertEquals(37, catalog.abilities.size)
         assertEquals(AgentRule.withheld, catalog.ability("log_set")?.agent)
         assertEquals(false, catalog.ability("get_record")?.declared)
@@ -26,13 +28,13 @@ class CatalogTests {
 
     // Swift's Regex reads `.`, `\d`, `\w` and `\s` by Unicode, java.util.regex by ASCII: a new pattern is checked on both first.
     @Test fun everyPatternIsOneBothEnginesReadAlike() {
-        val catalog = Catalog(Contract.json("gym/catalog.json"))
+        val catalog = Catalog(Contract.json("gym/catalog-3.json"))
         val patterns = catalog.abilities.flatMap { patterns(it.input) + patterns(it.result) }.toSet()
         assertEquals(setOf("^[A-Za-z0-9_-]{8,64}$"), patterns)
     }
 
     @Test fun everyDeclaredInputAcceptsAValidCallAndRefusesEachBrokenOne() {
-        val declared = Catalog(Contract.json("gym/catalog.json")).abilities.filter { it.declared }
+        val declared = Catalog(Contract.json("gym/catalog-3.json")).abilities.filter { it.declared }
         assertEquals(25, declared.size)
         var broken = 0
         for (ability in declared) {
@@ -45,13 +47,13 @@ class CatalogTests {
                 broken++
             }
         }
-        assertEquals(345, broken)
+        assertEquals(268, broken)
     }
 
     @Test fun theAbilitiesCorpusCallsAndGoldensStandInsideTheirSchemas() {
-        val catalog = Catalog(Contract.json("gym/catalog.json"))
+        val catalog = Catalog(Contract.json("gym/catalog-3.json"))
         var answers = 0
-        for (path in Contract.files("gym/abilities")) for (case in Contract.json(path).arr()) {
+        for (path in Contract.files("gym/abilities-3")) for (case in Contract.json(path).arr()) {
             val call = case.member("call")
             val ability = catalog.ability(call.member("name").str())!!
             val expect = case["expect"] ?: continue
@@ -60,15 +62,15 @@ class CatalogTests {
             assertNull("$path · ${case.member("case").str()}", JsonSchema(ability.result).fault(result))
             answers++
         }
-        assertEquals(50, answers)
+        assertEquals(53, answers)
     }
 
     @Test fun theSchemaCheckReadsARealInputAtDepth() {
-        val catalog = Catalog(Contract.json("gym/catalog.json"))
-        assertEquals(SchemaFault(Path("sessionIds.1"), "repeats an item"),
-            JsonSchema(catalog.ability("get_sessions")!!.input).fault(Json.parse("""{"sessionIds": ["a", "a"]}""")))
+        val catalog = Catalog(Contract.json("gym/catalog-3.json"))
+        assertEquals(SchemaFault(Path("entries.0.sets.1.reps"), "not \"integer\""), JsonSchema(catalog.ability("create_routine")!!.input)
+            .fault(Json.parse("""{"id": "x", "name": "Push", "position": 0, "entries": [{"exerciseId": "bench-press", "sets": [{"reps": 5}, {"reps": "five"}]}]}""")))
         val metrics = listOf("list_sessions", "get_session", "get_sessions", "get_stats", "get_record").flatMap { metrics(catalog.ability(it)!!.result) }
-        assertEquals(11, metrics.size)
+        assertEquals(12, metrics.size)
         for (schema in metrics) {
             assertEquals(Json.parse("""{"type": ["number", "null"]}"""), schema)
             assertNull(JsonSchema(schema).fault(Json.Null))
@@ -91,11 +93,17 @@ class CatalogTests {
         else -> emptyList()
     }
 
+    // The type a valid value takes: the one named, or the first of a list that admits null as well.
+    fun typeOf(rules: Map<String, Json>): String = when (val type = rules.getValue("type")) {
+        is Json.Arr -> type.values.first { it.str() != "null" }.str()
+        else -> type.str()
+    }
+
     // A value inside the schema; the salt keeps the items of a `uniqueItems` array apart.
     fun valid(schema: Json, everyMember: Boolean, salt: Int = 0): Json {
         val rules = schema.obj()
         rules["enum"]?.let { return it.arr()[salt % it.arr().size] }
-        return when (val type = rules.getValue("type").str()) {
+        return when (val type = typeOf(rules)) {
             "object" -> {
                 val required = rules["required"]?.arr()?.map { it.str() } ?: emptyList()
                 Json.Obj((rules["properties"]?.obj() ?: emptyMap()).filterKeys { everyMember || it in required }
@@ -114,13 +122,13 @@ class CatalogTests {
     // `call` broken in one place, each beside the one fault it must answer.
     fun breakages(schema: Json, call: Json, path: Path): List<Pair<Json, SchemaFault>> {
         val rules = schema.obj()
-        val type = rules.getValue("type").str()
+        val type = typeOf(rules)
         val wrong = if (type == "string") Json.of(1) else Json.of("wrong")
-        val own = mutableListOf(wrong to SchemaFault(path, "not \"$type\""))
+        val own = mutableListOf(wrong to SchemaFault(path, "not ${rules.getValue("type").jcs}"))
         rules["enum"]?.let { own += Json.of("none of these") to SchemaFault(path, "not one of the enum") }
         rules["minimum"]?.let { own += Json.of(it.num() - 1) to SchemaFault(path, "below ${it.jcs}") }
         rules["maximum"]?.let { own += Json.of(it.num() + 1) to SchemaFault(path, "above ${it.jcs}") }
-        if (type == "integer") own += Json.of((rules["minimum"]?.num() ?: 1.0) + 0.5) to SchemaFault(path, "not \"integer\"")
+        if (type == "integer") own += Json.of((rules["minimum"]?.num() ?: 1.0) + 0.5) to SchemaFault(path, "not ${rules.getValue("type").jcs}")
         rules["minLength"]?.long()?.takeIf { it > 0 }?.let { own += Json.of("a".repeat(it.toInt() - 1)) to SchemaFault(path, "shorter than $it") }
         rules["maxLength"]?.long()?.let { own += Json.of("a".repeat(it.toInt() + 1)) to SchemaFault(path, "longer than $it") }
         rules["pattern"]?.let { own += Json.of("not an id!") to SchemaFault(path, "not ${it.str()}") }

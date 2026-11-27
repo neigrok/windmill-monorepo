@@ -2,14 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
-import { environment, until } from '../../platform/sync/fakes.js';
+import { environment, FakeTimers, tick, until } from '../../platform/sync/fakes.js';
+import { DeviceSeat, SEAT_WILL_CHANGE_MS } from '../../../src/shell/auth/accountChange.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
+import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 import { Note } from '../../../src/products/gym/domain/notes.js';
-import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymRuntime.js';
+import { createGymApi, gymLiveHint, signInWork } from '../../../src/products/gym/gymRuntime.js';
 import { StatsProgress } from '../../../src/products/gym/domain/trainingReads.js';
 import { spellWeightsIn } from '../../../src/products/gym/units.js';
 import { confirmed } from './harness.mjs';
+import { GymProduct } from '../../../../packages/api-contract/sync/reference/gym/product.js';
+import { Decision } from '../../../src/platform/domain-kit/actions.js';
+import { Fields, Id } from '../../../src/platform/domain-kit/entities.js';
+import { Plan, Prediction } from '../../../src/platform/domain-kit/plans.js';
+import { Instant } from '../../../src/platform/domain-kit/time.js';
+import { Exercise } from '../../../src/products/gym/domain/catalogue.js';
+import { GymRefusals } from '../../../src/products/gym/domain/gymRules.js';
+import { Session, SessionValue, TrainingSet, TrainingSetValue } from '../../../src/products/gym/domain/training.js';
+import { AppendSet, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../src/products/gym/domain/trainingActions.js';
+import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
+import { SignedOutWorkout } from '../../../src/products/gym/domain/workoutAdoption.js';
+import { WorkoutProposal } from '../../../src/products/gym/domain/workoutProposals.js';
+import { Routine } from '../../../src/products/gym/domain/routines.js';
+import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
+import { gymRoutes } from '../../../src/products/gym/routes.js';
+import { Harness } from '../../platform/domain-kit/harness.js';
+import { DEFAULT_NOW } from '../../platform/domain-kit/vectors.js';
 
 async function open(t) {
   const env = environment();
@@ -63,6 +82,64 @@ test('local shared-history previews retain typed rep facts and partial-pull comp
   assert.equal(progress.movement(movement.exerciseId).best, null);
 });
 
+test('before its first pull of gym’s scope the copy reads no last time, and once the pull lands it reads the latest', async (t) => {
+  const { api, engine } = await open(t);
+  const land = (booted) => engine.write(null, (device) => {
+    [confirmed('session', 'sessionPulled', { startedAt: 1000, finishedAt: 2000 }),
+      confirmed('set', 'setPulled', { sessionId: 'sessionPulled', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 1100 })]
+      .forEach((record, index) => device.activeReplica.putConfirmed('self/gym', { ...record, seq: index + 1 }));
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted };
+  }, ['self/gym']);
+  await land(false);
+  assert.deepEqual([await api.lastTime('bench-press'), await api.lastSets()], [null, []]);
+  await land(true);
+  assert.deepEqual(await api.lastSets(), [{ exerciseId: 'bench-press', weightKg: 60, reps: 5, at: 1000 }]);
+  assert.deepEqual(await api.lastTime('bench-press'), { exerciseId: 'bench-press',
+    session: { id: 'sessionPulled', startedAt: 1000, finishedAt: 2000 }, sets: (await api.session('sessionPulled')).sets });
+});
+
+test('a sign-in that binds the anon replica in place refuses the signed-out API in words that ask no one to sign in, and its step says so', async (t) => {
+  const env = environment();
+  env.options.registry = registry;
+  env.transport.request = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: env.timers.time }), timing: {
+    send: { wall: env.timers.time, mono: env.timers.time, boot: 'test' }, recv: { wall: env.timers.time, mono: env.timers.time, boot: 'test' },
+  } });
+  const engine = await BrowserSyncEngine.open(env.options);
+  t.after(() => engine.close());
+  const events = [], failures = [];
+  const signedOut = createGymApi(engine, { event: (operation, outcome, code) => events.push({ operation, outcome, ...(code ? { code } : {}) }),
+    failure: (operation) => failures.push(operation) });
+  await signedOut.saveBodyweight('1970-01-01', { weightKg: 82 });
+  await assert.rejects(signedOut.saveBodyweight('1970-01-01', { weightKg: -5 }), { code: 'invalid' });
+  const replica = engine.activeReplica();
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.deepEqual([engine.activeReplica(), engine.getSnapshot().state], [replica, 'bound']);
+  const owed = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(signedOut.saveBodyweight('1970-01-02', { weightKg: 83 }),
+    { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
+  assert.deepEqual(engine.device.activeReplica.outbox, owed);
+  assert.deepEqual(events, [{ operation: 'bodyweight-save', outcome: 'saved-local' },
+    { operation: 'bodyweight-save', outcome: 'refused', code: 'domain' }, { operation: 'bodyweight-save', outcome: 'refused', code: 'not-writable' }]);
+  assert.deepEqual(failures, []);
+});
+
+test('a re-identify keeps the API on the account’s replica, and a sign-out then refuses it', async (t) => {
+  const { api, engine, env, events, failures } = await open(t);
+  const replica = engine.activeReplica();
+  await engine.write(null, (device, context) => reidentify(device.activeReplica, context));
+  assert.notEqual(engine.activeReplica(), replica, 'the replica answers the server under a new id');
+  assert.deepEqual(await api.saveBodyweight('1970-01-01', { weightKg: 83 }), { dateLocal: '1970-01-01', weightKg: 83, recordedAt: env.timers.time });
+  assert.deepEqual((await api.bodyweight()).entries.map(({ dateLocal, weightKg }) => [dateLocal, weightKg]), [['1970-01-01', 83]]);
+  engine.setOnline(false);
+  await engine.beginSignOut();
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await assert.rejects(api.saveBodyweight('1970-01-01', { weightKg: 84 }), { code: 'not-writable' });
+  await assert.rejects(api.bodyweight(), { code: 'not-writable' });
+  assert.deepEqual(engine.device.activeReplica.outbox, [], 'the anon replica owes nothing');
+  assert.deepEqual(events, [{ operation: 'bodyweight-save', outcome: 'saved-local' }, { operation: 'bodyweight-save', outcome: 'refused' }]);
+  assert.deepEqual(failures, []);
+});
+
 test('a malformed stored plan preserves the session and reports through the API failure boundary', async (t) => {
   const { api, engine, failures, events } = await open(t);
   const row = { t: 'session', id: 'sessionPrivate', seq: 1, born: '1000:0:srv', life: ['alive', '1000:0:srv'],
@@ -104,8 +181,8 @@ test('unreadable frozen plans allow unrelated set fixes and held workout deletio
 test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  assert.equal(registry.version, 13);
-  assert.equal(registry.minVersion, 11);
+  assert.equal(registry.version, 15);
+  assert.equal(registry.minVersion, 15);
   const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
   const rows = [
     { t: 'routine', id: routine.id, born: '1000:0:srv', life: ['alive', '1000:0:srv'], fields: { name: routine.name, position: routine.position, entries: routine.entries, revision: 7, createdEntries: 3 } },
@@ -259,7 +336,6 @@ test('imports and corrections use atomic commands; offline reload retains the pe
   assert.equal((await resumed.session(imported.id)).sets[0].setNumber, undefined, 'serials belong to server admission');
   await resumed.correctSession(imported.id, { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: 'Bench', sets: [{ ...imported.sets[0], setNumber: 1, reps: 6 }] });
   assert.equal((await resumed.session(imported.id)).sets[0].reps, 6);
-  for (const method of ['start', 'finish', 'logSet']) assert.equal(api[method], undefined);
 });
 
 test('training writes keep kilograms and preserve omitted versus explicitly cleared optional fields', async (t) => {
@@ -474,8 +550,8 @@ test('custom exercise creation preserves a supplied step and validates it before
 
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
-  t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
-  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'Sign in to save to your training log.' });
+  t.mock.method(engine, 'commit', async (scope, read) => read({ binding: '["rp_another","B"]' }));
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
 });
 
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {
@@ -532,6 +608,48 @@ test('domain preferences save only client fields, keep untouched registers, and 
   assert.deepEqual(failures, []);
 });
 
+// Settings' rest rows (WD10): one write of the setting changed, told as gym_preference_changed with no value.
+async function restSettings(t) {
+  const opened = await open(t);
+  const changed = [];
+  const api = createGymApi(opened.engine, { event: (operation, outcome) => opened.events.push({ operation, outcome }),
+    preferred: (setting, outcome) => changed.push({ setting, outcome }), failure: (operation) => opened.failures.push(operation) });
+  return { ...opened, api, changed };
+}
+
+test('a rest setting writes itself alone and is told as saved, its value never', async (t) => {
+  const { api, engine, events, failures, changed } = await restSettings(t);
+  await api.savePreferences({ units: 'lb' });
+  await api.saveRestSetting({ restSeconds: 90 });
+  await api.saveRestSetting({ restSound: false });
+  await api.saveRestSetting({ restSeconds: null });
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ intent }) => intent.d.map(({ f }) => Object.fromEntries(Object.entries(f).map(([name, [value]]) => [name, value])))),
+    [[{ units: 'lb' }], [{ restSeconds: 90 }], [{ restSound: false }], [{ restSeconds: null }]]);
+  assert.deepEqual(await api.preferences(), { units: 'lb', confirmHaptic: true, confirmSound: false, restSound: false });
+  assert.deepEqual(changed, [{ setting: 'rest_default', outcome: 'saved' }, { setting: 'rest_sound', outcome: 'saved' },
+    { setting: 'rest_default', outcome: 'saved' }]);
+  assert.deepEqual(events, [{ operation: 'preferences-save', outcome: 'saved-local' }], 'a rest setting is told once, by its own event');
+  assert.deepEqual(failures, []);
+});
+
+test('a rest setting the store refuses is not_stored, the gym or a moved replica refuses is refused, and an unexpected failure is failed and an Issue', async (t) => {
+  const { api, engine, failures, changed } = await restSettings(t);
+  await assert.rejects(api.saveRestSetting({ restSeconds: 10 }), { code: 'invalid' });
+  const transact = t.mock.method(engine.store, 'transact', async () => { throw new DOMException('storage refused', 'QuotaExceededError'); });
+  await assert.rejects(api.saveRestSetting({ restSeconds: 120 }), isStoreFailure);
+  transact.mock.restore();
+  const commit = engine.commit.bind(engine);
+  const moved = t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, binding: '["rp_another","B"]' })));
+  await assert.rejects(api.saveRestSetting({ restSound: false }), { code: 'not-writable' });
+  moved.mock.restore();
+  t.mock.method(engine, 'commit', async () => { throw new Error('SECRET record values'); });
+  await assert.rejects(api.saveRestSetting({ restSeconds: 60 }), /SECRET/);
+  assert.deepEqual(changed, [{ setting: 'rest_default', outcome: 'refused' }, { setting: 'rest_default', outcome: 'not_stored' },
+    { setting: 'rest_sound', outcome: 'refused' }, { setting: 'rest_default', outcome: 'failed' }]);
+  assert.deepEqual(failures, ['rest-save']);
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+});
+
 test('domain weigh-in refusals write nothing and emit no Sentry failures', async (t) => {
   const { api, engine, events, failures } = await open(t);
   for (const [day, weightKg] of [['1970-01-02', 80], ['1970-02-30', 80], ['1970-01-01', 19]]) {
@@ -581,7 +699,7 @@ for (const [operation, write] of [
   test(`${operation}: an old account adapter refuses writes after a replica switch`, async (t) => {
     const { api, engine, failures, events } = await open(t);
     const commit = engine.commit.bind(engine);
-    t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, replica: 'another-account' })));
+    t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, binding: '["rp_another","B"]' })));
     await assert.rejects(write(api), { code: 'not-writable' });
     assert.deepEqual(engine.device.activeReplica.outbox, []);
     assert.deepEqual(failures, []);
@@ -603,10 +721,314 @@ test('rapid preference changes compare against the previous commit and keep the 
 
 test('domain read handles cannot follow the engine into another account', async (t) => {
   const { api, engine, failures } = await open(t);
-  t.mock.method(engine, 'activeReplica', () => 'another-account');
+  const metadata = engine.readMetadata.bind(engine);
+  t.mock.method(engine, 'readMetadata', (...args) => ({ ...metadata(...args), binding: '["rp_another","B"]' }));
+  t.mock.method(engine, 'activeBinding', () => '["rp_another","B"]');
   await assert.rejects(api.preferences(), { code: 'not-writable' });
   await assert.rejects(api.bodyweight(), { code: 'not-writable' });
   await assert.rejects(api.notes(), { code: 'not-writable' });
   assert.throws(() => api.mintNote(), { code: 'not-writable' });
   assert.deepEqual(failures, []);
+});
+
+// A browser signed out, its gym on the anon replica, every write through the domain's own actions.
+async function signedOutBrowser(t, { anonymous = true } = {}) {
+  const browser = await Harness.open({ registry, product: new GymProduct(), scope: Session.scope, anonymous });
+  t.after(() => browser.close());
+  const run = async (action) => assert.equal((await browser.runner.run(action)).kind, 'committed');
+  const events = [], failures = [];
+  const told = { event: (operation, outcome, code) => events.push({ operation, outcome, ...(code ? { code } : {}) }),
+    failure: (operation) => failures.push(operation) };
+  return { browser, run, events, failures, told,
+    saved: () => browser.runner.read(Session.scope, (read) => SignedOutWorkout.read(read))
+      .map((copy) => [copy.session.id.record, copy.session.isOpen, copy.sets.map((set) => set.id.record)]),
+    commands: () => browser.runner.read(Session.scope, (read) => read.commands())
+      .map(({ command }) => [command.name, command.args.id ?? command.args.sessionId, command.args.joinOpenSession ?? null]),
+    sets: () => browser.drawn(TrainingSet).map((set) => set.id.record).sort() };
+}
+const benchSet = (id, session, at, weightKg = 60) => new TrainingSetValue(new Id(id, TrainingSet), session, new Id('bench-press', Exercise), weightKg, 5, new Instant(at));
+
+test('before the seat changes each signed-out workout is saved for adoption: a finished one as one import, an open one beside its start, which does not join; told once', async (t) => {
+  const { browser, run, events, failures, told, saved, commands, sets } = await signedOutBrowser(t);
+  const finished = new Id('session1', Session), open = new Id('session2', Session);
+  await run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await run(AppendSet(benchSet('set00001', finished, DEFAULT_NOW - 50_000)));
+  await run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await run(StartSession({ id: open, startedAt: new Instant(DEFAULT_NOW - 30_000) }));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 20_000, 80)));
+  const api = createGymApi(browser.engine, told);
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), commands: commands(), sets: sets() }, {
+    saved: [['session1', false, ['set00001']], ['session2', true, ['set00002']]],
+    commands: [['gym.start', 'session2', false], ['gym.importSession', 'session1', null]],
+    sets: ['set00001', 'set00002'],
+  });
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ events, failures }, { events: [{ operation: 'workout-adopt', outcome: 'saved-local' }], failures: [] }, 'a second pass saves nothing new');
+});
+
+test('each signed-out workout is saved in an act of its own: one the import refuses, past its 200 sets, leaves the next to land', async (t) => {
+  const { browser, run, events, failures, told, saved, commands } = await signedOutBrowser(t);
+  const crowded = new Id('session1', Session), next = new Id('session2', Session);
+  await run(StartSession({ id: crowded, startedAt: new Instant(DEFAULT_NOW - 600_000) }));
+  for (let index = 1; index <= 201; index++) {
+    await run(AppendSet(benchSet(`set${String(index).padStart(5, '0')}`, crowded, DEFAULT_NOW - 600_000 + index * 1000)));
+  }
+  await run(FinishSession({ id: crowded, finishedAt: new Instant(DEFAULT_NOW - 390_000) }));
+  await run(StartSession({ id: next, startedAt: new Instant(DEFAULT_NOW - 300_000) }));
+  await run(AppendSet(benchSet('set99999', next, DEFAULT_NOW - 290_000)));
+  await run(FinishSession({ id: next, finishedAt: new Instant(DEFAULT_NOW - 280_000) }));
+  const before = commands().filter(([, session]) => session === 'session1');
+  await createGymApi(browser.engine, told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), crowded: commands().filter(([, session]) => session === 'session1'),
+    next: commands().filter(([, session]) => session === 'session2'), events, failures }, {
+    saved: [['session2', false, ['set99999']]],
+    crowded: before,
+    next: [['gym.importSession', 'session2', null]],
+    events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'domain' }, { operation: 'workout-adopt', outcome: 'saved-local' }],
+    failures: [],
+  });
+});
+
+test('the route table’s hook saves them, and a bound replica or an empty anon one has none to save', async (t) => {
+  const signedOut = await signedOutBrowser(t);
+  assert.equal(gymRoutes.sync.seatWillChange(signedOut.browser.engine), null, 'an anon replica holding no gym work reads nothing');
+  const finished = new Id('session1', Session);
+  await signedOut.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await signedOut.run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await gymRoutes.sync.seatWillChange(signedOut.browser.engine);
+  assert.deepEqual(signedOut.saved(), [['session1', false, []]]);
+
+  const account = await signedOutBrowser(t, { anonymous: false });
+  await account.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  const owed = structuredClone(account.browser.engine.device.activeReplica.outbox);
+  assert.equal(gymRoutes.sync.seatWillChange(account.browser.engine), null);
+  await createGymApi(account.browser.engine, account.told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: account.saved(), outbox: account.browser.engine.device.activeReplica.outbox, events: account.events },
+    { saved: [], outbox: owed, events: [] });
+});
+
+test('an open workout an older build started joining keeps its sets: the start that replaces it does not join, and each set is recorded with it', async (t) => {
+  const { browser, run, events, told, saved, commands, sets } = await signedOutBrowser(t);
+  const open = new Id('session1', Session), startedAt = new Instant(DEFAULT_NOW - 30_000);
+  await run({ scope: Session.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.write(Plan.running({ name: 'gym.start', args: { id: open.json, startedAt: startedAt.ms }, specs: [] },
+      [Prediction.create(open, new SessionValue(open, startedAt, null, null, null, null, null).fields())]), open) });
+  await run(AppendSet(benchSet('set00001', open, DEFAULT_NOW - 20_000)));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 10_000, 62.5)));
+  await createGymApi(browser.engine, told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), commands: commands(), sets: sets(), events }, {
+    saved: [['session1', true, ['set00001', 'set00002']]],
+    commands: [['gym.start', 'session1', false]],
+    sets: ['set00001', 'set00002'],
+    events: [{ operation: 'workout-adopt', outcome: 'saved-local' }],
+  });
+});
+
+// The seat's five seconds run out while the hook's writes wait on a slow store, and the sign-in binds the anon replica in
+// place: the hook's one act lands whole before the seat changes, or not at all, and never leaves a set only in the rack.
+for (const [stalled, lands] of [[1, false], [2, true]]) test(`a seat that changes while the hook's ${stalled === 1 ? 'first' : 'second'} write waits ${lands ? 'finds the workout saved whole' : 'finds it untouched'}`, async (t) => {
+  const { browser, run, events, told, saved, commands, sets } = await signedOutBrowser(t);
+  const open = new Id('session1', Session), startedAt = new Instant(DEFAULT_NOW - 30_000);
+  await run({ scope: Session.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.write(Plan.running({ name: 'gym.start', args: { id: open.json, startedAt: startedAt.ms }, specs: [] },
+      [Prediction.create(open, new SessionValue(open, startedAt, null, null, null, null, null).fields())]), open) });
+  await run(AppendSet(benchSet('set00001', open, DEFAULT_NOW - 20_000)));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 10_000, 62.5)));
+  const { engine } = browser;
+  const write = engine.write.bind(engine);
+  let commits = 0, release;
+  const slow = new Promise((resolve) => { release = resolve; });
+  t.mock.method(engine, 'write', async (operation, ...rest) => {
+    if (operation === 'sync-commit' && ++commits === stalled) await slow;
+    return write(operation, ...rest);
+  });
+  const timers = new FakeTimers();
+  const reported = [];
+  const products = [{ id: 'gym', sync: { seatWillChange: (moving) => createGymApi(moving, told).saveSignedOutWorkouts() } }];
+  const changing = new DeviceSeat(products, { timers, reportWillChange: (product, outcome) => reported.push([product, outcome]) }).willChange(engine);
+  await until(() => commits >= 1);
+  for (let turn = 0; turn < 20; turn++) await tick();
+  timers.advance(SEAT_WILL_CHANGE_MS);
+  await changing;
+  assert.equal((await engine.signIn('A')).complete, true);
+  release();
+  for (let turn = 0; turn < 50; turn++) await tick();
+  assert.deepEqual({ reported, account: engine.getSnapshot().account, saved: saved(), commands: commands(), sets: sets(), events }, lands
+    ? { reported: [], account: 'A', saved: [['session1', true, ['set00001', 'set00002']]], commands: [['gym.start', 'session1', false]],
+      sets: ['set00001', 'set00002'], events: [{ operation: 'workout-adopt', outcome: 'saved-local' }] }
+    : { reported: [['gym', 'timeout']], account: 'A', saved: [], commands: [['gym.start', 'session1', null]], sets: ['set00001', 'set00002'],
+      events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'not-writable' }] });
+});
+
+test('a seat that moved before the hook ran refuses it as not-writable, and a store that throws is a failure; each told once and neither stops the seat', async (t) => {
+  const moved = await signedOutBrowser(t);
+  const finished = new Id('session1', Session);
+  await moved.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await moved.run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  const before = createGymApi(moved.browser.engine, moved.told);
+  assert.equal((await moved.browser.engine.signIn('A')).complete, true);
+  await before.saveSignedOutWorkouts();
+  assert.deepEqual({ events: moved.events, failures: moved.failures },
+    { events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'not-writable' }], failures: [] });
+
+  const failing = await signedOutBrowser(t);
+  await failing.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  const thrown = new Error('private detail');
+  t.mock.method(failing.browser.engine, 'commitAct', async () => { throw thrown; });
+  const reported = [];
+  await createGymApi(failing.browser.engine, { ...failing.told, failure: (operation, error) => reported.push([operation, error]) }).saveSignedOutWorkouts();
+  assert.deepEqual({ events: failing.events, reported }, { events: [{ operation: 'workout-adopt', outcome: 'failed' }], reported: [['workout-adopt', thrown]] });
+});
+
+// In this browser over the runtime: the copies saved for the account, each with its reason and its one answer, from a
+// start that lost a race to the phone's through Keep as finished to the copy let go once the account holds it.
+test('In this browser draws each copy with its reason and its one answer, and a kept copy is on its way until the account takes it', async (t) => {
+  const minute = 60_000;
+  const bench = new Id('bench-press', Exercise);
+  const phone = await Harness.open({ registry, product: new GymProduct(), scope: Session.scope });
+  t.after(() => phone.close());
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const browser = await phone.device();
+  const recovered = [], failures = [];
+  const api = createGymApi(browser.engine, { recovered: (outcome, reason) => recovered.push([outcome, reason]), failure: (operation) => failures.push(operation) });
+  await phone.sync();
+  const landed = new SessionValue(new Id('landedL1', Session), new Instant(DEFAULT_NOW - 300 * minute), new Instant(DEFAULT_NOW - 240 * minute), 'finish');
+  const landedSets = [0, 1].map((index) => new TrainingSetValue(new Id(`landedL1s${index}`, TrainingSet), landed.id, bench, 60, 5, new Instant(DEFAULT_NOW - (290 - index * 10) * minute)));
+  const crossing = new SessionValue(new Id('crossC01', Session), new Instant(DEFAULT_NOW - 290 * minute), new Instant(DEFAULT_NOW - 250 * minute), 'finish');
+  const crossingSet = new TrainingSetValue(new Id('crossC01s0', TrainingSet), crossing.id, bench, 50, 5, new Instant(DEFAULT_NOW - 280 * minute));
+  const [first] = landedSets;
+  assert.equal((await phone.runner.run(ImportSession({ id: landed.id, startedAt: landed.startedAt, finishedAt: landed.finishedAt,
+    sets: [new ImportedSet({ id: first.id, exerciseId: bench, weightKg: 60, reps: 5, completedAt: first.completedAt, note: '', rpeNamed: true })] }))).kind, 'committed');
+  await phone.sync();
+  assert.equal((await browser.runner.run({ scope: Session.scope, refusals: GymRefusals, load: (read) => SignedOutWorkout.read(read),
+    decide: (saved) => {
+      const plan = new Plan();
+      plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(saved, [new SignedOutWorkout(landed, landedSets), new SignedOutWorkout(crossing, [crossingSet])]));
+      return Decision.write(plan, null);
+    } })).kind, 'committed');
+  // Both start with no connection; the phone, which sends first, wins the race.
+  const lost = new Id('lostS001', Session);
+  assert.equal((await phone.runner.run(StartSession({ id: new Id('phoneOpen', Session), startedAt: new Instant(DEFAULT_NOW - 30 * minute) }))).kind, 'committed');
+  assert.equal((await browser.runner.run(StartSession({ id: lost, startedAt: new Instant(DEFAULT_NOW - 20 * minute) }))).kind, 'committed');
+  assert.equal((await browser.runner.run(AppendSet(new TrainingSetValue(new Id('lostS001s0', TrainingSet), lost, bench, 70, 5, new Instant(DEFAULT_NOW - 15 * minute))))).kind, 'committed');
+  await phone.sync();
+  const [notice] = browser.engine.observe(Session.scope).getSnapshot().notices;
+  assert.equal(await api.saveRefusedStart(notice.id), 1);
+  assert.equal(await api.saveRefusedStart(notice.id), 0, 'a copy already saved is said once');
+  const drawn = () => api.browserCopies().map(({ id, title, sets, stranded, reason, answer }) => ({ id, title, sets, stranded, reason, answer }));
+  assert.deepEqual(drawn(), [
+    { id: 'landedL1', title: 'Free session', sets: 1, stranded: true, reason: 'unsent', answer: 'retry' },
+    { id: 'crossC01', title: 'Free session', sets: 1, stranded: false, reason: 'session-overlap', answer: null },
+    { id: 'lostS001', title: 'Free session', sets: 1, stranded: false, reason: 'session-open', answer: 'keep' },
+  ]);
+  assert.equal(await api.keepCopy('lostS001'), true);
+  assert.equal(await api.retryCopy('landedL1'), true);
+  assert.deepEqual(drawn().filter((copy) => copy.reason === null).map((copy) => copy.id).sort(), ['landedL1', 'lostS001'], 'on their way');
+  await phone.sync();
+  await api.settleBrowserCopies();
+  assert.deepEqual({ copies: drawn(), recovered, failures, notices: browser.engine.observe(Session.scope).getSnapshot().notices.filter((each) => !each.dismissed).length }, {
+    copies: [{ id: 'crossC01', title: 'Free session', sets: 1, stranded: false, reason: 'session-overlap', answer: null }],
+    recovered: [['saved', 'session-open'], ['kept', 'session-open'], ['retried', 'unsent']], failures: [], notices: 0,
+  });
+});
+
+// The sign-in question in gym's count (web-device-parity §3, consistency 7d): every kind of gym work the browser holds,
+// each named, so the question names everything its Add joins and its Discard deletes.
+test('the sign-in question names every kind of gym work the browser holds, movements and settings in words of their own, and work that draws none of them by its changes; each step is told', async (t) => {
+  const { browser } = await signedOutBrowser(t);
+  const api = createGymApi(browser.engine);
+  await api.createRoutine({ id: 'rt_pushday1', name: 'Push day', position: 0, entries: [{ exerciseId: 'bench-press', sets: [{ reps: 8 }] }] });
+  await api.createExercise({ id: 'ex_sledpush', name: 'Sled Push', pattern: 'press', equipment: 'machine' });
+  await api.renameExercise('bench-press', 'Bench (browser)');
+  await api.savePreferences({ units: 'lb' });
+  const told = [];
+  const work = signInWork(browser.engine, { counted: ['l1', 'l2', 'l3', 'l4', 'l5'] }, { told: (name, props) => told.push([name, props]) });
+  for (const step of ['shown', 'discard', 'nothing else']) work.onStep(step);
+  assert.deepEqual({ items: work.items, total: work.total, held: work.held, told }, {
+    items: [{ label: '1 routine', detail: 'Push day' }, { label: '2 movements', detail: 'Bench (browser) · Sled Push' }, { label: 'your settings' }],
+    total: 4, held: 'training',
+    told: [['gym_signin_decision', { step: 'shown', count_bucket: '2-5' }], ['gym_signin_decision', { step: 'discard', count_bucket: '2-5' }]],
+  });
+
+  const deleted = await signedOutBrowser(t);
+  const workout = new Id('session1', Session);
+  await deleted.run(StartSession({ id: workout, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await deleted.run(AppendSet(benchSet('set00001', workout, DEFAULT_NOW - 50_000)));
+  await deleted.run(new Remove(workout, GymRefusals));
+  const gone = signInWork(deleted.browser.engine, { counted: ['l1', 'l2', 'l3'] }, { told: () => {} });
+  assert.deepEqual({ items: gone.items, total: gone.total }, { items: [{ label: '3 changes' }], total: 3 }, 'a workout made and deleted is counted by its changes');
+});
+
+// A start that lost a race with another device's whose workout was deleted before the refusal (spec §4): nothing to keep.
+test('a start that lost the race after its workout was deleted saves nothing and says nothing, and the room hears nothing of its notice', async (t) => {
+  const minute = 60_000;
+  const phone = await Harness.open({ registry, product: new GymProduct(), scope: Session.scope });
+  t.after(() => phone.close());
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const browser = await phone.device();
+  const recovered = [], failures = [];
+  const api = createGymApi(browser.engine, { recovered: (outcome, reason) => recovered.push([outcome, reason]), failure: (operation) => failures.push(operation) });
+  await phone.sync();
+  const lost = new Id('lostS001', Session);
+  assert.equal((await phone.runner.run(StartSession({ id: new Id('phoneOpen', Session), startedAt: new Instant(DEFAULT_NOW - 30 * minute) }))).kind, 'committed');
+  assert.equal((await browser.runner.run(StartSession({ id: lost, startedAt: new Instant(DEFAULT_NOW - 20 * minute) }))).kind, 'committed');
+  assert.equal((await browser.runner.run(AppendSet(benchSet('lostS001s0', lost, DEFAULT_NOW - 15 * minute)))).kind, 'committed');
+  assert.equal((await browser.runner.run(new Remove(lost, GymRefusals))).kind, 'committed');
+  await phone.sync();
+  const [notice] = browser.engine.observe(Session.scope).getSnapshot().notices;
+  assert.equal(notice.code, 'session-open');
+  assert.deepEqual({ answers: api.recoveryAnswers(notice), sets: await api.saveRefusedStart(notice.id) }, { answers: true, sets: 0 });
+  assert.deepEqual({ copies: api.browserCopies(), saved: browser.engine.readDeviceRows('gym')[SignedOutWorkout.key] ?? null, recovered, failures,
+    notices: browser.engine.observe(Session.scope).getSnapshot().notices.filter((each) => !each.dismissed).length },
+  { copies: [], saved: null, recovered: [], failures: [], notices: 0 });
+});
+
+// What the account takes from In this browser's copies once it holds their workouts, and what loses nothing if it goes.
+test('a copy that holds no set is not offered and is let go, and a copy\'s proposal is issued again once the account holds its workout', async (t) => {
+  const minute = 60_000;
+  const phone = await Harness.open({ registry, product: new GymProduct(), scope: Session.scope });
+  t.after(() => phone.close());
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const browser = await phone.device();
+  const api = createGymApi(browser.engine);
+  const held = new Id('heldP001', Session);
+  await createGymApi(phone.engine).createRoutine(routine);
+  assert.equal((await phone.runner.run(StartSession({ id: held, routineId: new Id(routine.id, Routine), startedAt: new Instant(DEFAULT_NOW - 30 * minute) }))).kind, 'committed');
+  await phone.sync();
+  const empty = new SessionValue(new Id('emptyE01', Session), new Instant(DEFAULT_NOW - 20 * minute), null, null);
+  const kept = new SessionValue(new Id('keptK001', Session), new Instant(DEFAULT_NOW - 300 * minute), new Instant(DEFAULT_NOW - 240 * minute), 'finish');
+  const proposal = WorkoutProposal.decode(Fields.values(WorkoutProposal.type, 'wproposal1', { sessionId: 'heldP001', summary: 'Add bench',
+    changes: [{ kind: 'added', exerciseId: 'bench-press', after: { sets: [{ reps: 5, weightKg: 60 }] } }] }));
+  const heldSession = browser.runner.read(Session.scope, (read) => read.repository(Session).find(held, 'drawn'));
+  assert.equal((await browser.runner.run({ scope: Session.scope, refusals: GymRefusals, load: (read) => SignedOutWorkout.read(read),
+    decide: (saved) => {
+      const plan = new Plan();
+      plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(saved, [new SignedOutWorkout(empty, []), new SignedOutWorkout(heldSession, [], [proposal]),
+        new SignedOutWorkout(kept, [benchSet('keptK001s0', kept.id, DEFAULT_NOW - 280 * minute)])]));
+      return Decision.write(plan, null);
+    } })).kind, 'committed');
+  assert.deepEqual(api.browserCopies().map((copy) => copy.id), ['keptK001'], 'a copy that holds no set is not offered');
+  await api.settleBrowserCopies();
+  await phone.sync();
+  assert.deepEqual({
+    saved: Object.keys(browser.engine.readDeviceRows('gym')[SignedOutWorkout.key] ?? {}).sort(),
+    proposals: phone.drawn(WorkoutProposal).map((each) => [String(each.id.record), String(each.sessionId.record), each.summary]),
+  }, { saved: ['keptK001'], proposals: [['wproposal1', 'heldP001', 'Add bench']] });
+});
+
+test('a workout deleted signed out after a cancelled sign-in saved it is let go at the next sign-in, so it never comes back', async (t) => {
+  const { browser, run, events, told, saved } = await signedOutBrowser(t);
+  const deleted = new Id('session1', Session), kept = new Id('session2', Session);
+  await run(StartSession({ id: deleted, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await run(AppendSet(benchSet('set00001', deleted, DEFAULT_NOW - 50_000)));
+  await run(FinishSession({ id: deleted, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await run(StartSession({ id: kept, startedAt: new Instant(DEFAULT_NOW - 30_000) }));
+  await run(AppendSet(benchSet('set00002', kept, DEFAULT_NOW - 20_000)));
+  const api = createGymApi(browser.engine, told);
+  await api.saveSignedOutWorkouts();
+  await run(new Remove(deleted, GymRefusals));
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), events }, { saved: [['session2', true, ['set00002']]],
+    events: [{ operation: 'workout-adopt', outcome: 'saved-local' }, { operation: 'workout-adopt', outcome: 'saved-local' }] });
 });

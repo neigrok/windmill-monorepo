@@ -85,17 +85,25 @@ impl TransportFactory for BoundedSends {
     }
 }
 
-#[derive(Default)]
-struct AccountingReports {
+struct BoundedReports {
+    interval: Duration,
     last: Mutex<HashMap<&'static str, Instant>>,
 }
 
-impl AccountingReports {
+impl BoundedReports {
+    fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            last: Mutex::new(HashMap::new()),
+        }
+    }
+
     fn admit(&self, operation: &'static str, now: Instant) -> bool {
         let mut last = self.last.lock().unwrap_or_else(|error| error.into_inner());
-        if last.get(operation).is_some_and(|previous| {
-            now.saturating_duration_since(*previous) < crate::config::DATABASE_REPORT_INTERVAL
-        }) {
+        if last
+            .get(operation)
+            .is_some_and(|previous| now.saturating_duration_since(*previous) < self.interval)
+        {
             return false;
         }
         last.insert(operation, now);
@@ -104,7 +112,8 @@ impl AccountingReports {
 }
 
 pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Option<&str>) {
-    static ACCOUNTING: LazyLock<AccountingReports> = LazyLock::new(AccountingReports::default);
+    static ACCOUNTING: LazyLock<BoundedReports> =
+        LazyLock::new(|| BoundedReports::new(crate::config::DATABASE_REPORT_INTERVAL));
     if code == "accounting_unavailable" && !ACCOUNTING.admit(operation, Instant::now()) {
         tracing::error!(operation, code, "{operation} failed");
         return;
@@ -127,6 +136,22 @@ pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Opt
         sqlstate,
         sentry_event_id,
         "{operation} failed"
+    );
+}
+
+pub fn report_background_hour() {
+    static HOURLY: LazyLock<BoundedReports> =
+        LazyLock::new(|| BoundedReports::new(crate::config::BACKGROUND_HOUR_REPORT_INTERVAL));
+    if !HOURLY.admit("background.hour", Instant::now()) {
+        return;
+    }
+    sentry::with_scope(
+        |scope| scope.set_fingerprint(Some(&["background.hour"])),
+        || sentry::capture_message("background.hour", sentry::Level::Warning),
+    );
+    tracing::warn!(
+        operation = "background.hour",
+        "background work reached its hourly ceiling"
     );
 }
 
@@ -173,6 +198,7 @@ pub struct CallSignal {
     pub started: std::time::Instant,
     pub http_status: Option<u16>,
     pub failure_kind: Option<ai_providers::FailureKind>,
+    pub refusal: Option<ai_providers::RefusalReason>,
     pub usage: Option<ai_domain::TokenUsage>,
 }
 
@@ -182,6 +208,7 @@ impl CallSignal {
             started,
             http_status: None,
             failure_kind: None,
+            refusal: None,
             usage: None,
         }
     }
@@ -223,6 +250,8 @@ impl CallSignal {
             charged = outcome.charged.nanos(),
             http_status = self.http_status,
             failure_kind = ?self.failure_kind,
+            refusal = self.refusal.map(ai_providers::RefusalReason::as_str),
+            provider_request_id = settlement.provider_request_id.as_deref(),
             input = self.usage.map(|usage| usage.input),
             output = self.usage.map(|usage| usage.output),
             cache_write = self.usage.map(|usage| usage.cache_write),
@@ -308,7 +337,7 @@ mod tests {
 
     #[test]
     fn accounting_outages_keep_reports_bounded_per_operation() {
-        let reports = AccountingReports::default();
+        let reports = BoundedReports::new(crate::config::DATABASE_REPORT_INTERVAL);
         let now = Instant::now();
         assert!(reports.admit("ledger.lock", now));
         for elapsed in 1..60 {

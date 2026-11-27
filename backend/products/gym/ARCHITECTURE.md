@@ -53,8 +53,8 @@ sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym �
 onboarding/   Onboarding (pure bounds + repository port) · PgOnboardingRepository ·
               OnboardingService · AnthropicOnboarding · OnboardingApi
 coach/        the phone Coach's turn wire (docs/foundation/mobile/gym_coach.md): Turn (the open
-              body, the in-memory record) · AbilityCatalog (Appendix C over the declarations, the
-              schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
+              body, the in-memory record) · AbilityCatalog (Appendix C over each catalog file's
+              declarations, the catalogs served side by side, the schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
               stream; a bound turn's shares on GymTools) · CoachModel + AnthropicCoachModel (the
               metered round) · TurnService (admission, the loop, Stop, linger, and the sweep that
               ends a dropped turn's running message) · TurnApi (the SSE routes)
@@ -79,7 +79,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the nine
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 13, minimum 11), and
+`windmill_gym` embeds `gym.registry.json` (version 15, minimum 15), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -578,6 +578,10 @@ four hours of the last activity, staying at that activity when the tap came late
   start**, never its own `completed_at`. The store selects and orders the rows; every estimate, best and
   record is derived from them in the domain (`progressSessions`, `MovementSeries`), so no part of the
   rule is in SQL.
+- **`PerformedFact::heavierThan` is the one heaviest-set rule within a session**: more load, then more
+  reps, then the lower set id. Each movement's heaviest set is chosen by it, and so are a session's
+  (`ProgressSession::heaviestMovement`, over every movement it held), the record rules' top set and
+  the review's (`topSetOf`).
 - `SessionHistory` is a **domain** type although the port returns it: nothing under `domain/` may
   depend on `ports/`.
 
@@ -672,12 +676,13 @@ aggregate boundaries are listed in [Layout](#2-layout).
 - `LastTimeOutcome` exists because `lastTime` has two empty answers — never trained, and no such
   movement — and only the store can tell them apart.
 - `SessionSummary` carries both set counts (`setCount` and `workingSetCount` are the same number, every
-  row, kept apart because the wire names both), the clamped `tonnageKg`, the movement names, the session's
-  `topSet`, its `worked` sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the sets
+  row, kept apart because the wire names both), the clamped `tonnageKg`, the movement names, its `worked`
+  sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the sets
   of everything FINISHED before the page's oldest row, narrowed to its movements, because a record is
   judged against the history before its session and page two has history page two cannot see. The
-  application puts `topE1rm` and `record` on the row afterwards: those are RULES, not aggregations, and
-  the store computes no estimate.
+  application puts the session's per-movement facts (`ProgressSession::of`), `topE1rm` and `record` on
+  the row afterwards: those are RULES, not aggregations, and the store computes no estimate and picks
+  no heaviest set.
 - `historyFor` returns a **domain** value, one read in one transaction, loading the comparison session
   only for a session that named a routine.
 - The **share's DTOs name no account and hold no id at any depth**.
@@ -692,9 +697,15 @@ aggregate boundaries are listed in [Layout](#2-layout).
 `(started_at, id)` (`?before=<ms>&beforeId=<id>&limit=`, default 50, cap 200). Detail is per-exercise
 grouping in first-performed order, assembled client-side from numbered sets.
 
-- The row's derived facts ride the same statement, so the list never loads a session's sets. `topSet`
-  is a lateral over the session's sets — heaviest, ties to more reps, never volume, absent
-  for a session holding none.
+- The page's statements hand over the rows, their counts and names, and every set of the page in the
+  fact projection, so the list never loads a session's set rows. `topSet` is the heaviest set over the
+  session's movements (`ProgressSession::heaviestMovement`), never volume, absent for a session
+  holding none.
+- **`list_sessions` answers `catalog/3`'s row**, drawn from the same row: no frozen plan; `routineName`
+  is the name the workout went by (`Session::routineName`: the display override, else the frozen plan's
+  routine, absent when neither names one); `topSet` names its `exerciseId`; and `movements` is one line
+  per movement in id order, its heaviest set and its best estimate stated to a tenth, null where none
+  earned one. REST's row keeps the plan and carries the display override alone as `routineName`.
 - **`tonnageKg` sums nonnegative entered kg × reps × dumbbell count over every row.**
   Dumbbell values are per dumbbell; count is one or two. Other equipment has multiplier one.
   Barbell values include the bar. Bodyweight values are added load only; assistance contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
@@ -1025,7 +1036,11 @@ the conversation.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-five tools; `adapters/mcp/GymTools` declares and dispatches
+`adapters/mcp/GymToolCatalog` declares twenty-five tools, read from `catalog/3`
+(`packages/api-contract/gym/catalog-3.json`, embedded at configure time): each tool's name, description and
+input schema are the file's, its level its `class`'s, and the four structured answers' `outputSchema` their
+`result`. The same reading of `catalog.json` gives the `catalog/1` and `catalog/2` turns released builds open
+(`coach::gymCatalogs()`). `adapters/mcp/GymTools` declares and dispatches
 twenty-four of them to MCP and the server Coach. `propose_workout_change` is the phone Coach's alone
 (`phoneCoachOnly`): no surface draws a card for a connected agent's workout proposal, so MCP neither lists it
 nor runs it, and GymTools runs it only for the ability corpus, which records the answers the phone reproduces.
@@ -1036,7 +1051,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `gym:read` | `gym:write` | `gym:delete` |
 |---|---|---|
 | `list_exercises` | `start_session` | `discard_session` |
-| `list_sessions` — the log, paged | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
+| `list_sessions` — the log, paged, 1–200 a page; a row names its lifts and holds no plan | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
 | `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
@@ -1073,19 +1088,25 @@ in-process).
   proposal targets an existing routine and its revision; Coach creates a new routine through its
   separately granted, durable `create_routine` operation. The tools are a second *door on the same
   core*, not a second client of the HTTP API. **Every tool acts as the caller**: the `ToolCaller`'s
-  `UserId` scopes every read and write, exactly as `callerOf(req, auth)` scopes the handlers.
+  `UserId` scopes every read and write, exactly as the caller `SentCaller` reads scopes the handlers.
 - **The refusals are the door's outcomes in words a model can act on**, each naming the tool that
   answers the question it should ask next. The domain's `InvalidTraining` sentence is forwarded
   **verbatim** behind the tool's name, as an `invalid-arguments` failure; a `GymUnavailable` names its
   code.
+- **A bound strict mode cannot state is the rule's.** `catalog/3` states no `minimum`, `maximum`,
+  `maxLength`, `maxItems`, `multipleOf` or `uniqueItems`; each bound is in the description of what it
+  bounds, and the executor refuses a value outside it as `invalid-arguments` before any rule reads the
+  store, as `abilities-3/` pins: a `list_sessions` page's `before` and `limit`, a batch's 200 sets, and
+  every bound the domain's entities keep, a routine's `position` among them at the registry's 0–2147483647. A parameter `catalog/3`
+  requires as `null` reads as absent, and so does one an older caller leaves out.
 - **Retry semantics are explicit per tool.** Batch logging matches immutable normalized set input;
   import matches the original completed-session request, including ordered sets. A different payload
   under an accepted id is a conflict. Exact retries return the current standing rows or explicit
   deleted status, preserving user corrections and deletions. `log_set` replays the row stored under
   its id, and every set it creates takes the same `gym_write_receipts` reservation.
-- **`entryArray()` speaks the scheme and nothing else.** A line is `{exerciseId, sets?, restSeconds?}`
+- **A routine line speaks the scheme and nothing else.** A line is `{exerciseId, sets?, restSeconds?}`
   with `sets` an array of `{reps?, weightKg?}` (1–20 items, `reps` 1–100, `additionalProperties:
-  false`), and every bound in the schema is the domain's own, pinned by `GymToolsTest`. The
+  false`), and every bound its descriptions state is the domain's own, pinned by `GymToolsTest`. The
   descriptions of `create_routine`, `propose_routine_change`, `list_routines`, `get_session` and
   `last_time` each carry the same ramp example beside the straight one, because an agent shown only
   `5 × 5` writes only straight schemes; the Coach system prompt carries it too. To move one set of a
@@ -1095,10 +1116,15 @@ in-process).
   the same id replays rather than writing twice. **A replay is the same id carrying the SAME document**;
   the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
-  `list_routines` and sending it back under a fresh id, so `lastTrainedAt`, `revision` and
-  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–10000) is required
-  and stored. `additionalProperties: false` is
-  enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
+  `list_routines` and sending it back under a fresh id. `catalog/3` does not declare the read's own
+  fields on its writes, where they would spend strict mode's room on nothing: `gymToolCatalog()` names them
+  as the tool's `readBack` (`create_routine`'s `revision`, `lastTrainedAt`, `pendingProposal` and
+  `entries[].position`; `propose_routine_change`'s `entries[].position`), and every door the server
+  hosts drops exactly those, unread and unlogged, before it checks the arguments: `CompositeToolHost`
+  for MCP, `AskTools` for the server's own Coach and `TurnGate` for a `catalog/3` turn, none of which
+  holds its model to the schema. A document gym itself emitted is therefore never refused. A device
+  turn declares both tools strict (`"strict": true` in `catalog-3.json`), so its model never sends them. A routine's own `position`
+  (0–2147483647, the registry's bound on every door) is required and stored.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
   write-classified name.
@@ -1309,7 +1335,8 @@ empty state invites a training question.
 Two documents are welded into the lifter's **first user turn**, in this order: their notes, exactly
 as `list_notes` returns them, then the newest page of the log, exactly as `list_sessions` returns it
 (`askOpeningMessages`). Both are ordinary declared tool calls made before the model is asked
-anything, and either failing is no run. **Never in `kSystemPrompt`**: the prompt and the tool
+anything, and either failing is no run. **Never in the system prompt** (`coachSystemPrompt`, read from
+`packages/api-contract/gym/coach/prompt.md`): the prompt and the tool
 catalog are one cached prefix, and one interpolated byte would move it on every request —
 `AnthropicAskTest` pins the prompt byte-stable across runs with different notes. The top-level
 `steps` list `list_notes` first, then the agent loop's own calls. The versioned receipt instead records actual AskTools

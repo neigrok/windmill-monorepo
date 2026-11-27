@@ -149,10 +149,7 @@ public struct Inverses: Sendable {
       (scope, Array(Set(replica.outbox.flatMap { $0.deltas(in: scope) }.map(\.key))).sorted())
     })
     let before = try views(of: scopes, in: replica)
-    let ordinary = { (entry: OutboxEntry) -> Bool in
-      guard let command = entry.intent.command else { return true }
-      return registry.command(command.name)?.engine == .capture
-    }
+    let ordinary = { (entry: OutboxEntry) -> Bool in registry.ownCommand(of: entry) == nil }
     let written: [(entry: OutboxEntry, scope: ScopeRef, delta: Delta)] = entries.filter(ordinary).flatMap { (entry: OutboxEntry) in
       entry.intent.deltas.map { (entry, entry.scope, $0) }
     }
@@ -433,10 +430,10 @@ public struct Inverses: Sendable {
   }
 
   // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, from the
-  // values the inverted act wrote (`forward`), never what a later local edit shows. A created record comes back by its life
-  // only where a write can bring it back, with the record as `drawn` held it, and one the inverse creates goes again by its
-  // strict recipe; a product slot has no generic recipe, and its Redo is the product's. A preimage's row sequence is the
-  // row its restore wrote over, which the restore's version check proved held it (`anchor`).
+  // values the inverted act wrote (`forward`), never what a later local edit shows. A life the slot takes away, a created
+  // record's among them, comes back only where a write can bring it back, with the record as `drawn` held it, and a record
+  // the inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the product's.
+  // A preimage's row sequence is the row its restore wrote over, which the restore's version check proved held it (`anchor`).
   func inverseJournal(_ inverseActId: String, slots: [InverseSlot], forward: [Target: JSON], drawn: [ScopeRef: ScopeView]) -> ReversibleAct {
     let sources = slots.map { (slot: InverseSlot) -> JournalSource in
       guard case .restore(let command, let operations) = slot.recipe else {
@@ -456,7 +453,8 @@ public struct Inverses: Sendable {
           written.append(WrittenValue(target: target, value: "dead"))
         case .field(let target, let before, _, _):
           guard let value = forward[target] else { continue }
-          preimages.append(Preimage(target: target, value: value))
+          let takenAway = target.slot == .life && value == "alive"
+          preimages.append(Preimage(target: target, value: value, record: takenAway ? drawn[target.scope]?.record(target.key).map(RecordValues.init) : nil))
           written.append(WrittenValue(target: target, value: before ?? .null))
         }
       }
@@ -489,7 +487,8 @@ public struct Inverses: Sendable {
         continue
       }
       var args: JSON?
-      slots[index].skipped = []
+      let recorded = slots[index].skipped ?? []
+      slots[index].skipped = recorded
       switch slots[index].recipe {
       case .restore(let command, let operations):
         guard let epoch else { break }
@@ -511,7 +510,7 @@ public struct Inverses: Sendable {
         }
         let scopes = selection.unchangedCreatedScopes.map { Inverses.createdScope(history, $0) }
         guard records.allSatisfy({ $0 != nil }), scopes.allSatisfy({ $0 != nil }) else {
-          slots[index].skipped = ["history-changed"]
+          slots[index].skipped = recorded + ["history-changed"]
           break
         }
         let owned = selection.ownedFields.compactMap { (target: Target) -> Evidence.OwnedField? in
@@ -556,9 +555,12 @@ public struct Inverses: Sendable {
     }
   }
 
-  // A Redo of a cancellation waits while an entry its references name has no result yet.
+  // A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while
+  // an entry its references name has no result yet.
   func referencesAuthoritative(_ request: InverseRequest, in replica: LoadedReplica) -> Bool {
-    request.slots.filter { $0.state == .waiting }.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
+    let waiting = request.slots.filter { $0.state == .waiting }
+    if replica.meta.serverEpoch == nil && !waiting.isEmpty { return false }
+    return waiting.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
   }
 
   // The accepted receipts the act's sources own in the current epoch, in commit order; a source whose history is
@@ -650,19 +652,31 @@ public struct Inverses: Sendable {
   }
 
   // One planned operation bound to what it must find, a skip, or nil where the act never wrote the target, so there is
-  // nothing to take back. Where a source's history is unavailable, an unowned target may be one it wrote, and skips.
+  // nothing to take back. Where a source's history is unavailable, an unowned target may be one it wrote, and skips. A keyed
+  // record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to
+  // a server that declares them.
   func bound(_ operation: PlannedOperation, of act: ReversibleAct, history: [(lost: Bool, effects: [EffectReceipt])], epoch: String,
              in replica: LoadedReplica) -> Bound? {
+    let declared = (replica.meta.serverSchema ?? 0) >= RestoreOperation.revivalValuesSchema
+    let field = { (target: Target, before: JSON?, expected: RestoreOperation.Expected, record: RecordValues?) -> RestoreOperation in
+      let before = before ?? .null
+      let values = record.flatMap { (record: RecordValues) -> JSON.Object? in
+        guard declared, let type = self.registry.type(target.key.type), self.registry.revivesKeyed(type, target.slot, before) else { return nil }
+        let values = self.registry.revivalValues(type, fields: record.fields, texts: record.texts)
+        return values.isEmpty ? nil : values
+      }
+      return .field(target.key, slot: target.slot, expected: expected, before: before, values: values)
+    }
     switch operation {
-    case .field(let target, let before, let reference?, _):
+    case .field(let target, let before, let reference?, let record):
       guard let expected = expected(of: reference, in: replica) else { return .skip("reference-unbound") }
-      return .send(.field(target.key, slot: target.slot, expected: expected, before: before ?? .null))
-    case .field(let target, let before, nil, _):
+      return .send(field(target, before, expected, record))
+    case .field(let target, let before, nil, let record):
       guard let version = Inverses.latestOwned(history, target) else { return history.contains(where: \.lost) ? .skip("history-changed") : nil }
       let preimage = act.sourceEntries.flatMap(\.preimages).first { $0.target == target }
       if !(preimage?.epoch ?? epoch).isSameID(as: epoch) { return .skip("epoch-changed") }
       guard let preimage, Inverses.unbroken(history, target.address, from: preimage.rowSeq, in: replica) else { return .skip("history-changed") }
-      return .send(.field(target.key, slot: target.slot, expected: .version(version), before: before ?? .null))
+      return .send(field(target, before, .version(version), record))
     case .createdRecord(let record):
       switch Inverses.footprint(history, record) {
       case .proven(let rowSeq, let footprint)?: return .send(.createdRecord(record.key, rowSeq: rowSeq, footprint: footprint))
@@ -764,6 +778,57 @@ public struct Inverses: Sendable {
       }
     }
     entry.predictions = predictions
+  }
+
+  // MARK: Adoption
+
+  // §7.10 Add: an act adopted from the anon replica never read `into`'s own writes, which reach the server before its
+  // own. Each adopted act gives up every field target whose record `into` holds a write of, an outbox entry whose stored
+  // effects write it or a receipt row its journal keeps: the target leaves its recipes, preimages and written values, and
+  // a waiting request withdraws its operation there, with its projection, counted skipped `history-changed`. A created
+  // record and a command recipe stay, proven by the act's own receipts alone. The anon journal and entries as they move,
+  // and how many targets the adopted acts gave up.
+  static func givingUpUnread(_ journal: Journal, entries: [OutboxEntry], into: LoadedReplica) -> (journal: Journal, entries: [OutboxEntry], givenUp: Int) {
+    var written: Set<RecordAddress> = []
+    for entry in into.outbox {
+      for effect in entry.effects() { written.formUnion(effect.deltas.map { RecordAddress(scope: effect.scope, key: $0.key) }) }
+    }
+    for attempt in into.journal.acts.flatMap(\.sourceEntries).flatMap(\.attempts) {
+      for effect in attempt.acceptedEffects ?? [] { written.formUnion(effect.rows.map { RecordAddress(scope: effect.scope, key: $0.key) }) }
+    }
+    guard !written.isEmpty else { return (journal, entries, 0) }
+    var adopted = journal
+    var moving = entries
+    var givenUp = 0
+    for act in adopted.acts.indices {
+      for index in adopted.acts[act].sourceEntries.indices {
+        var source = adopted.acts[act].sourceEntries[index]
+        source.recipes = source.recipes.compactMap { (recipe: ActUndoRecipe) -> ActUndoRecipe? in
+          guard case .fields(let command, let targets) = recipe else { return recipe }
+          let kept = targets.filter { !written.contains($0.target.address) }
+          givenUp += targets.count - kept.count
+          return kept.isEmpty ? nil : .fields(restoreCommand: command, targets: kept)
+        }
+        source.preimages.removeAll { written.contains($0.target.address) }
+        source.written.removeAll { written.contains($0.target.address) }
+        adopted.acts[act].sourceEntries[index] = source
+      }
+    }
+    for request in adopted.inverses.indices where adopted.inverses[request].state == .waiting {
+      for index in adopted.inverses[request].slots.indices where adopted.inverses[request].slots[index].state == .waiting {
+        let slot = adopted.inverses[request].slots[index]
+        guard case .restore(let command, let operations) = slot.recipe else { continue }
+        let kept = operations.filter { (operation: PlannedOperation) -> Bool in
+          guard case .field(let target, _, .none, _) = operation else { return true }
+          return !written.contains(target.address)
+        }
+        guard kept.count < operations.count else { continue }
+        adopted.inverses[request].slots[index].recipe = .restore(command: command, operations: kept)
+        adopted.inverses[request].slots[index].skipped = (slot.skipped ?? []) + Array(repeating: "history-changed", count: operations.count - kept.count)
+        if let entry = moving.firstIndex(where: { $0.localId.isSameID(as: slot.localId) }) { Inverses.keep(kept, in: &moving[entry]) }
+      }
+    }
+    return (adopted, moving, givenUp)
   }
 
   // MARK: The sender

@@ -4,6 +4,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/ReminderFakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <cstdint>
 #include <future>
@@ -83,7 +84,7 @@ drogon::HttpRequestPtr signedIn(drogon::HttpMethod method, const std::string& pa
                                 const std::string& body) {
   drogon::HttpRequestPtr req = request(method, path, body);
   req->addHeader("authorization", "Bearer s-live");
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr get(Harness& h, const drogon::HttpRequestPtr& req) {

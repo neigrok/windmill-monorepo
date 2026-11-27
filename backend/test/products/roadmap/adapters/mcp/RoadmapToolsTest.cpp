@@ -428,7 +428,7 @@ TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
   h.trees.byId["shared"] = h.trees.byId["other"];
-  h.trees.byId["shared"].visibility = Visibility::unlisted;
+  h.trees.byId["shared"].visibility = Visibility::public_;
 
   CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "shared"), h.actor)),
            std::string("delete_tree: this tree belongs to another account. Call list_trees to see the roadmaps you own."));
@@ -855,10 +855,10 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   CHECK_EQ(message(result).find("db.internal"), std::string::npos);
 }
 
-TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {
+TEST(mcp_read_tools_allow_a_public_tree_by_a_stranger) {
   Harness h;
   h.trees.byId["shared"] =
-      StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0, uid("someone"), Visibility::unlisted};
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0, uid("someone"), Visibility::public_};
 
   CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "shared"), h.actor).isError);
   CHECK_FALSE(h.tools.callTool("get_diagnostics", with("treeId", "shared"), h.actor).isError);
@@ -912,28 +912,10 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   CHECK_EQ(body(read)["tree"]["nodes"].size(), 0u);
 }
 
-TEST(mcp_write_tools_refuse_an_unowned_unlisted_tree) {
-  Harness h;
-  h.trees.byId["orphan"] = StoredTree{LooseGraph().exportState(), LegendState{},
-                                      {"Orphan", {}}, 0, std::nullopt, Visibility::unlisted};
-
-  Json::Value edit(Json::objectValue);
-  edit["treeId"] = "orphan";
-  edit["label"] = "Mine now";
-  ToolResult refused = h.tools.callTool("create_node", edit, h.actor);
-
-  CHECK(refused.isError);
-  CHECK_EQ(message(refused),
-           std::string("create_node: no account owns this tree, so it cannot be edited. You can "
-                       "still read it with get_tree, and copy it into a roadmap of your own with "
-                       "create_tree then import_subgraph."));
-  CHECK_FALSE(h.trees.byId["orphan"].owner.has_value());
-}
-
 TEST(mcp_a_tree_another_account_owns_is_still_refused_by_name) {
   Harness h;
   h.trees.byId["theirs"] = StoredTree{LooseGraph().exportState(), LegendState{},
-                                      {"Theirs", {}}, 0, uid("someone-else"), Visibility::unlisted};
+                                      {"Theirs", {}}, 0, uid("someone-else"), Visibility::public_};
 
   Json::Value edit(Json::objectValue);
   edit["treeId"] = "theirs";
@@ -1266,7 +1248,7 @@ TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
 TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
   Harness h;
   h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
-                                    h.caller, Visibility::unlisted};
+                                    h.caller, Visibility::public_};
   Json::Value planted = node("step", "Step");
   planted["treeId"] = "open";
   h.tools.callTool("create_node", planted, h.actor);
@@ -1320,7 +1302,7 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_EQ(found[2]["state"].asString(), std::string("locked"));
 
   h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
-                                    h.caller, Visibility::unlisted};
+                                    h.caller, Visibility::public_};
   imported["treeId"] = "open";
   CHECK_FALSE(h.tools.callTool("import_subgraph", imported, h.actor).isError);
   Json::Value anonymous(Json::objectValue);
@@ -3303,9 +3285,9 @@ TEST(mcp_describe_tree_is_refused_as_an_unknown_tool) {
   CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
 }
 
-TEST(mcp_a_second_account_reads_an_unlisted_trees_guide_as_not_theirs_and_cannot_set_it) {
+TEST(mcp_a_second_account_reads_a_public_trees_guide_as_not_theirs_and_cannot_set_it) {
   Harness h;
-  h.trees.byId["t"].visibility = Visibility::unlisted;
+  h.trees.byId["t"].visibility = Visibility::public_;
   h.call("create_node", node("a", "A"));
   CHECK_FALSE(h.call("update_tree", with("guide", "Rig first, then sail.")).isError);
   const StoredTree before = h.trees.byId["t"];
@@ -3583,8 +3565,8 @@ TEST(mcp_an_import_that_re_sends_a_node_without_opens_keeps_its_tree_and_an_empt
            parse(R"([{"id":"a","label":"Renamed"}])"));
 }
 
-// A tree id is the read capability of an unlisted tree, so a pointer at a tree that is not there and
-// one at somebody else's tree are refused in the same words, and nothing is written.
+// A pointer at a tree that is not there and one at somebody else's tree are refused in the same words, so the answer
+// never says which ids exist, and nothing is written.
 TEST(mcp_a_tree_that_is_not_the_callers_cannot_be_opened_and_absent_reads_exactly_as_someone_elses) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -3634,13 +3616,13 @@ TEST(mcp_a_node_may_open_the_tree_it_is_in) {
            parse(R"([{"id":"a","opens":{"treeId":"t","title":"Test Roadmap","state":"open"}}])"));
 }
 
-// The pointer and the opened tree's title go to the tree's writer alone: a tree id is the read
-// capability of an unlisted tree and a title is its owner's words.
+// The pointer and the opened tree's title go to the tree's writer alone: the opened tree may be
+// private, and a title is its owner's words.
 TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_tree) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
   h.trees.byId["t_secret_sub"] =
-      StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::unlisted};
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::private_};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_secret_sub"})")).isError);
   const std::size_t readsAfterTheWrite = h.trees.targetReads.size();
   const std::vector<std::set<TreeId>> followedByTheWrite = h.trees.openedReads;
@@ -8789,7 +8771,7 @@ TEST(mcp_get_tree_names_a_subtree_by_its_owning_step_to_every_reader) {
   const TreeId sailing{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
-  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   REQUIRE(std::holds_alternative<TreeRegistry::Described>(h.treeRegistry.setGuide(sailing, h.caller, "Rig first.")));
   h.trees.byId[sailing.str()].title = Lww<std::string>{"Its own register", Hlc{3, 0, "r_old"}};
@@ -9425,7 +9407,7 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"away","opens":"t_b"})"))).isError);
   h.plant("t_eve", uid("eve"), "", {"t_eve"});
   h.plant("t_shared", uid("eve"), "", {"t_eve"});
-  h.trees.byId["t_shared"].visibility = Visibility::unlisted;
+  h.trees.byId["t_shared"].visibility = Visibility::public_;
   h.plant("t_nobody", uid("eve"), "", {"t_eve"});
   h.trees.byId["t_nobody"].owner = std::nullopt;
   h.trees.byId["t_nobody"].visibility = Visibility::public_;
@@ -9568,7 +9550,7 @@ TEST(mcp_get_tree_answers_where_a_tree_sits_to_anyone_who_may_read_it) {
   CHECK_EQ(placeOf(rigging, h.caller, R"({"limit":1,"cursor":"knot"})"), grandchild);
 
   CHECK_EQ(placeOf(rigging, uid("reader"), "{}"), Json::Value("get_tree: no such tree \"t_00000000000000c2\""));
-  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   CHECK_EQ(placeOf(TreeId{"t"}, uid("reader"), "{}"), root);
   CHECK_EQ(placeOf(rigging, uid("reader"), "{}"), grandchild);
@@ -9627,7 +9609,7 @@ TEST(mcp_a_step_that_owns_a_subtree_carries_it_on_every_node_read_and_find_nodes
 
   marks["updates"][0]["nodeId"] = "trim";
   CHECK_FALSE(gate.callTool("roadmap_update_nodes", marks, h.actor).isError);
-  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   const Json::Value complete = parse(R"({"id":"t_00000000000000c1","done":2,"total":2,"state":"complete"})");
   for (const UserId& who : {h.caller, uid("reader"), UserId{""}}) {
@@ -9908,7 +9890,7 @@ TEST(mcp_get_diagnostics_reads_a_subtree_as_its_owning_step_opens_it_and_a_point
                                                              {"treeId":"t_00000000000000c1","title":"Learn to sail"}]}])"));
   CHECK_EQ(child["danglingPointers"], parse(R"([])"));
 
-  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   for (const TreeId& tree : {TreeId{"t"}, sailing}) {
     const Json::Value read = on(tree, "roadmap_get_diagnostics", "{}", uid("reader"));
@@ -10029,7 +10011,7 @@ TEST(mcp_a_reader_is_shown_the_owners_completion_on_an_owning_step_and_cannot_ma
   Json::Value step = node("rig", "Rig");
   step["treeId"] = sailing.str();
   REQUIRE(!h.tools.callTool("create_node", step, h.actor).isError);
-  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   const UserId reader = uid("reader");
   h.progressRepo.setStatuses(TreeId{"t"}, reader, {{NodeId{"sail"}, ProgressStatus::complete, false, Hlc{900, 0, "r_old"}}},

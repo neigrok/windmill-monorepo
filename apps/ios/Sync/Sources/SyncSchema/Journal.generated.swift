@@ -84,11 +84,12 @@ public enum Journal {
         "serverInternal": false,
       ],
     ],
-    "minVersion": 11,
+    "minVersion": 15,
     "products": [
       "journal": [
         "codes": ["claim-conflict"],
         "device": [
+          "carry": ["keyPattern": "^carry:[0-9a-f]{16}$", "localOnly": true, "value": ["type": "json"]],
           "contentClock": [
             "keyPattern": "^contentClock$",
             "localOnly": true,
@@ -181,6 +182,6 @@ public enum Journal {
         "type": "journalState",
       ],
     ],
-    "version": 13,
+    "version": 15,
   ]
 }

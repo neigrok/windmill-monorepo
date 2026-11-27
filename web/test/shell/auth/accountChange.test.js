@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DeviceSeat, ProductQuestions, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { DeviceSeat, ProductQuestions, SEAT_WILL_CHANGE_MS, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { FakeTimers, tick, until } from '../../platform/sync/fakes.js';
 
 const A = { id: 'u_A', email: 'a@example.com' };
 const B = { id: 'u_B', email: 'b@example.com' };
@@ -200,7 +201,7 @@ test('the seat tells the engine whose credential each read found, and a tell tha
     told.push(held);
     if (failing) throw new Error('store closed');
   } };
-  const seat = new DeviceSeat([], (error) => reported.push(error.message));
+  const seat = new DeviceSeat([], { reportCredential: (error) => reported.push(error.message) });
   await seat.tellCredential(engine, A);
   await seat.tellCredential(engine, null);
   await seat.tellCredential(engine, undefined);
@@ -210,9 +211,35 @@ test('the seat tells the engine whose credential each read found, and a tell tha
   assert.deepEqual({ told, reported }, { told: ['u_A', null, undefined, null, 'u_B'], reported: ['store closed'] });
 });
 
+test('before the seat changes each product’s hook runs in rail order, one at a time; one that throws or outlasts its bound is reported and the seat changes on', async () => {
+  const timers = new FakeTimers();
+  const ran = [], reported = [];
+  const products = [
+    { id: 'roadmap' },
+    { id: 'journal', sync: { seatWillChange: async (engine) => { ran.push(['journal', engine]); throw new Error('journal hook'); } } },
+    { id: 'hanging', sync: { seatWillChange: (engine) => { ran.push(['hanging', engine]); return new Promise(() => {}); } } },
+    { id: 'gym', sync: { seatWillChange: (engine) => { ran.push(['gym', engine]); } } },
+  ];
+  const seat = new DeviceSeat(products, { timers, reportWillChange: (product, outcome, error) => reported.push([product, outcome, error?.message ?? null]) });
+  let changed = false;
+  const changing = seat.willChange('engine').then(() => { changed = true; });
+  await until(() => ran.length === 2);
+  timers.advance(SEAT_WILL_CHANGE_MS - 1);
+  for (let turn = 0; turn < 10; turn++) await tick();
+  assert.deepEqual({ ran, changed }, { ran: [['journal', 'engine'], ['hanging', 'engine']], changed: false }, 'the next waits on the one before');
+  timers.advance(1);
+  await changing;
+  assert.deepEqual({ ran, reported, pending: timers.tasks.size }, {
+    ran: [['journal', 'engine'], ['hanging', 'engine'], ['gym', 'engine']],
+    reported: [['journal', 'failed', 'journal hook'], ['hanging', 'timeout', null]],
+    pending: 0,
+  });
+});
+
 test('a product hook that throws is asked of as one that says nothing, and each throw reports the question it was asked', async () => {
   const thrown = new Error('the product chunk did not load');
   const broken = { id: 'broken', sync: {
+    signedOutWork: { type: 'page', counted: (count) => `${count} ${count === 1 ? 'page' : 'pages'}`, many: 'pages' },
     adoptionAnswer: async () => { throw thrown; },
     adoptionCount: () => { throw thrown; },
     signInWords: async () => { throw thrown; },
@@ -224,14 +251,17 @@ test('a product hook that throws is asked of as one that says nothing, and each 
   const due = { kind: 'signed-out', product: 'broken', count: { page: 1 }, counted: ['p1'] };
   const question = { complete: false, unsent: 0, ready: 0, sent: 0, counted: [] };
   const answer = await questions.adoptionAnswer({}, due);
-  const count = await questions.adoptionCount({}, due);
-  const words = await questions.signInWords({}, due);
+  const { onStep: told, ...words } = await questions.signInWords({}, due);
   const { words: { onStep, ...worded }, ...signOut } = await questions.signOutWords({}, question);
   assert.deepEqual({
-    answer, count, words,
+    answer, words, told: typeof told,
     signOut: { ...signOut, words: worded, told: typeof onStep },
     alone: await new ProductQuestions([broken], (asked, error) => reported.push([asked, error])).signOutWords({}, question),
-  }, { answer: undefined, count: undefined, words: undefined, signOut: { ...question, words: { title: 'Sign out?' }, told: 'function' }, alone: question });
+  }, { answer: undefined, told: 'function',
+    words: { title: 'Add to your account?', lead: 'This browser has 1 page from before you signed in. Your account already has pages.',
+      items: [{ label: '1 page' }], note: 'Add it, or discard it from this browser.',
+      discard: { title: 'Discard 1 page?', body: 'It is deleted from this browser. You can’t undo this.' } },
+    signOut: { ...question, words: { title: 'Sign out?' }, told: 'function' }, alone: question });
   assert.deepEqual(reported, [['adoption', thrown], ['signin', thrown], ['signin', thrown], ['signout', thrown], ['signout', thrown]]);
 });
 
@@ -258,18 +288,49 @@ test('a product whose sign-out notice or whose words\' steps throw is heard as o
 test('what products say passes through unchanged, each step told back to it, and a product with no hook leaves the question to the engine and the shell', async () => {
   const steps = [];
   const said = { title: 'Add your pages?' };
-  const journal = { id: 'journal', sync: { adoptionAnswer: () => 'add', adoptionCount: () => 0,
-    signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
+  const journal = { id: 'journal', sync: { adoptionAnswer: () => 'add', signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
   const reported = [];
   const questions = new ProductQuestions([journal, { id: 'gym' }], (question) => reported.push(question));
-  const due = (product) => ({ kind: 'signed-out', product, count: {}, counted: [] });
+  const due = (product) => ({ kind: 'signed-out', product, count: {}, counted: ['one'] });
   const { onStep, ...words } = await questions.signInWords({}, due('journal'));
   onStep('shown');
+  const { onStep: quiet, ...shell } = await questions.signInWords({}, due('gym'));
+  quiet('shown');
   assert.deepEqual({
-    journal: [await questions.adoptionAnswer({}, due('journal')), await questions.adoptionCount({}, due('journal')), words],
-    gym: [await questions.adoptionAnswer({}, due('gym')), await questions.adoptionCount({}, due('gym')), await questions.signInWords({}, due('gym'))],
+    journal: [await questions.adoptionAnswer({}, due('journal')), words],
+    gym: [await questions.adoptionAnswer({}, due('gym')), shell],
     signOut: await questions.signOutWords({}, { unsent: 0 }),
     steps,
     reported,
-  }, { journal: ['add', 0, said], gym: [undefined, undefined, undefined], signOut: { unsent: 0 }, steps: ['shown'], reported: [] });
+  }, {
+    journal: ['add', said],
+    gym: [undefined, { title: 'Add to your account?',
+      lead: 'This browser has 1 change from before you signed in. Your account already has work of its own.', items: [{ label: '1 change' }],
+      note: 'Add it, or discard it from this browser.', discard: { title: 'Discard 1 change?', body: 'It is deleted from this browser. You can’t undo this.' } }],
+    signOut: { unsent: 0 }, steps: ['shown'], reported: [],
+  });
+});
+
+test('the shell asks in 7d’s words around what a product counts: kind by kind with what names each, or by its one noun beside its unsaved changes', async () => {
+  const steps = [];
+  const gym = { id: 'gym', sync: { signInWork: () => ({ total: 6, held: 'training', onStep: (step) => steps.push(step), items: [
+    { label: '1 workout', detail: 'Push day · today' }, { label: '2 routines', detail: 'Push day · Pull day' }, { label: '3 weigh-ins', detail: 'since 18 Nov' }] }) } };
+  const journal = { id: 'journal', sync: { adoptionCount: () => 2,
+    signedOutWork: { type: 'page', counted: (count) => `${count} ${count === 1 ? 'page' : 'pages'}`, many: 'pages' } } };
+  const questions = new ProductQuestions([gym, journal]);
+  const { onStep, ...counted } = await questions.signInWords({}, { kind: 'signed-out', product: 'gym', count: {}, counted: ['g1'] });
+  onStep('add');
+  const { onStep: _, ...pages } = await questions.signInWords({}, { kind: 'signed-out', product: 'journal', count: { page: 3 }, counted: ['j1', 'd1'], pending: 1 });
+  assert.deepEqual({ counted, pages, steps }, {
+    counted: { title: 'Add to your account?',
+      lead: 'This browser has 1 workout, 2 routines, and 3 weigh-ins from before you signed in. Your account already has training.',
+      items: [{ label: '1 workout', detail: 'Push day · today' }, { label: '2 routines', detail: 'Push day · Pull day' }, { label: '3 weigh-ins', detail: 'since 18 Nov' }],
+      note: 'Add them, or discard them from this browser.',
+      discard: { title: 'Discard 1 workout, 2 routines, and 3 weigh-ins?', body: 'They are deleted from this browser. You can’t undo this.' } },
+    pages: { title: 'Add to your account?',
+      lead: 'This browser has 2 pages and 1 unsaved change from before you signed in. Your account already has pages.',
+      items: [{ label: '2 pages' }, { label: '1 unsaved change' }], note: 'Add them, or discard them from this browser.',
+      discard: { title: 'Discard 2 pages and 1 unsaved change?', body: 'They are deleted from this browser. You can’t undo this.' } },
+    steps: ['add'],
+  });
 });

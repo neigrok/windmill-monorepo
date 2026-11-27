@@ -13,20 +13,12 @@
 
 namespace wm::gym {
 
-// Heaviest set of a session, ties broken by more reps.
-struct HeaviestSet {
-  double weightKg;
-  int reps;
-
-  bool operator==(const HeaviestSet&) const = default;
-};
-
 // Every set counts: setCount and workingSetCount are the same number, both kept because the wire names both.
 // tonnageKg is `sum(greatest(weight_kg, 0) * reps * count)` over every set, where count is the movement's
 // dumbbell count (2 unless it holds one) and 1 for any other equipment (liftedVolume, domain/Training.h) — a
 // negative (band-assisted) load must not subtract. Zero means nothing measurable moved, never "no work".
-// worked: the session's sets as the record rules read them, dated by the SESSION's start. Loads at or
-// below zero ride along unfiltered.
+// worked: the session's sets as the record rules and its heaviest set read them, dated by the SESSION's start. Loads
+// at or below zero ride along unfiltered.
 // closedItself reads `closed_by`; where it is null, a session closed itself when finished_at sits
 // exactly at the last set's instant, or at started_at for a session holding none.
 struct SessionSummary {
@@ -35,7 +27,6 @@ struct SessionSummary {
   int workingSetCount;
   std::optional<double> tonnageKg;
   std::vector<std::string> exerciseNames;
-  std::optional<HeaviestSet> topSet;
   std::vector<ProgressSet> worked;
   bool closedItself = false;
 

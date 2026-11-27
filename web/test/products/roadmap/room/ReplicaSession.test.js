@@ -10,7 +10,7 @@ import { DeleteStep, RoadmapStep } from '../../../../src/products/roadmap/domain
 import { InadmissibleGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
-import { ReplicaSession } from '../../../../src/products/roadmap/room/ReplicaSession.js';
+import { ReplicaSession, inverseOutcome } from '../../../../src/products/roadmap/room/ReplicaSession.js';
 import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const committed = (outcome) => {
@@ -135,10 +135,10 @@ test('a gesture is the domain’s acts under one receipt: a step made under the 
     const edited = session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] });
     assert.equal(typeof await edited.act, 'string');
     assert.deepEqual(shown(), { 'Tie a bowline': ['Read the wind'], 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail alone': ['Leave the dock'] });
-    assert.equal(session.revert(made), true);
+    assert.ok(session.revert(made) instanceof Promise, 'its Undo, once the engine settles it');
     assert.equal(session.revert(made), false);
     await until(() => !('Tie a bowline' in shown()), 1000);
-    assert.equal(session.revert(edited), true);
+    assert.ok(session.revert(edited) instanceof Promise);
     await until(() => 'Sail solo' in shown() && shown()['Sail solo'].length === 0, 1000);
     assert.deepEqual({ shown: shown(), told, nothing: session.dispatch({ kind: 'BulkRecolor', nodeIds: [], color: 'sky' }) },
       { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, told: { said: [], events: [], statuses: 0 }, nothing: null });
@@ -267,6 +267,29 @@ test('a pasted plan names a web link by its bare address, as the paste grammar r
   }
 });
 
+test('R-15: a pasted plan’s done steps arrive done, and its one Undo takes back the steps and their marks', async () => {
+  const { a, steps, reading, session, told, shown } = await gestures();
+  try {
+    const marked = () => [...reading.roadmap().marks.completed].map((id) => reading.roadmap().seed.nodes.find((step) => step.id === id)?.label ?? id).sort();
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold', status: 'complete' }, { id: 'bowline', label: 'Bowline', color: 'gold' }],
+      edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] });
+    await pasted.act;
+    await until(() => 'Bowline' in shown() && marked().length === 1, 1000);
+    const landed = { shown: shown(), marked: marked() };
+    session.undo();
+    await session.redoStack.at(-1).inverse;
+    await until(() => !('Knots' in shown()) && marked().length === 0, 1000);
+    assert.deepEqual({ landed, undone: { shown: shown(), marked: marked() }, told }, {
+      landed: { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [], Knots: ['Leave the dock'], Bowline: ['Knots'] }, marked: ['Knots'] },
+      undone: { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, marked: [] },
+      told: { said: [], events: [], statuses: 1 },
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('the legend’s gestures and a step’s pointer: a kind made, named, described and recoloured with the steps that wear it, removed, and a roadmap opened and closed', async () => {
   const { a, tree, steps, reading, session, told } = await gestures();
   try {
@@ -299,6 +322,107 @@ test('the legend’s gestures and a step’s pointer: a kind made, named, descri
     await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: other.tree }).act;
     await session.dispatch({ kind: 'SetNodeTree', id: steps.dock, opens: '' }).act;
     assert.deepEqual({ opening: opening(), told }, { opening: undefined, told: { said: [], events: [], statuses: 0 } });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('a removed kind’s Undo brings nothing back while a kind made since wears its hue, and is told unavailable; with the hue free it brings the kind back', async () => {
+  const { a, tree, reading, session, told } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present).map(({ hue, label }) => `${label} ${hue}`);
+    const undo = async () => { session.undo(); await session.redoStack.at(-1).inverse; };
+    await session.dispatch({ kind: 'AddKind', id: 'legend-sea', hue: 'sky' }).act;
+    const sea = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
+    await session.dispatch({ kind: 'RenameKind', id: sea, label: 'Sea' }).act;
+    await session.dispatch({ kind: 'RemoveKind', id: sea }).act;
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'sky', label: 'Weather' })));
+    await undo();
+    assert.deepEqual(legend(), ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky']);
+
+    await session.dispatch({ kind: 'RemoveKind', id: 'milestone' }).act;
+    await undo();
+    await until(() => legend().length === 4, 1000);
+    assert.deepEqual({ legend: legend(), events: told.events }, {
+      legend: ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky'],
+      events: [['roadmap_undo', { action: 'undo', outcome: 'unavailable' }]],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('the Undo of a Redo is checked as the gesture’s own: a kind removed, brought back and removed again comes back no more once a kind made since wears its hue; a recolour’s Undo is checked the same way', async () => {
+  const { a, tree, reading, session, told } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present).map(({ hue, label }) => `${label} ${hue}`);
+    const undo = async () => { session.undo(); await session.redoStack.at(-1).inverse; };
+    const redo = async () => { session.redo(); await session.undoStack.at(-1).undo; };
+    await session.dispatch({ kind: 'AddKind', id: 'legend-sea', hue: 'sky' }).act;
+    const sea = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
+    await session.dispatch({ kind: 'RenameKind', id: sea, label: 'Sea' }).act;
+    await session.dispatch({ kind: 'RemoveKind', id: sea }).act;
+    await undo();
+    await a.sync();
+    await redo();
+    await a.sync();
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'sky', label: 'Weather' })));
+    await undo();
+    assert.deepEqual(legend(), ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky']);
+
+    await session.dispatch({ kind: 'RecolorKind', id: 'learn', hue: 'plum' }).act;
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'olive', label: 'Wind' })));
+    await undo();
+    assert.deepEqual({ legend: legend(), undone: told.events.filter(([, props]) => props.action === 'undo').map(([, props]) => props.outcome) }, {
+      legend: ['Build terracotta', 'Learn plum', 'Milestone gold', 'Weather sky', 'Wind olive'],
+      undone: ['unavailable', 'unavailable'],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('a receipt’s own Undo, the door Roadmap Coach’s Undo takes (`revert`), is checked as ⌘Z’s is, its receipt on the stack or kept out of it: a removed kind comes back not while a kind made since wears its hue, and answers refused; with the hue free it comes back', async () => {
+  const { a, tree, reading, session, told, reports } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const kinds = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present);
+    const legend = () => kinds().map(({ hue, label }) => `${label} ${hue}`);
+    const reverted = async (receipt) => {
+      const asked = session.revert(receipt);
+      let settled = false;
+      asked.then(() => { settled = true; });
+      for (let round = 0; round < 5 && !settled; round += 1) {
+        await a.sync();
+        session.followInverses();
+      }
+      assert.ok(settled, 'the Undo settled');
+      return asked;
+    };
+    const stacked = session.dispatch({ kind: 'RemoveKind', id: 'learn' });
+    const kept = session.keepUndoably({ kind: 'RemoveKind', id: 'milestone' });
+    await Promise.all([stacked.act, kept.act]);
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'olive', label: 'Wind' })));
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'gold', label: 'Sun' })));
+    const onTakenHues = { answers: [await reverted(stacked), await reverted(kept)], legend: legend() };
+
+    const build = session.dispatch({ kind: 'RemoveKind', id: 'build' });
+    const sun = session.keepUndoably({ kind: 'RemoveKind', id: kinds().find((kind) => kind.label === 'Sun').id });
+    await Promise.all([build.act, sun.act]);
+    const onFreeHues = { outcomes: [inverseOutcome(await reverted(build)), inverseOutcome(await reverted(sun))], legend: legend() };
+    assert.deepEqual({ onTakenHues, onFreeHues, held: { stacked: session.undoStack, kept: session.kept }, events: told.events, reports }, {
+      onTakenHues: { answers: [{ kind: 'unavailable', requestId: null, reason: 'refused' }, { kind: 'unavailable', requestId: null, reason: 'refused' }],
+        legend: ['Build terracotta', 'Wind olive', 'Sun gold'] },
+      onFreeHues: { outcomes: ['applied', 'applied'], legend: ['Build terracotta', 'Wind olive', 'Sun gold'] },
+      held: { stacked: [], kept: [] },
+      events: ['unavailable', 'unavailable', 'applied', 'applied'].map((outcome) => ['roadmap_undo', { action: 'undo', outcome }]),
+      reports: [],
+    });
   } finally {
     reading.close();
     a.close();

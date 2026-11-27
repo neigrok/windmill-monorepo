@@ -19,6 +19,8 @@ import {
 // its free slot in it.
 const RECENT_SESSIONS = 50;
 const TOAST_MS = 9000;
+// The commands that decide a workout proposal, whose refusal its card says.
+const WORKOUT_PROPOSAL_DECISIONS = new Set(['gym.applyWorkoutProposal', 'gym.dismissWorkoutProposal']);
 
 export function useTrainingLog() {
   const api = useGymApi();
@@ -214,7 +216,12 @@ export function useTrainingLog() {
       const fingerprint = JSON.stringify(notice.content);
       if (seen.current.get(notice.id) === fingerprint) continue;
       seen.current.set(notice.id, fingerprint);
+      // A refusal a saved copy's card names, or a start that lost a race, is recovery's to say (recovery/InThisBrowser.jsx);
+      // a decision on a workout proposal the log refused is its card's, which reads why from the copy (WD7.3), and the page
+      // that made it tells its step.
+      if (api.recoveryAnswers(notice)) continue;
       const commands = [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)].filter(Boolean);
+      if (commands.some((command) => WORKOUT_PROPOSAL_DECISIONS.has(command.name))) continue;
       const workout = commands.length ? api.workoutSaves().find((receipt) => receipt.status === 'refused' && commands.some((command) =>
         command.name === receipt.command.name && (command.name === 'gym.importSession' ? command.args.id === receipt.sessionId
           : command.args.sessionId === receipt.sessionId && command.args.requestId === receipt.command.args.requestId))) : null;
@@ -222,8 +229,9 @@ export function useTrainingLog() {
         const href = workout.command.name === 'gym.importSession'
           ? backfillHref(workout.command.args.routineId ?? FREE_SESSION) : `${sessionHref(workout.sessionId)}/edit`;
         say(t('gym.app.workoutRefused', { sentence: workout.error.sentence }), { action: { label: t('gym.app.reviewWorkout'), run: () => { window.location.hash = href; } } });
-      } else say(t('gym.app.changeRefused'));
-      gymStep('refusal', 'refused');
+      } else if (notice.code === 'session-finished') say(t('gym.app.workoutFinished'));
+      else say(t('gym.app.changeRefused'));
+      gymStep('refusal', 'refused', 'domain');
     }
   }, [records.notices, say, api]);
   useEffect(() => {

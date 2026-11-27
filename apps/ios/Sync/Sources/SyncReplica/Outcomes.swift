@@ -340,7 +340,10 @@ public struct PushPlanner: Sendable {
         try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
       }
       replica.retain(Attempt(epoch: epoch, n: result.n, ok: true, acceptedEffects: replica.entry(entry.localId)?.acceptedEffects), of: entry.localId)
-      if let acked = replica.entry(entry.localId) { inverses.resolveReferences(of: acked, epoch: epoch, in: &replica) }
+      if let acked = replica.entry(entry.localId) {
+        replica.stepPreimages(over: acked)
+        inverses.resolveReferences(of: acked, epoch: epoch, in: &replica)
+      }
       try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
       try replica.settle(entry.localId)
     }
@@ -473,7 +476,7 @@ public struct PushPlanner: Sendable {
       replica.update(entry: entry.localId) { removed = Dependents.remove(part, from: &$0) }
       if crossing { removed.scope = entry.scope }
       folded.append(removed)
-      if replica.entry(entry.localId)!.isEmpty {
+      if replica.entry(entry.localId)!.isEmpty(in: registry) {
         replica.update(entry: entry.localId) { $0.orphanOf = origin }
         try replica.move(entry.localId, .fold)
       }
@@ -624,49 +627,67 @@ public struct PushPlanner: Sendable {
   // or by an earlier receipt of a replay, follows its accepted version; then each later queued entry whose own writes of
   // those registers the receipt names takes one fresh tick of this instance's clock after them. Sent entries, numbered
   // and immutable, keep their stamps, and so does the command's own intent, which views draw at the accepted versions.
+  // Each entry takes every move and follow in the order they are made, in one write: the command first, then each later
+  // entry in commit order, the follows of the entries before it, then its own moves.
   func applyAccepted(_ versions: [AcceptedVersion], previous: [EffectReceipt], of commandId: String, in replica: inout LoadedReplica,
                      instance: Instance) {
-    guard let command = replica.entry(commandId) else { return }
+    guard var command = replica.entry(commandId) else { return }
     let stamps = versions.flatMap { $0.slots.compactMap { if case .stamp(let stamp) = $0.version { stamp } else { nil } } }
     replica.update { meta in
       meta.observe(stamps)
       meta.admit(stamps)
     }
-    let own = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }
-      .map { (localId: $0.localId, registers: Restamp.registers(of: $0, acceptedIn: versions)) }
+    var accepted: [ScopedKey: AcceptedVersion] = [:]
+    for version in versions where accepted[ScopedKey(scope: version.scope, key: version.key)] == nil {
+      accepted[ScopedKey(scope: version.scope, key: version.key)] = version
+    }
+    let later = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }
+    let own = later.map { (entry: OutboxEntry) -> [Restamp.Register] in Restamp.registers(of: entry, acceptedIn: accepted) }
+    var earlier: [ScopeRef: [RecordKey: EffectRow]] = [:]
+    for effect in previous where earlier[effect.scope] == nil {
+      earlier[effect.scope] = Dictionary(effect.rows.map { ($0.key, $0) }) { first, _ in first }
+    }
+    let ordinary = Dictionary(grouping: command.intent.deltas, by: \.key)
+    let predicted = Restamp.predictedParts(of: command)
+    var follows = Restamp.Follows()
     for version in versions {
-      let earlier = previous.first { $0.scope == version.scope }?.rows.first { $0.key == version.key }
-        .map { AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots) }
-      let ordinary = version.scope == command.scope ? command.intent.deltas.filter { $0.key == version.key } : []
+      let carriedBy = earlier[version.scope]?[version.key].map { AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots) }
+      let written = version.scope == command.scope ? ordinary[version.key] ?? [] : []
       for slot in version.slots {
         guard case .stamp(let n) = slot.version else { continue }
         let register: Restamp.Register.Name = if case .field(let name) = slot.slot { .field(name) } else { .life }
-        let carried: [Stamp?] = [earlier?.stamp(of: slot.slot)] + ordinary.map { (delta: Delta) -> Stamp? in delta.stamp(of: slot.slot) }
+        let carried: [Stamp?] = [carriedBy?.stamp(of: slot.slot)] + written.map { (delta: Delta) -> Stamp? in delta.stamp(of: slot.slot) }
         for o in carried.compactMap({ $0 }) {
-          Restamp.follow(register, of: version.key, in: version.scope, after: commandId, from: o, to: n, createsRecord: slot.slot == .born,
-                         queuedOnly: true, in: &replica)
+          follows.append(Restamp.Follow(register: register, key: version.key, scope: version.scope, from: o, to: n, createsRecord: slot.slot == .born))
         }
-        for part in Restamp.parts(of: replica.entry(commandId)!, predictedIn: version.scope, for: version.key) {
+        for part in predicted[ScopedKey(scope: version.scope, key: version.key)] ?? [] {
           guard slot.slot == .born else {
-            Restamp.move(.init(part: part, register: register), of: commandId, to: n, in: &replica, queuedOnly: true)
+            if let follow = Restamp.moved(.init(part: part, register: register), in: &command, to: n) { follows.append(follow) }
             continue
           }
-          var delta = Restamp.delta(part, of: replica.entry(commandId)!)
+          var delta = Restamp.delta(part, of: command)
           guard let old = delta.lattice.born else { continue }
           delta.lattice.born = n
           if let life = delta.lattice.life, life.isAlive, life.stamp == old { delta.lattice.life = Life(.alive, n) }
-          replica.update(entry: commandId) { Restamp.replace(part, of: &$0, with: delta) }
-          Restamp.follow(.life, of: version.key, in: version.scope, after: commandId, from: old, to: n, createsRecord: true, queuedOnly: true,
-                         in: &replica)
+          Restamp.replace(part, of: &command, with: delta)
+          follows.append(Restamp.Follow(register: .life, key: version.key, scope: version.scope, from: old, to: n, createsRecord: true))
         }
       }
     }
+    replica.update(entry: commandId) { $0 = command }
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
     var clock = replica.meta.hlc
-    for (localId, registers) in own where !registers.isEmpty {
-      let n = clock.tick(physNow: physNow, actor: instance.actor)
-      for register in registers { Restamp.move(register, of: localId, to: n, in: &replica, queuedOnly: true) }
-      replica.update { $0.hlcHigh = max($0.hlcHigh, n) }
+    for (entry, registers) in zip(later, own) {
+      var next = entry
+      let followed = follows.apply(to: &next)
+      if !registers.isEmpty {
+        let n = clock.tick(physNow: physNow, actor: instance.actor)
+        for register in registers {
+          if let follow = Restamp.moved(register, in: &next, to: n) { follows.append(follow) }
+        }
+        replica.update { $0.hlcHigh = max($0.hlcHigh, n) }
+      }
+      if followed || !registers.isEmpty { replica.update(entry: entry.localId) { $0 = next } }
     }
     replica.update { $0.hlc = clock }
   }
@@ -951,12 +972,14 @@ package enum Restamp {
     return intent + predict + projected
   }
 
-  // The command's predicted deltas of `key` in `scope`.
-  static func parts(of entry: OutboxEntry, predictedIn scope: ScopeRef, for key: RecordKey) -> [Register.Part] {
-    parts(of: entry).filter { item in
-      if case .intent = item.part { return false }
-      return item.scope == scope && delta(item.part, of: entry).key == key
-    }.map(\.part)
+  // A command's predicted deltas, by the record and the scope each writes, in the order `parts(of:)` gives them.
+  static func predictedParts(of entry: OutboxEntry) -> [ScopedKey: [Register.Part]] {
+    var predicted: [ScopedKey: [Register.Part]] = [:]
+    for item in parts(of: entry) {
+      if case .intent = item.part { continue }
+      predicted[ScopedKey(scope: item.scope, key: delta(item.part, of: entry).key), default: []].append(item.part)
+    }
+    return predicted
   }
 
   // The registers an entry's intent itself writes: those stamped at or after its gesture stamp. A life a keyed put
@@ -984,11 +1007,12 @@ package enum Restamp {
     }
   }
 
-  // The registers an entry wrote itself, at or after its stamp, whose accepted versions a receipt gives in their scope.
-  static func registers(of entry: OutboxEntry, acceptedIn versions: [PushPlanner.AcceptedVersion]) -> [Register] {
+  // The registers an entry wrote itself, at or after its stamp, whose accepted versions a receipt gives in their scope:
+  // each record's first version, by the scope and record it names.
+  static func registers(of entry: OutboxEntry, acceptedIn versions: [ScopedKey: PushPlanner.AcceptedVersion]) -> [Register] {
     parts(of: entry).flatMap { part, scope -> [Register] in
       let delta = delta(part, of: entry)
-      guard let version = versions.first(where: { $0.scope == scope && $0.key == delta.key }) else { return [] }
+      guard let version = versions[ScopedKey(scope: scope, key: delta.key)] else { return [] }
       return version.slots.compactMap { slot in
         switch slot.slot {
         case .life:
@@ -1026,48 +1050,92 @@ package enum Restamp {
   }
 
   static func move(_ register: Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica, queuedOnly: Bool = false) {
-    guard let entry = replica.entry(localId) else { return }
+    guard var entry = replica.entry(localId), let follow = moved(register, in: &entry, to: n) else { return }
+    replica.update(entry: localId) { $0 = entry }
+    let queued = queuedOnly || entry.predictions != nil
+    for other in replica.outbox where other.commitOrder > entry.commitOrder && (other.isQueued || !queued && other.state == .sent) {
+      replica.update(entry: other.localId) { _ = Follows([follow]).apply(to: &$0) }
+    }
+  }
+
+  // A register of `entry` takes `n`: the follow it asks of later entries, nil when it holds no such register or holds it at `n`.
+  static func moved(_ register: Register, in entry: inout OutboxEntry, to n: Stamp) -> Follow? {
     var delta = delta(register.part, of: entry)
     let o: Stamp
     var createsRecord = false
     switch register.register {
     case .life:
-      guard let life = delta.lattice.life, life.stamp != n else { return }
+      guard let life = delta.lattice.life, life.stamp != n else { return nil }
       o = life.stamp
       createsRecord = life.isAlive && delta.lattice.born == o
       delta.lattice.life = Life(life.state, n)
       if createsRecord { delta.lattice.born = n }
     case .field(let name):
-      guard let current = delta.lattice.fields[name], current.stamp != n else { return }
+      guard let current = delta.lattice.fields[name], current.stamp != n else { return nil }
       o = current.stamp
       delta.lattice.fields[name] = SyncCore.Register(current.value, n)
     }
-    replica.update(entry: localId) { replace(register.part, of: &$0, with: delta) }
-    follow(register.register, of: delta.key, in: scope(of: register.part, in: entry), after: localId, from: o, to: n,
-           createsRecord: createsRecord, queuedOnly: queuedOnly || entry.predictions != nil, in: &replica)
+    let scope = scope(of: register.part, in: entry)
+    replace(register.part, of: &entry, with: delta)
+    return Follow(register: register.register, key: delta.key, scope: scope, from: o, to: n, createsRecord: createsRecord)
   }
 
-  // What follows a record's register from `o` to `n` in the entries after `localId`, in `scope`: of a life, the lives that
-  // carry it and, when it created the record, the borns; of a field, the guards on it. Sent entries follow too, unless
-  // `queuedOnly`.
-  static func follow(_ register: Register.Name, of key: RecordKey, in scope: ScopeRef, after localId: String, from o: Stamp, to n: Stamp,
-                     createsRecord: Bool = false, queuedOnly: Bool, in replica: inout LoadedReplica) {
-    guard o != n, let entry = replica.entry(localId) else { return }
-    let later = replica.outbox.filter { $0.commitOrder > entry.commitOrder && ($0.isQueued || !queuedOnly && $0.state == .sent) }
-    for other in later {
-      replica.update(entry: other.localId) { other in
-        switch register {
+  // What follows a record's register from `from` to `to` in a later entry, in `scope`: of a life, the lives that carry it
+  // and, when it created the record, the borns; of a field, the guards on it.
+  struct Follow {
+    let register: Register.Name
+    let key: RecordKey
+    let scope: ScopeRef
+    let from: Stamp
+    let to: Stamp
+    let createsRecord: Bool
+  }
+
+  // The follows a restamp asks, in the order it asks them; each entry takes all of them in one pass, each on the deltas
+  // and guards of its own record alone.
+  struct Follows {
+    private(set) var asked: [Follow] = []
+    private var byRecord: [RecordKey: [Int]] = [:]
+
+    init(_ follows: [Follow] = []) {
+      for follow in follows { append(follow) }
+    }
+
+    mutating func append(_ follow: Follow) {
+      guard follow.from != follow.to else { return }
+      byRecord[follow.key, default: []].append(asked.count)
+      asked.append(follow)
+    }
+
+    // Every follow asked so far, in order, on the records `entry` writes or guards. True when one named any of them.
+    func apply(to entry: inout OutboxEntry) -> Bool {
+      let indexed = { (deltas: [Delta]) -> [RecordKey: [Int]] in Dictionary(grouping: deltas.indices) { deltas[$0].key } }
+      let intent = indexed(entry.intent.deltas), predict = indexed(entry.predict)
+      let projected = (entry.predictions ?? []).map { indexed($0.deltas) }
+      let guards = Dictionary(grouping: entry.intent.guards.indices) { entry.intent.guards[$0].key }
+      var named: Set<RecordKey> = Set(intent.keys).union(predict.keys).union(guards.keys)
+      for deltas in projected { named.formUnion(deltas.keys) }
+      let order = named.flatMap { byRecord[$0] ?? [] }.sorted()
+      for follow in order.map({ asked[$0] }) {
+        switch follow.register {
         case .life:
-          follow(&other, in: scope, key: key, from: o, to: n, born: createsRecord)
-        case .field(let name) where other.scope == scope:
-          for index in other.intent.guards.indices {
-            let named = other.intent.guards[index]
-            if named.key == key && named.field.utf8.elementsEqual(name.utf8) && named.stamp == o { other.intent.guards[index].stamp = n }
+          if entry.scope == follow.scope {
+            for index in intent[follow.key] ?? [] { Restamp.follow(&entry.intent.deltas[index], follow) }
+            for index in predict[follow.key] ?? [] { Restamp.follow(&entry.predict[index], follow) }
+          }
+          for p in projected.indices where entry.predictions![p].scope == follow.scope {
+            for index in projected[p][follow.key] ?? [] { Restamp.follow(&entry.predictions![p].deltas[index], follow) }
+          }
+        case .field(let name) where entry.scope == follow.scope:
+          for index in guards[follow.key] ?? [] {
+            let guarded = entry.intent.guards[index]
+            if guarded.field.utf8.elementsEqual(name.utf8) && guarded.stamp == follow.from { entry.intent.guards[index].stamp = follow.to }
           }
         case .field:
           break
         }
       }
+      return !order.isEmpty
     }
   }
 
@@ -1134,19 +1202,12 @@ package enum Restamp {
 
   // Every delta of `entry` in `scope` on `key` whose born is the moved create's, or that carries the moved life, follows it.
   static func follow(_ entry: inout OutboxEntry, in scope: ScopeRef, key: RecordKey, from o: Stamp, to n: Stamp, born: Bool) {
-    if entry.scope == scope {
-      follow(&entry.intent.deltas, key: key, from: o, to: n, born: born)
-      follow(&entry.predict, key: key, from: o, to: n, born: born)
-    }
-    for p in entry.predictions?.indices ?? 0..<0 where entry.predictions![p].scope == scope {
-      follow(&entry.predictions![p].deltas, key: key, from: o, to: n, born: born)
-    }
+    _ = Follows([Follow(register: .life, key: key, scope: scope, from: o, to: n, createsRecord: born)]).apply(to: &entry)
   }
 
-  static func follow(_ deltas: inout [Delta], key: RecordKey, from o: Stamp, to n: Stamp, born: Bool) {
-    for index in deltas.indices where deltas[index].key == key {
-      if born && deltas[index].lattice.born == o { deltas[index].lattice.born = n }
-      if let life = deltas[index].lattice.life, life.stamp == o { deltas[index].lattice.life = Life(life.state, n) }
-    }
+  // One delta of the followed record: its born when the move created the record, and a life that carries the moved one.
+  static func follow(_ delta: inout Delta, _ follow: Follow) {
+    if follow.createsRecord && delta.lattice.born == follow.from { delta.lattice.born = follow.to }
+    if let life = delta.lattice.life, life.stamp == follow.from { delta.lattice.life = Life(life.state, follow.to) }
   }
 }

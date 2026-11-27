@@ -326,6 +326,13 @@ Json::Value legendJson(const LegendRead& legend) {
     entry["others"] = strings(collision.others);
     out["collisions"].append(entry);
   }
+  out["shown"] = Json::Value(Json::arrayValue);
+  for (const ShownHue& shown : legend.shown()) {
+    Json::Value entry(Json::objectValue);
+    entry["hue"] = shown.hue;
+    entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
+    out["shown"].append(entry);
+  }
   return out;
 }
 
@@ -356,12 +363,13 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
   CHECK_EQ(sync::jcs(answer(vector["input"])), sync::jcs(vector["expect"]));
 }
 
-// The files a device claims alone: its Board, landing and replica reads, its gestures and their Undo scenes, and the
-// pinned rule book and values.
-const std::set<std::string> kDevices{"board.json",            "landing.json",           "replica.json",
-                                     "roadmaps-actions.json", "steps-actions.json",     "kinds-actions.json",
-                                     "progress-actions.json", "workspace-actions.json", "landing-actions.json",
-                                     "undo.json",             "rules.json",             "values.json"};
+// The files a device claims alone: its Board, landing, replica, Activity and effects reads, its gestures and their Undo
+// scenes, and the pinned rule book and values.
+const std::set<std::string> kDevices{"board.json",             "landing.json",           "replica.json",
+                                     "activity.json",          "effects.json",           "roadmaps-actions.json",
+                                     "steps-actions.json",     "kinds-actions.json",     "progress-actions.json",
+                                     "workspace-actions.json", "landing-actions.json",   "undo.json",
+                                     "rules.json",             "values.json"};
 
 }
 

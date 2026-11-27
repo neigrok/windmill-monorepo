@@ -1,0 +1,279 @@
+#include "products/journal/adapters/llm/AiServiceCurator.h"
+
+#include "products/journal/adapters/llm/EchoModel.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <set>
+#include <unordered_map>
+#include <utility>
+
+namespace wm {
+
+namespace {
+
+// The system text: a literal that never gains a byte from any page, hashed into version(), so
+// changing it moves every stored echo's stamp.
+constexpr const char* kSystemPrompt =
+    "You judge whether two passages from one person's private journal are about the same thing.\n"
+    "\n"
+    "Every call gives you three blocks.\n"
+    "\n"
+    "TONIGHT: the passages the writer wrote on the page being processed, labelled T1, T2, and so on.\n"
+    "EARLIER PASSAGES: passages the same writer wrote on earlier days, oldest first, labelled E1, "
+    "E2, and so on, each with the day it was written.\n"
+    "PAIRINGS TO JUDGE: a numbered list of pairs, each one a passage from tonight and a passage from "
+    "earlier. Judge every pairing in that list, and only those.\n"
+    "\n"
+    "Return one verdict per pairing, naming the pairing by its number. Each verdict settles three "
+    "things.\n"
+    "\n"
+    "related. Do the two passages share a SUBJECT, or only vocabulary?\n"
+    "  Same subject: \"i want to learn c++\" and \"i like c++\". The subject is C++ and the writer's "
+    "relationship to it, and the second passage is the same thread of a life as the first.\n"
+    "  Only vocabulary: \"i like c++\" and \"i like the work\". The sentence has the same shape; the "
+    "subject does not.\n"
+    "  Also not related: a pairing about somebody else's life. \"Sam's dad died on Tuesday\" is not "
+    "an echo of \"Dad's scan came back clear\", however alike the words are. Both passages must be "
+    "about the writer's own life.\n"
+    "  A shared theme is not a shared subject. Work, tiredness, family, money and sleep are themes; "
+    "a subject is the specific thing the writer was thinking about.\n"
+    "  A shared STATE is not a subject either, and it is the most common false pairing there is. "
+    "\"a walk helped, good evening\" and \"feeling rested tonight, the ambient is bliss\" are two "
+    "evenings that went well and nothing more — the writer would not say the second is what the "
+    "first was about. Neither is \"migraine today, painkillers did nothing\" an echo of \"saw someone "
+    "about my back, it is fine\": two ailments are two subjects. Feeling good, feeling ill, being "
+    "tired, sleeping badly and being busy are states a life passes through constantly, and pairing "
+    "two of them tells the reader nothing they did not know.\n"
+    "\n"
+    "speaker_is_self. Is the EARLIER passage the writer's own voice, or something they copied down?\n"
+    "  Journals carry pasted messages, song lyrics, quotes from books, and lines somebody else said "
+    "to them, in a session or at work or in an argument. These sit on the page as ordinary sentences "
+    "and read like any other line. Set speaker_is_self to false when the earlier passage is one of "
+    "those, and true when the writer is speaking as themselves.\n"
+    "\n"
+    "relation. How strongly the pairing holds, 0 to 1, on a FIXED scale — not a ranking against the "
+    "other pairings in this call, and not a comparison with anything else you have been asked. The "
+    "same two passages must score the same number whoever they are sent with.\n"
+    "  0.9-1.0  the same specific thing: the same plan, the same person, the same decision, the "
+    "same worry, named on both sides.\n"
+    "  0.6-0.8  the same thing seen later — the plan acted on, the worry resolved, the person again "
+    "in a different scene. The reader would say \"yes, that is what I meant\".\n"
+    "  0.3-0.5  the same THEME and not the same subject: two illnesses, two tired evenings, two "
+    "money worries, two different things going well. This is the band most pairings that look "
+    "related actually sit in, and it is not an echo.\n"
+    "  0        unrelated, and every pairing you mark unrelated.\n"
+    "Score honestly and low. Something else decides what is shown; your job is the number.\n"
+    "\n"
+    "Most pairings are not related, and marking every one of them false is a correct and expected "
+    "answer. The pairings were chosen by a vector search that is good at finding passages which "
+    "sound alike and cannot tell whether they are about the same thing, which is the entire reason "
+    "you are being asked. Do not look for a reason to keep one.\n"
+    "\n"
+    "Judge only what is written. Do not infer, advise, diagnose, or comment.\n"
+    "\n"
+    "Example, a call where two of three pairings hold:\n"
+    "{\"verdicts\":[{\"pairing\":1,\"related\":true,\"relation\":0.8,\"speaker_is_self\":true},"
+    "{\"pairing\":2,\"related\":false,\"relation\":0,\"speaker_is_self\":true},"
+    "{\"pairing\":3,\"related\":true,\"relation\":0.4,\"speaker_is_self\":false}]}\n"
+    "\n"
+    "Example, a call where nothing holds, which is the ordinary night:\n"
+    "{\"verdicts\":[{\"pairing\":1,\"related\":false,\"relation\":0,\"speaker_is_self\":true},"
+    "{\"pairing\":2,\"related\":false,\"relation\":0,\"speaker_is_self\":true},"
+    "{\"pairing\":3,\"related\":false,\"relation\":0,\"speaker_is_self\":true}]}\n";
+
+// FNV-1a over the bytes above: a change detector, and what a row carries to say which wording
+// judged it.
+std::string promptTag() {
+  std::uint32_t hash = 2166136261u;
+  for (const char* byte = kSystemPrompt; *byte != '\0'; ++byte) {
+    hash ^= static_cast<unsigned char>(*byte);
+    hash *= 16777619u;
+  }
+  char tag[9];
+  std::snprintf(tag, sizeof(tag), "%08x", hash);
+  return tag;
+}
+
+// One line on the wire, whatever the page did, or a passage carrying a newline could write its own
+// PAIRINGS block into the layout. Only this copy is flattened; the stored span is untouched.
+std::string oneLine(const std::string& text) {
+  std::string flat = text;
+  for (char& c : flat) {
+    if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+  }
+  return flat;
+}
+
+// `additionalProperties: false` plus a `required` naming every field makes the output strict.
+Json::Value verdictSchema() {
+  const auto typed = [](const char* type) {
+    Json::Value field(Json::objectValue);
+    field["type"] = type;
+    return field;
+  };
+
+  Json::Value properties(Json::objectValue);
+  properties["pairing"] = typed("integer");
+  properties["related"] = typed("boolean");
+  properties["relation"] = typed("number");
+  properties["speaker_is_self"] = typed("boolean");
+
+  Json::Value required(Json::arrayValue);
+  required.append("pairing");
+  required.append("related");
+  required.append("relation");
+  required.append("speaker_is_self");
+
+  Json::Value verdict(Json::objectValue);
+  verdict["type"] = "object";
+  verdict["properties"] = properties;
+  verdict["required"] = required;
+  verdict["additionalProperties"] = false;
+
+  Json::Value verdicts(Json::objectValue);
+  verdicts["type"] = "array";
+  verdicts["items"] = verdict;
+
+  Json::Value root(Json::objectValue);
+  root["type"] = "object";
+  root["properties"] = Json::Value(Json::objectValue);
+  root["properties"]["verdicts"] = verdicts;
+  root["required"] = Json::Value(Json::arrayValue);
+  root["required"].append("verdicts");
+  root["additionalProperties"] = false;
+  return root;
+}
+
+}
+
+CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
+                              const std::vector<Vectored>& candidates,
+                              const std::vector<Pairing>& proposed) {
+  std::unordered_map<std::int64_t, std::size_t> triggerLabel;
+  for (std::size_t i = 0; i < tonight.size(); ++i) triggerLabel[tonight[i].spanId] = i + 1;
+
+  // Only the candidates some pairing names: a candidate nobody proposed cannot be judged.
+  std::set<std::int64_t> wanted;
+  for (const Pairing& pairing : proposed) {
+    if (triggerLabel.count(pairing.triggerSpanId) != 0) wanted.insert(pairing.matchSpanId);
+  }
+
+  std::vector<const Vectored*> earlier;
+  std::set<std::int64_t> taken;
+  for (const Vectored& candidate : candidates) {
+    if (wanted.count(candidate.spanId) == 0) continue;
+    if (!taken.insert(candidate.spanId).second) continue;
+    earlier.push_back(&candidate);
+  }
+  // Oldest first, ties broken on span id, so the order says nothing about what retrieval liked.
+  std::sort(earlier.begin(), earlier.end(), [](const Vectored* a, const Vectored* b) {
+    if (a->day == b->day) return a->spanId < b->spanId;
+    return a->day < b->day;
+  });
+
+  std::unordered_map<std::int64_t, std::size_t> matchLabel;
+  for (std::size_t i = 0; i < earlier.size(); ++i) matchLabel[earlier[i]->spanId] = i + 1;
+
+  // Numbered by where the two passages sit, never by score.
+  std::vector<std::pair<std::pair<std::size_t, std::size_t>, Pairing>> lines;
+  for (const Pairing& pairing : proposed) {
+    const auto trigger = triggerLabel.find(pairing.triggerSpanId);
+    const auto match = matchLabel.find(pairing.matchSpanId);
+    if (trigger == triggerLabel.end() || match == matchLabel.end()) continue;
+    lines.push_back({{trigger->second, match->second}, pairing});
+  }
+  std::sort(lines.begin(), lines.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+
+  CurationPrompt prompt;
+  if (lines.empty()) return prompt;
+
+  prompt.text = "TONIGHT, " + tonight.front().day.iso() + "\n";
+  for (std::size_t i = 0; i < tonight.size(); ++i) {
+    prompt.text += "T" + std::to_string(i + 1) + ". " + oneLine(tonight[i].text) + "\n";
+  }
+  prompt.text += "\nEARLIER PASSAGES, OLDEST FIRST\n";
+  for (std::size_t i = 0; i < earlier.size(); ++i) {
+    prompt.text += "E" + std::to_string(i + 1) + ". " + earlier[i]->day.iso() + ". " +
+                   oneLine(earlier[i]->text) + "\n";
+  }
+  prompt.text += "\nPAIRINGS TO JUDGE\n";
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    prompt.text += std::to_string(i + 1) + ". T" + std::to_string(lines[i].first.first) + " with E" +
+                   std::to_string(lines[i].first.second) + "\n";
+    prompt.numbered.push_back(lines[i].second);
+  }
+  return prompt;
+}
+
+AiServiceCurator::AiServiceCurator(std::shared_ptr<AiText> ai, float floor) : ai_(std::move(ai)), floor_(floor) {}
+
+bool AiServiceCurator::configured() const { return ai_ != nullptr; }
+
+std::string AiServiceCurator::version() const {
+  static const std::string tag = promptTag();
+  // The floor belongs here as much as the model, the effort and the wording do: it decides which
+  // pairings come back `related`, and it lives on this adapter rather than in `SelectionRules`, so
+  // `rulesTag` does not cover it. Left out, moving the floor would reopen no page — every settled
+  // page would keep verdicts judged under the old threshold.
+  // Written in THOUSANDTHS as an integer: a formatted float carries the decimal point of whatever
+  // locale the process is in, and a version string is a stored key that must not move under it.
+  char floorTag[16];
+  std::snprintf(floorTag, sizeof(floorTag), "f%d", static_cast<int>(std::lround(floor_ * 1000.0f)));
+  return std::string(kEchoServedModel) + "/" + kEchoEffort + "/" + tag + "/" + floorTag;
+}
+
+Curation AiServiceCurator::curate(const UserId& user, const std::vector<Vectored>& tonight,
+                                  const std::vector<Vectored>& candidates,
+                                  const std::vector<Pairing>& proposed) {
+  Curation curation;
+
+  const CurationPrompt prompt = curationPrompt(tonight, candidates, proposed);
+  // Retrieval offered no pairing, so the page is done and does not come back tomorrow.
+  if (prompt.numbered.empty()) {
+    curation.ok = true;
+    return curation;
+  }
+
+  const EchoAnswer reply = askEchoStep(*ai_, user, "echo.curate", kSystemPrompt, prompt.text, verdictSchema());
+  if (!reply.output) {
+    curation.failure = reply.failure;
+    return curation;
+  }
+
+  const Json::Value& verdicts = (*reply.output)["verdicts"];
+  if (!verdicts.isArray()) {
+    curation.failure = "unreadable";
+    return curation;
+  }
+
+  std::set<int> answered;
+  for (const Json::Value& item : verdicts) {
+    if (!item.isObject()) continue;
+    // A verdict is taken whole or not at all.
+    if (!item["pairing"].isIntegral() || !item["related"].isBool() ||
+        !item["relation"].isNumeric() || !item["speaker_is_self"].isBool())
+      continue;
+    const int number = item["pairing"].asInt();
+    if (number < 1 || number > static_cast<int>(prompt.numbered.size())) continue;
+    if (!answered.insert(number).second) continue;
+
+    const Pairing& pairing = prompt.numbered[static_cast<std::size_t>(number) - 1];
+    Verdict verdict;
+    verdict.triggerSpanId = pairing.triggerSpanId;
+    verdict.matchSpanId = pairing.matchSpanId;
+    verdict.relation = std::clamp(item["relation"].asFloat(), 0.0f, 1.0f);
+    // The floor sits above the prompt's 0.3-0.5 "same theme, not same subject" band.
+    verdict.related = item["related"].asBool() && verdict.relation >= floor_;
+    verdict.speakerIsSelf = item["speaker_is_self"].asBool();
+    curation.verdicts.push_back(verdict);
+  }
+
+  curation.ok = true;
+  return curation;
+}
+
+}

@@ -70,8 +70,8 @@ alter table trees add column if not exists guide_hlc text not null default '';
 alter table trees add column if not exists guide_ms bigint not null default 0;
 alter table trees add column if not exists guide_counter bigint not null default 0;
 alter table trees add column if not exists guide_inherited boolean not null default false;
--- visibility gates every read: 'private' is owner-only, 'unlisted'/'public' are readable by anyone
--- holding the id.
+-- visibility gates every read: 'public' is readable by anyone holding the id, and any other value
+-- reads as 'private', owner-only.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 
@@ -316,6 +316,9 @@ alter table sessions add column if not exists user_agent text not null default '
 alter table sessions add column if not exists last_seen_ms bigint not null default 0;
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
+-- The replica this session's latest accepted sync push was for, which GET /v1/me answers so a browser whose store was
+-- cleared is told (web-device-parity.md §7); null until its first. It goes with the session's row.
+alter table sessions add column if not exists sync_replica text;
 
 -- Immutable closure receipts survive account erasure until their own bounded expiry.
 create table if not exists account_closures (
@@ -420,6 +423,8 @@ create table if not exists oauth_codes (
 );
 
 alter table oauth_codes add column if not exists account_generation bigint not null default 0;
+-- The digest of the session the code's consent was given through: the code exchanges only while that session is live.
+alter table oauth_codes add column if not exists session_hash text;
 
 create table if not exists oauth_tokens (
   token_hash         text primary key,  -- digest of the access token
@@ -1549,7 +1554,7 @@ create table if not exists journal_echo_offer_dismissal (
 -- body_stamp_ms across those spans, which is monotone only while a corpus grows: emptying a page
 -- could LOWER it, and `corpus_stamp < stored` then reopened nothing at all.
 -- These stamps are the "am I done" record: never advance them on a failed curate. status is
--- ok | empty_ok | transport | rate_limited | budget_limited | truncated | schema_invalid | refused; ok, empty_ok and
+-- ok | empty_ok | transport | budget_limited | truncated | schema_invalid | refused; ok, empty_ok and
 -- refused advance them, the rest do not. The due queries skip a refused row on corpus movement, so
 -- only an edit to that body makes it due again. attempts counts consecutive unsettled failures, and
 -- the due queries stop reopening a page past kCurationRetries of them — an unsettled page is due on

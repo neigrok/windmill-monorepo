@@ -4,7 +4,7 @@ import { failureReason } from './errors.js';
 import { t } from './i18n/index.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
-  atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
+  atomicLine, BELOW_FLOOR_LINE, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
   isPending, keptRunLabel, MID_WORKOUT_CAVEAT, OUT_OF_DATE_LINE, receiptLine,
   REVIEW_VERB, sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
@@ -35,8 +35,9 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
   const [receiptNode, setReceiptNode] = useState(null);
   const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
   const pending = proposal ? isPending(proposal) : false;
-  // Decidable only while the domain reads it as current: an out-of-date proposal's Apply would be refused.
-  const decidable = pending && proposal.outOfDate !== true;
+  // Decidable only while the domain reads its Apply as one it would take: out of date, or under a movement's floor, it
+  // would be refused.
+  const decidable = pending && !proposal.outOfDate && !proposal.underFloor;
   const waitingRemoval = proposal?.removalOutcome === 'pending';
   const rows = proposal ? collapseKept(diffRows(proposal), expanded) : [];
 
@@ -94,7 +95,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
       <Button disabled={busy} onClick={() => decide('apply')}>{busy ? t('gym.proposals.saving') : t('gym.common.apply')}</Button>
       <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? t('gym.proposals.loggedSetsUnchanged') : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
-    </div> : pending ? <p className="gym-coach-receipt" role="status">{OUT_OF_DATE_LINE}</p>
+    </div> : pending ? <p className="gym-coach-receipt" role="status">{proposal.outOfDate ? OUT_OF_DATE_LINE : BELOW_FLOOR_LINE}</p>
       : <p className="gym-coach-receipt" role="status" ref={setReceiptNode}>{proposal.state === 'applied'
       ? receiptLine({ verb: 'apply', proposal }) : proposal.state === 'dismissed'
         ? receiptLine({ verb: 'dismiss', proposal }) : t('gym.proposals.stateNothingApplied', { state: stateChip(proposal) })}</p>}

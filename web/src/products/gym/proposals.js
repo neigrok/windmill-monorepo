@@ -7,8 +7,7 @@
 // per set and `restSeconds` — so every reading here is `entryLabel`'s and `setReading`'s.
 
 import { t } from './i18n/index.js';
-import { entryLabel, sameSet, setReading } from './log.js';
-import { restLabel } from './settings/preferences.js';
+import { clockOf, entryLabel, sameSet, setReading } from './log.js';
 
 // Every other state is settled and stays settled; the wire has no path back.
 export function isPending(proposal) {
@@ -95,6 +94,10 @@ export const TURN_DOWN_VERB = t('gym.proposals.turnDown');
 // edit the log has not confirmed, or out of sight) has no Apply and no Turn this down; this line stands where they stood.
 export const OUT_OF_DATE_LINE = t('gym.proposals.outOfDate');
 
+// So has one whose Apply this copy's rules would refuse for a load under a movement's floor
+// (`ProposalApplication.underFloor`); the Coach card's sentence for that load stands there instead.
+export const BELOW_FLOOR_LINE = t('gym.coach.proposal.belowFloor');
+
 // Above the diff and never in the band: a session's plan is frozen, so applying now changes nothing
 // about the workout in progress, and a line inside the band would move Apply.
 export const MID_WORKOUT_CAVEAT = t('gym.proposals.midWorkout');
@@ -139,10 +142,10 @@ export function receiptLine({ verb, proposal }) {
   return t('gym.proposals.receiptAppliedCounted', { name, count: proposal.changeCount });
 }
 
-// An absent rest is the account's own target and not the settings screen's `off`.
+// An absent rest is the account's own target, the default rest Settings sets.
 function restReading(side) {
   if (side.restSeconds == null) return t('gym.proposals.yourRestTarget');
-  return restLabel(side.restSeconds);
+  return clockOf(side.restSeconds * 1000);
 }
 
 // The scheme moved: both readings in the scheme's formula, and the ladder behind them for the
@@ -210,7 +213,7 @@ export function diffRows(proposal) {
         exerciseId: change.exerciseId,
         targets: entryLabel(change.after),
         // An absent rest sets nothing — the line takes the account's own target — and draws no words.
-        rest: change.after.restSeconds == null ? null : restLabel(change.after.restSeconds),
+        rest: change.after.restSeconds == null ? null : clockOf(change.after.restSeconds * 1000),
         // Where it lands: the run is in order and removals sort last, so the row before an added one
         // is part of the routine it is joining.
         follows: index === 0 ? null : changes[index - 1].exerciseId,

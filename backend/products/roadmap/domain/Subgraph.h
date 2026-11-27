@@ -122,7 +122,7 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
 std::size_t hiddenBy(const VersionVector& since, const GraphState& graph, const LegendState& legend, const Landed& late);
 
 // What a caller who cannot write a tree receives of its nodes: none says which tree it opens, because
-// a tree id is the read capability of an unlisted tree. A lattice entry left without a stamp is dropped.
+// the tree it opens may be private. A lattice entry left without a stamp is dropped.
 GraphState readerView(GraphState graph);
 TreeData readerView(TreeData document);
 

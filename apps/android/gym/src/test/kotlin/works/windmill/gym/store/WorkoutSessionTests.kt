@@ -507,7 +507,8 @@ class WorkoutSessionTests {
             phone.sync(server)
             live to phone.store.workout.sets.single().id
         }
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+        // This phone's ids start past the other's: a start under an id it already stores is a replay, never a refusal.
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, mintedSessions = 10).use { room ->
             room.now = 1_800_000_100_000L
             room.select("alice"); room.pull(server)
 

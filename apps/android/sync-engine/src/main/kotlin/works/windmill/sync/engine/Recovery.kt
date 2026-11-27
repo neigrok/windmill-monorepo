@@ -169,11 +169,11 @@ private fun Engine.foldDependents(replica: ReplicaState, source: Entry, origin: 
             dependents.absorb(entry, part)
             val original = entry.intent
             add(placed(removeDependent(entry, part)))
-            if (part.commandGone || entry.intent.deltas.isEmpty() && entry.intent.command == null)
+            if (part.commandGone || registry.isEmpty(entry))
                 applyIntentResultDeviceWrites(replica, original, entry.gestureId,
                     PushResult(original.n ?: 0, PushResult.Verdict.Refused(RefusalCode.parentDead)),
                     replica.meta["serverEpoch"]?.orNull()?.str() ?: "")
-            if (entry.intent.deltas.isEmpty() && entry.intent.command == null) {
+            if (registry.isEmpty(entry)) {
                 entry.json = entry.json.with("orphanOf" to Json.of(origin))
                 replica.move(entry, "fold", ended, origin)
             }

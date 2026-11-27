@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/domain/AiBudget.h"
+#include "platform/domain/Ids.h"
 #include <json/json.h>
 #include <map>
 #include <memory>
@@ -30,6 +31,9 @@ public:
   std::string refusal(const AiPassRequest& request) const;
   Json::Value claims(const AiBudgetPrincipal& principal, const std::optional<std::string>& installation,
                      const std::string& client, long long now) const;
+  // The backend's own pass for an account's background work (ai-service.md §3): `client` `server`, `plan` `none` and
+  // nothing else. The pass door never reaches it: its request refuses `server`, and claims() throws for it.
+  std::string serverPass(const UserId& account, long long now) const;
   std::string signPayload(const std::string& payload) const;
   std::string sign(const Json::Value& claims) const;
 

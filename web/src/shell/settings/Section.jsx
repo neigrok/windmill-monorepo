@@ -1,6 +1,19 @@
-// A titled block plus the style tokens every settings section lays its rows out with.
+// A titled block, the style tokens every settings section lays its rows out with, and the seat the page is drawn for.
 
 import React from 'react';
+import { useAuth } from '../auth/AuthProvider.jsx';
+import { useSyncReplica } from '../../platform/sync/react.js';
+
+// `loading` until the shell settles who is here; `signed-in`, an account it has settled; `browsers-own`, nobody signed in
+// over the browser's own copy, the anon replica; `signed-out`, nobody signed in over any other copy or none yet, as a lapsed
+// session's, whose copy is still the account's and is drawn nowhere on the page.
+export function useSettingsSeat() {
+  const { user, status } = useAuth();
+  const replica = useSyncReplica();
+  if (status === 'loading') return 'loading';
+  if (status === 'signed-in' && user) return 'signed-in';
+  return replica?.state === 'anon' ? 'browsers-own' : 'signed-out';
+}
 
 export function Section({ title, children }) {
   return (
@@ -19,8 +32,13 @@ const heading = {
   color: 'var(--text-primary)', margin: '0 0 10px',
 };
 
+const calmLine = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: 0 };
+
 export const styles = {
-  calmLine: { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: 0 },
+  calmLine,
+  // A button with its calm line beside it, the line wrapping under the button only where it has too little room.
+  actionRow: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 12px' },
+  actionLine: { ...calmLine, flex: '1 1 0', minWidth: 160 },
   row: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border-subtle)' },
   rowMain: { flex: 1, minWidth: 0 },
   primaryText: { fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },

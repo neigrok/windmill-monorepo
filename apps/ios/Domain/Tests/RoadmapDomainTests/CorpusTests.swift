@@ -5,14 +5,14 @@ import Testing
 
 // The runner of roadmap's shared vectors, `packages/api-contract/roadmap/domain/`: each read over the records a case states.
 struct CorpusTests {
-  static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
+  static let reads = ["account", "activity", "board", "diagnostics", "effects", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
 
-  // `rules.json` and `values.json` run in RoadmapRulesTests, and each family's actions in its own tests.
-  @Test func everyFileIsClaimedOrWaitsForTheActions() throws {
-    let claimed = Self.reads + ["kinds-actions", "progress-actions", "roadmaps-actions", "rules", "values"]
-    let waiting = ["landing-actions", "steps-actions", "undo", "workspace-actions"]
-    let named = (claimed + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-    #expect(try Contract.files(under: "roadmap/domain") == named)
+  // `rules.json` and `values.json` run in RoadmapRulesTests, each family's actions in its own tests, and the scenes of
+  // `undo.json` in UndoTests.
+  @Test func everyFileIsClaimed() throws {
+    let actions = ["kinds", "landing", "progress", "roadmaps", "steps", "workspace"].map { "\($0)-actions" }
+    let claimed = (Self.reads + actions + ["rules", "undo", "values"]).map { "roadmap/domain/\($0).json" }
+    #expect(try Contract.files(under: "roadmap/domain") == claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
   }
 
   @Test(arguments: try reads.flatMap { try Contract.vectors("roadmap/domain/\($0).json") })
@@ -25,14 +25,23 @@ struct CorpusTests {
     let operation = try input.member("operation").asString()
     if operation == "roadmap" { return try RoadmapTree(replica: input).form }
     if let trees = input["trees"] {
-      let account = RoadmapAccount(try trees.asArray().map(RoadmapTree.init(form:)))
+      let told = try (input["told"]?.asArray() ?? []).map { (row: JSON) throws -> RoadmapAccount.Told in
+        RoadmapAccount.Told(tree: try row.member("tree").asString(),
+                            counts: Counts(done: Int(try row.member("done").asInteger()), total: Int(try row.member("total").asInteger())))
+      }
+      let account = RoadmapAccount(try trees.asArray().map(RoadmapTree.init(form:)), told: told)
       switch operation {
       case "account": return account.form
       case "list": return .array(account.list().map(\.form))
+      case "listing": return account.listing(try input.member("tree").asString())?.form ?? .null
       default: break
       }
       let tree = try input.member("tree").asString()
       switch operation {
+      case "activity": return try account.graph(tree).map { ActivityRead($0, step: try input.optionalString("step")).form } ?? .null
+      case "effects":
+        let ids = try input.member("ids").asArray().map { try $0.asString() }
+        return account.graph(tree).map { EffectsRead($0, ids: ids).form } ?? .null
       case "progress": return account.progress(tree)?.form ?? .null
       case "guides": return .array(account.guides(tree).map(\.form))
       case "openings": return .array(account.openings(of: tree).map(\.form))
@@ -47,6 +56,7 @@ struct CorpusTests {
     case "graph": return FollowGraph(tree).form(subjects: try input.member("subjects").asArray().map { try $0.asString() })
     case "board": return BoardRead(FollowGraph(tree), try BoardQuery(form: input["query"] ?? [:])).form
     case "diagnostics": return Diagnostics(FollowGraph(tree)).form
+    case "effects": return EffectsRead(FollowGraph(tree), ids: try input.member("ids").asArray().map { try $0.asString() }).form
     case "landing":
       let own = try input.member("edges").asArray().map { link in
         let ends = try link.asArray().map { try $0.asString() }

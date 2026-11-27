@@ -2,6 +2,7 @@
 
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <json/json.h>
 
@@ -62,7 +63,7 @@ drogon::HttpRequestPtr postJson(const std::string& path, const std::string& body
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr authorize(Harness& h, const std::string& clientId,
@@ -469,7 +470,7 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   auto list = [&](const std::string& session) {
     auto req = get("/v1/oauth/grants");
     if (!session.empty()) req->addCookie("wm_session", session);
-    h.api.listGrants(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
+    h.api.listGrants(wm::test::DrogonLoopback::received(req), [&](const drogon::HttpResponsePtr& r) { captured = r; });
     return captured;
   };
 
@@ -490,7 +491,7 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
     req->setMethod(drogon::Delete);
     req->setPath("/v1/oauth/grants/" + target);
     if (!session.empty()) req->addCookie("wm_session", session);
-    h.api.disconnectGrant(req, [&](const drogon::HttpResponsePtr& r) { captured = r; }, target);
+    h.api.disconnectGrant(wm::test::DrogonLoopback::received(req), [&](const drogon::HttpResponsePtr& r) { captured = r; }, target);
     return captured;
   };
 

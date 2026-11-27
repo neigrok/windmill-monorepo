@@ -23,7 +23,8 @@ bool isProbe(const std::string& path) {
 Severity accessSeverity(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   if (writeFailureReported(request)) return Severity::error;
   const Severity severity = severityForStatus(static_cast<int>(response->getStatusCode()));
-  if (severity == Severity::error && writeHttpOutcome(response, httpOperation(request)) != "failed") return Severity::warn;
+  if (severity == Severity::error && writeHttpOutcome(response, httpOperation(request), writeRoutePolicy(request)) != "failed")
+    return Severity::warn;
   return severity;
 }
 

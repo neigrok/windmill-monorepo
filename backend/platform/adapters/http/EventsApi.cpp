@@ -112,7 +112,11 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
 
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  const SentCaller caller = SentCaller::of(req, *auth_);
+  if (caller.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
 
   std::vector<FunnelEvent> accepted;
   for (const Json::Value& entry : entries) {
@@ -126,7 +130,7 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
         callback(error(drogon::k429TooManyRequests, "this session has beaconed enough for today"));
         return;
       }
-      events_->append(sessionKey.asString(), caller, accepted);
+      events_->append(sessionKey.asString(), caller.account(), accepted);
     } catch (const std::exception& failure) {
       if (!currentWriteRequestId().empty()) {
         reportCurrentWriteFailure(failure);
@@ -141,7 +145,7 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
-    if (amplitude_) amplitude_->forward(sessionKey.asString(), caller, accepted);
+    if (amplitude_) amplitude_->forward(sessionKey.asString(), caller.account(), accepted);
   }
 
   Json::Value body(Json::objectValue);

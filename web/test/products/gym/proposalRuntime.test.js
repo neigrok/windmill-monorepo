@@ -129,7 +129,7 @@ function failCommit(engine, count = 1) {
 test('an offline removal keeps one pending receipt and one command across repeat Apply and reopen', async (t) => {
   const a = await open(t);
   const before = await a.runtime.proposal(proposalId);
-  const owner = a.engine.activeReplica();
+  const owner = a.engine.activeBinding();
   a.engine.setOnline(false);
   const requests = a.env.requests.length;
   const expected = { ...before, removalOutcome: 'pending', removalOwner: owner };
@@ -297,22 +297,23 @@ test('receipt acknowledgement from a previous account cannot clear the new accou
   await a.runtime.applyProposal(proposalId);
   await a.sync();
   const oldRuntime = a.runtime;
-  const oldOwner = a.engine.activeReplica();
+  const oldReplica = a.engine.activeReplica();
+  const oldOwner = a.engine.activeBinding();
   const oldReceipt = structuredClone(a.receipts());
   await a.switchAccount('B');
   assert.deepEqual(await a.runtime.removalReceipts(), []);
-  assert.deepEqual(a.engine.device.replicas.find((replica) => replica.id === oldOwner).deviceRows('gym')[REMOVAL_RECEIPTS], oldReceipt);
+  assert.deepEqual(a.engine.device.replicas.find((replica) => replica.id === oldReplica).deviceRows('gym')[REMOVAL_RECEIPTS], oldReceipt);
   await a.prepare({ id: 'proposal002', parent: 'routine0002' });
   await a.runtime.applyProposal('proposal002');
   await a.sync();
   const current = structuredClone(a.receipts());
-  assert.notEqual(a.engine.activeReplica(), oldOwner);
+  assert.notEqual(a.engine.activeBinding(), oldOwner);
   await assert.rejects(oldRuntime.removalReceiptShown(proposalId, oldOwner), { code: 'not-writable' });
   await a.runtime.removalReceiptShown('proposal002', oldOwner);
   assert.deepEqual(a.receipts(), current);
-  await a.runtime.removalReceiptShown('proposal002', a.engine.activeReplica());
+  await a.runtime.removalReceiptShown('proposal002', a.engine.activeBinding());
   assert.deepEqual(a.receipts(), {});
-  assert.deepEqual(a.engine.device.replicas.find((replica) => replica.id === oldOwner).deviceRows('gym')[REMOVAL_RECEIPTS], oldReceipt);
+  assert.deepEqual(a.engine.device.replicas.find((replica) => replica.id === oldReplica).deviceRows('gym')[REMOVAL_RECEIPTS], oldReceipt);
 });
 
 test('an Apply under the barbell’s load floor is a refusal event naming the floor, never a failure', async (t) => {

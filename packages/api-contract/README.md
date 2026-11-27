@@ -26,9 +26,9 @@ carries `since` (`propose_workout_change`: `"catalog/2"`), so the file also decl
 version: catalog/1 is the abilities with no `since` (gym_coach.md D-3), which the server serves side
 by side with catalog/2.
 
-- `name`, `description` and `input` are byte-equal under JCS to the `name`, `description` and
-  `inputSchema` that `gymToolCatalog()` declares for the tool of that name, so MCP and Coach publish
-  this file's words. Appendix C's `rename_exercise` is the server's `update_exercise`.
+- The server reads this file's declarations for `catalog/1` and `catalog/2` turns, the turns released
+  builds open (`declarationsOf(catalog2Text())`); MCP and the server Coach list `catalog-3.json`'s.
+  Appendix C's `rename_exercise` is the server's `update_exercise`.
 - An entry marked `"declared": false` names an ability the server declares no tool for (`get_record`,
   `get_preferences`, `share_log`, and the withheld log, note, bodyweight and settings edits). Its `input`
   and `result` are drawn from the domain; the pin skips it.
@@ -36,8 +36,8 @@ by side with catalog/2.
   included. Every object in every `result` and every `input` sets `additionalProperties: false` and
   lists `required`, except three `input` objects the test pins as open: `create_routine`'s
   `pendingProposal` and the set items of `create_routine` and `propose_routine_change`. Four tools
-  (`log_sets`, `import_session`, `get_sessions`, `get_last_times`) also publish an MCP `outputSchema`
-  of their own.
+  (`log_sets`, `import_session`, `get_sessions`, `get_last_times`) publish their `result` as an MCP
+  `outputSchema`.
 - `class`, `agent` and `seats` follow Appendix C, with `save_note` at `seats: "bound"`. A `read` is a
   `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
   `propose_workout_change`'s set items list an empty `required`, so they are not among the open
@@ -45,9 +45,12 @@ by side with catalog/2.
 - `phrase` is the step-line text a Coach client prints for a call. Both phones take it from this file, and the
   web's `TOOL_PHRASE` holds the same words for the abilities it lists.
 
-Read as a test by `backend/test/products/gym/adapters/mcp/CatalogContractTest.cpp`, which embeds the
-file into `windmill_gym` at configure time (`catalogText()`). A change to this file or to a tool
-declaration that breaks the pin fails `ctest -R mcp`.
+`windmill_gym` embeds this file and `catalog-3.json` at configure time (`catalog2Text()`,
+`catalog3Text()`), and declares its tools from them: each tool's name, description and input schema
+are the file's, and its grant level is its `class`'s. `CatalogContractTest.cpp` holds both files to
+this shape, pins what MCP lists to `catalog-3.json` byte for byte, and checks that the two differ
+only in their inputs, in `strict` and in `list_sessions`' row (its plan, its movement lines and its top
+set's `exerciseId`); a change that breaks either fails `ctest -R mcp`.
 
 ## `gym/abilities/`
 
@@ -84,14 +87,74 @@ Coach is offered (`agent` other than `withheld`), each an array of
 
 Read as a test by `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp` under
 `WM_PG_TEST` (`backend/RUNNING.md` §7): each case seeds its records into the account's gym scope on
-`WM_SYNC_DATABASE_URL`, calls `GymTools`, and compares the answer's JCS bytes and SHA-256. The server
+`WM_SYNC_DATABASE_URL`, calls `GymTools`, compares the answer's JCS bytes and SHA-256, and holds a
+result to the ability's `result` in `catalog.json`. The server
 is the golden source: with `WM_GENERATE_ABILITIES=1` the same run writes each `expect` from the
-server's answer instead of comparing it.
+server's answer instead of comparing it. `list_sessions.json` is the exception: it holds `catalog/2`'s
+row, the contract of the phones' `catalog/2` executors, while the server answers `catalog/3`'s, so the
+test skips that file by name and generation leaves it as it stands.
 
 ```sh
 WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ./backend/build/windmill_mcp_tests
 ```
+
+## `gym/catalog-3.json` and `gym/abilities-3/`
+
+`catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
+catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
+differs only in its inputs, in `strict` and in `list_sessions`' row. In its inputs no keyword strict
+mode refuses, every object lists `required`, and a bound strict mode cannot state is in the
+description of the parameter it bounds. `list_sessions`' row names the lift behind its numbers and
+holds no frozen plan: `movements` is one line per movement, in `exerciseId` order, with that
+movement's heaviest set and its own `topE1rm`; `topSet` names its `exerciseId`; and `routineName` is
+the name the workout went by, the display override else the frozen plan's routine.
+Each ability's `strict` says whether a device turn declares its tool strict to the provider:
+`create_routine`, `create_exercise` and the three `propose_*` writes are, and the model's own
+adherence holds the rest, so the grammar the provider compiles stays one it accepts. MCP and the
+server Coach never send `strict`. The server reads it:
+`gymToolCatalog()` declares its tools, so MCP lists its schemas, the server Coach offers them, and a
+`catalog/3` turn is offered and gated by them. The web's and Android's replica executors read it too
+(`web/src/products/gym/domain/coach/`, `apps/android/gym/domain/.../coach/`). `catalog.json` and `abilities/` are deleted when no
+released build opens a `catalog/2` turn.
+
+- `strict.py` checks it in the Coach contracts workflow: every ability says `strict` as a boolean,
+  every ability's input holds only keywords and shapes strict mode accepts, strict or not, each
+  seat's strict tools (`agent` `runs` or `proposes`, declared, admitting the seat, `strict`) stay
+  within 20 strict tools, 24 optional parameters and 16 union-typed parameters, counted at every
+  depth, and every `abilities-3/` input stands inside its schema.
+  These are the limits the provider publishes, and it checks those only: the provider can still
+  refuse a seat's tools together, which only a real round proves (the spec's §3 and §10).
+  `python3 packages/api-contract/gym/strict.py` runs both and prints the counts; given a catalog
+  path, it checks that catalog alone. `strict_test.py`, run in the same step, holds a schema for each
+  rule it refuses and each way it counts.
+- `abilities-3/` has `abilities/`'s case format. Its 18 files hold `abilities/`'s cases with the
+  inputs `catalog/3` asks for (a required `review` or `limit`, `null` where a parameter is left
+  empty) and the same `expect`, but for `list_sessions`, whose results are `catalog/3`'s row and which
+  adds a case for each part of it: the heaviest set and the best estimate on different movements, a
+  tie across movements, and each source of `routineName`. The files also hold a refusal for each
+  value just outside every bound that moved out of a schema. The fields `list_routines` answers with
+  that a write ignores are not in `catalog/3`'s write schemas, so no case sends them; that a day read
+  back over MCP is a day sent is the server doors' own tests (`GymToolsTest.cpp`, `AskServiceTest.cpp`,
+  `TurnGateTest.cpp`).
+- `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
+  are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
+  executor, which runs them for MCP.
+- The server executor claims every case, by SHA-256 of canonical bytes, in
+  `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp`, and holds each answer to the
+  ability's `result`. The web's claims them in `web/test/products/gym/domain/corpus.test.js` and
+  Kotlin's in `apps/android/gym/domain/src/test/.../sync/CorpusTests.kt`: a withheld ability's and a
+  share's as `not-offered`, which each answers, and every other case byte for byte, but for one
+  `create_exercise` case whose id no turn seeds. Swift's does not yet. Its refusals are hand-written, not the server's golden, so `WM_GENERATE_ABILITIES` never
+  rewrites them: they are the contract each executor is held to when it moves onto `catalog/3`.
+- A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
+  refusal case's records need not make the rest of the call succeed, though each case's do.
+
+## `gym/coach/`
+
+The words the model reads in a gym Coach turn: the system prompt, the words of the first content and
+the sentence beside each refusal code. The backend embeds them and the apps ship them as they are.
+[gym/coach/README.md](gym/coach/README.md) has the files and how a turn puts them together.
 
 ## `genesis.js`
 
@@ -115,14 +178,50 @@ a plan as the input of the domain's `CreateRoadmap` and `ImportSteps`, and a roa
 [roadmap/plan/README.md](roadmap/plan/README.md) states the grammar and each file's shapes. Read as a test by
 `web/test/products/roadmap/paste/corpus.test.js`, which claims every file by name.
 
+## `roadmap/catalog.json`, `roadmap/limits.json` and `roadmap/abilities/`
+
+Roadmap Coach's abilities, which the web and the iPhone each run on the device's own copy of a roadmap
+([Roadmap Coach](../../docs/foundation/roadmap-coach.md) §3 to §7).
+
+- `catalog.json` is catalog `roadmap/1`, `{catalog, abilities}`, each entry with `name`, `description`, `input`,
+  `result`, `class`, `agent`, `seats`, `strict`, `phrase` and `ui`, so the domain kit's catalog types read it as they
+  read gym's. Every `seats` is `any`, since Coach works signed out, and every `strict` is `false`.
+- Every input is closed at every depth and keeps to the shared vocabulary: the keywords every schema check reads that
+  the provider's strict mode also accepts (`type`, `description`, `properties`, `required`, `additionalProperties`,
+  `items`, `enum`, `const`, `minItems` of 0 or 1 and `pattern`), with patterns of explicit classes. So declaring an
+  ability strict is one word. A cap of §6 is no keyword of an input: the ability refuses past it as `over-limit`.
+- `result` is the JSON Schema of every ability's answer, beside a read's `maxBytes`, 16384, the most its canonical text
+  takes (§5.2).
+- `limits.json` holds the caps the server enforces, which every client checks first (§6, rule 4). Each names its
+  `max`; its `unit`, `characters` counted as Unicode code points, `bytes` of canonical text, or `items`; the constant of
+  `backend/products/roadmap/domain/Command.h` that holds it, where one does; every declaration of
+  `sync/roadmap.registry.json` the sync engine admits it by; and, where the web's domain holds one, its spec in
+  `RoadmapSpecs` (`web/src/products/roadmap/domain/roadmapRules.js`).
+- `abilities/` holds the ability vectors; [roadmap/abilities/README.md](roadmap/abilities/README.md) has their format,
+  and what of them the check holds and what it leaves to the executors.
+
+`check.py` runs in the Coach contracts workflow (`.github/workflows/coach.yml`), which runs when any of the three, the
+spec, `Command.h`, the registry, `roadmapRules.js` or the domain's actions change. It holds:
+
+- the catalog to the kit's shape and the shared vocabulary, inputs and answers alike, and to the spec's tables: §4's
+  abilities, with every `seats` `any` and no tool strict; §5.1's fields and states; §6's actions and answers; §7's ops,
+  each line of `propose_roadmap_change`'s description against §7's row; and the registry's hues;
+- each vector to the format the vectors' README gives, and to what the case itself gives, as that README lists;
+- `limits.json` to §6's table of caps, and each cap to the backend's constant, to every registry declaration in value
+  and unit, and to the web's spec in value, unit and path, a constant or a spec defined twice refused.
+
+`check_test.py`, run in the same step, holds a broken case for each refusal `check.py` makes, and the words it is
+refused with.
+
 ## `roadmap-addresses.json`
 
 Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and
 `/#/app/<treeId>?step=<id>` for a tree the reader owns, `/t/<treeId>` and `/t/<treeId>#?step=<id>` for
 one they can only read. A tree id is always `t_` plus 16 hex and is written as it is; a step id is
 encoded as `encodeURIComponent` does. The backend builds every case (`domain/WebAddress`, tested by
-`WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`), and
-`web/test/products/roadmap/addresses.test.js` proves the router opens each one. `localOrigin` is the
+`WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`),
+`web/test/products/roadmap/addresses.test.js` proves the router opens each one, and the iPhone reads and writes each by
+`RoadmapAddress` (`apps/ios/Domain/Sources/RoadmapDomain/Addresses.swift`, run by `AddressesTests`). `localOrigin` is the
 origin a local stack serves the app on: the backend's default when `WINDMILL_APP_URL` is unset
 (`platform/infra/AppOrigin.h`) and the port `web/vite.config.js` pins the dev server to, each held to
 it by the same two tests, so an address a locally run server hands out opens the local app.
@@ -133,7 +232,8 @@ Which link urls a person is shown on a node: a url as the server stores it, trim
 around it, and whether the web shows it — `http:`, `https:` or `mailto:`, in any case. The backend's
 `shownLinkUrl` (`backend/products/roadmap/domain/Command`, tested by `CommandTest`, which reads the file
 at run time; the image copies it in `backend/Dockerfile`) takes exactly the shown ones, and
-`web/test/products/roadmap/graph/tree/NodeWorkspace.test.js` proves `SAFE_URL` shows exactly those.
+`web/test/products/roadmap/domain/rules.test.js` proves `SAFE_URL`, the web domain's rule the room and Roadmap Coach
+read, shows exactly those.
 
 ## `roadmap-socket.json`
 

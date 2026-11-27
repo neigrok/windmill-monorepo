@@ -62,7 +62,7 @@ TEST(gym_anonymous_model_reserves_selected_ceiling_and_settles_actual_cost_witho
   fake::FakeAuthRepository accounts;
   fake::FakeEntitlementCopy subscriptions;
   fake::FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions,h.clock,usage,{},{},h.budgets};
+  Entitlements entitlements{subscriptions,h.clock,usage,{},h.budgets};
   auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
   auto messages=std::make_shared<Messages>();
   auto meter=std::make_shared<Meter>();
@@ -95,7 +95,7 @@ TEST(gym_anonymous_failed_charged_output_is_settled_and_partial_routines_never_e
     fake::FakeAuthRepository accounts;
     fake::FakeEntitlementCopy subscriptions;
     fake::FakeAiUsageRepository usage;
-    Entitlements entitlements{subscriptions,h.clock,usage,{},{},h.budgets};
+    Entitlements entitlements{subscriptions,h.clock,usage,{},h.budgets};
     auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
     auto messages=std::make_shared<Messages>();
     auto raw=parse(R"({"stop_reason":"max_tokens","usage":{"input_tokens":100,"output_tokens":2000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"{\"routines\":["}]})");
@@ -117,7 +117,7 @@ TEST(gym_anonymous_transport_unknown_holds_reservation_and_budget_refusal_makes_
   fake::FakeAuthRepository accounts;
   fake::FakeEntitlementCopy subscriptions;
   fake::FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions,h.clock,usage,{},{},h.budgets};
+  Entitlements entitlements{subscriptions,h.clock,usage,{},h.budgets};
   auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
   auto messages=std::make_shared<Messages>();
   messages->reply=readMessagesReply(0,"");
@@ -139,7 +139,7 @@ TEST(gym_anonymous_dialogue_preserves_prior_context_without_tools_and_retains_an
   fake::FakeAuthRepository accounts;
   fake::FakeEntitlementCopy subscriptions;
   fake::FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions,h.clock,usage,{},{},h.budgets};
+  Entitlements entitlements{subscriptions,h.clock,usage,{},h.budgets};
   auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
   auto messages=std::make_shared<Messages>();
   messages->reply=readMessagesReply(200,R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"{\"message\":\"Hi. What would you like to work on?\",\"routines\":[],\"errorCode\":null}"}]})");
@@ -176,7 +176,7 @@ TEST(gym_anonymous_conversation_policy_is_strict_and_never_releases_contradictor
     fake::FakeAuthRepository accounts;
     fake::FakeEntitlementCopy subscriptions;
     fake::FakeAiUsageRepository usage;
-    Entitlements entitlements{subscriptions,h.clock,usage,{},{},h.budgets};
+    Entitlements entitlements{subscriptions,h.clock,usage,{},h.budgets};
     auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
     auto messages=std::make_shared<Messages>();
     auto reply=parse(R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":""}]})");

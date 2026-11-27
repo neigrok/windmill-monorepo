@@ -373,8 +373,8 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   ForkLineage lineage;
-  // The source is named only while it still exists and is PUBLIC; an unlisted, private or
-  // deleted source stays anonymous.
+  // The source is named only while it still exists and is PUBLIC; a private or deleted source
+  // stays anonymous.
   pqxx::result src = txn.exec_params(
       "SELECT t.forked_from IS NOT NULL AS is_fork, "
       "coalesce(s.title, '') AS source_title, coalesce(s.visibility, '') AS source_visibility "
@@ -560,7 +560,7 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
   pqxx::work txn{*conn};
   // Every listed root, unbounded: ordering and the wall's cap belong to the domain, and a LIMIT
   // here would quietly change the ranking rule. A subtree is shared as its root is and never listed. The LEFT JOIN carries loadForkLineage's privacy
-  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The owner's
+  // rule in its ON clause, so a private or deleted source coalesces to ''. The owner's
   // marks are read after, as a reader is shown them.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "

@@ -51,8 +51,7 @@ struct Harness {
 
   // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
   explicit Harness(bool ledger = false)
-      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, std::vector<std::string>{},
-                                                    ledger ? budgets : nullptr)),
+      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, ledger ? budgets : nullptr)),
         api(transcriber, entitlements, auth, clock) {}
 
   UserId signIn(const std::string& sessionSecret) {
@@ -81,7 +80,7 @@ drogon::HttpRequestPtr post(const std::string& audio, const std::string& session
   request->setBody(audio);
   request->addHeader("content-type", "audio/webm");
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 // A vendor that takes the connection and never answers: the kernel completes the handshake and holds the request, and

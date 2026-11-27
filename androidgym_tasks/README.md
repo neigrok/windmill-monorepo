@@ -15,7 +15,7 @@ The six revised Gym flows were approved on **2026-10-25**. Each task records its
 
 Before visual work, use the task's approved **✅ Ready for dev** frame and resolve any explicit missing-state design gate. Keep domain/transport work separate from a screen whose new state is not drawn. Existing source behavior and a Figma URL alone do not establish approval of a new visual state.
 
-Implement one commit per numbered task. Ship batches to main after adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Create coordinated Android and iOS releases after all tasks in the current release scope are complete. The user authorized the explicit Other category, uncapped finite loads and an older-client upgrade. Source carries registry 13 / minimum 11. Production's hello advertised schema 12 / minimum 11 when last read, on 2026-11-01; the [release runbook](../backend/deploy/README.md#coordinated-client-cutoff) holds the deployment receipts. The published Android release is [0.14.0](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0) (code 277), tagged `android-v0.14.0` at `3b136a3d`; the `android-v0.13.0` tag has no GitHub release. Postponed tasks do not gate a release. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark each Figma flow **🚀 In production** only after its verified implementation is merged; design approval does not mark app delivery complete.
+Implement one commit per numbered task. Ship batches to main after adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Create coordinated Android and iOS releases after all tasks in the current release scope are complete. The user authorized the explicit Other category, uncapped finite loads and an older-client upgrade. Source carries registry 15 / minimum 15. Production's hello advertised schema 12 / minimum 11 when last read, on 2026-11-01; the [release runbook](../backend/deploy/README.md#coordinated-client-cutoff) holds the deployment receipts. The published Android release is [0.14.0](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0) (code 277), tagged `android-v0.14.0` at `3b136a3d`; the `android-v0.13.0` tag has no GitHub release. Postponed tasks do not gate a release. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark each Figma flow **🚀 In production** only after its verified implementation is merged; design approval does not mark app delivery complete.
 
 ## Current release scope
 
@@ -106,9 +106,11 @@ On 2026-11-01 the dogfood tree's open Android, gym and sync nodes were checked a
 | E · Cross-platform parity | [92](92-catch-up-after-a-reopen.md), [93](93-share-page-set-count.md), [94](94-web-planned-rows-offered-load.md), [95](95-one-stated-best.md), [96](96-shared-performed-range.md), [97](97-coach-read-receipt-weeks.md), [98](98-coach-during-a-workout.md) |
 | F · Polish | [99](99-destructive-actions-in-red.md), [100](100-proposal-diff-unit-space.md), [101](101-capture-recipes-name-current-boards.md), [102](102-planless-movement-heading.md), [103](103-proposal-still-arriving.md), [104](104-record-before-the-first-pull.md), [105](105-quiet-set-count-follow-ups.md) |
 
+Task 94 is superseded: Coach during a workout on the web (WD7) removed the panel it changes.
+
 **What each waiting task waits for**
 - **A board or ruling** from the [design brief](design-brief-quality-wave.md):
-  - 80 (QW5), 81 (QW6) and 94 (QW7);
+  - 80 (QW5) and 81 (QW6), and 94 waits for WD7;
   - 96's iOS screen (QW8), 97's numberless wording (QW10) and 98 (QW9);
   - 99 (QW11) and 100 (QW13);
   - 102–105 (QW1–QW4).
@@ -254,7 +256,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [91](91-outbox-costs-linear.md) — A phone back from a long time offline drains its outbox in linear time
 - [92](92-catch-up-after-a-reopen.md) — iOS and web catch up after a live socket reopens
 - [93](93-share-page-set-count.md) — The web share page counts sets 1..N in logged order
-- [94](94-web-planned-rows-offered-load.md) — The web live mirror's planned rows read the load the plan expects
 - [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
 - [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
 - [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show

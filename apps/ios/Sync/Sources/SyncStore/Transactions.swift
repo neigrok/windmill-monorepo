@@ -54,9 +54,8 @@ extension Store {
   }
 
   // §7.1 read-and-commit: step 1, then `decide` through this transaction, then steps 2–11 over the rows the decided
-  // gesture reads and the entries that touch them. The ids the commit mints are read by their keys once drawn: a plan
-  // that drew ids its load did not read is planned again over the same draws with those records read, and a gesture id
-  // it mints is drawn again while the device carries it. A nil gesture writes nothing and ticks no clock.
+  // gesture reads and the entries that touch them (`planOverReads`), and a gesture id it mints is drawn again while the device
+  // carries it. A nil gesture writes nothing and ticks no clock.
   public func commit<T>(in scope: ScopeRef, instance: Instance, identities: IdentitySource,
                         _ decide: (StoreTransaction) throws -> (Gesture?, T)) throws -> Written<(outcome: CommitOutcome?, value: T)> {
     try write(.commit) { tx in
@@ -67,19 +66,11 @@ extension Store {
       guard let gesture else { return Planned((nil, value), ReplicaBatch()) }
       let gestureIdTaken = try gesture.gestureId.map(tx.carries(gestureId:)) ?? false
       let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
-      var reads = planners.commits.reads(of: gesture, in: scope)
-      var draws: [Draw] = []
-      while true {
-        var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
-        do {
-          let outcome = try planners.commits.commit(
-            gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken, draws: draws)
-          return Planned((outcome, value), replica.batch)
-        } catch let unread as UnreadDraws {
-          reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
-          draws = unread.draws
-        }
+      let (outcome, batch) = try planOverReads(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
+        try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
+                                    draws: draws)
       }
+      return Planned((outcome, value), batch)
     }
   }
 
@@ -99,14 +90,14 @@ extension Store {
         guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
         try planners.commits.checkWritable(meta)
         let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
-        let firstOrder = try loaded(active, in: tx).nextCommitOrder
+        let firstOrder = try loaded(active, in: tx, entries: EntrySelection(), journal: .unread).nextCommitOrder
         var preparation: (request: ActRequest?, value: T)?
         try db.inSavepoint {
           let staging = ActStaging { (gesture: Gesture, scope: ScopeRef, offset: Int) throws -> (outcome: CommitOutcome, written: Bool) in
             let (outcome, batch) = try self.commitSegment(gesture, in: scope, of: active, tx: tx, instance: instance, identities: identities,
                                                           offset: offset, firstOrder: firstOrder, capture: nil)
             guard case .committed = outcome, !batch.writes.isEmpty else { return (outcome, false) }
-            try BatchWriter(db: db, registry: self.registry).apply(batch)
+            try BatchWriter(tx).apply(batch)
             return (outcome, true)
           }
           preparation = try prepare(tx, staging)
@@ -117,8 +108,8 @@ extension Store {
         guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
         if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
         let undoReads = UndoPlan.reads(of: request.undo, scopes: request.scopes)
-        let undoPlan = try planners.commits.undoPlan(request.undo, scopes: request.scopes,
-                                                     in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection()))
+        let undoPlan = try planners.commits.undoPlan(
+          request.undo, scopes: request.scopes, in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection(), journal: .unread))
         let gestureId = try request.gestureId ?? identities.gestureID()
         var receipts: [ActSegmentReceipt] = []
         var retired: [String] = [], superseded: [String] = []
@@ -142,7 +133,7 @@ extension Store {
             let changed = !receipt.localIds.isEmpty || !receipt.retired.isEmpty || !receipt.superseded.isEmpty || !gesture.local.isEmpty
             receipts.append(ActSegmentReceipt(scope: scope, stamp: changed ? receipt.stamp : nil, localIds: receipt.localIds, ids: receipt.ids))
             if changed {
-              try BatchWriter(db: db, registry: registry).apply(batch)
+              try BatchWriter(tx).apply(batch)
               events += batch.events
               change.merge(batch.change)
               wrote = true
@@ -155,7 +146,7 @@ extension Store {
         if wrote, undoPlan != nil {
           var replica = try loaded(active, in: tx, reads: undoReads, entries: EntrySelection())
           try planners.commits.record(act: gestureId, plan: undoPlan, receipts: receipts, in: &replica)
-          try BatchWriter(db: db, registry: registry).apply(replica.batch)
+          try BatchWriter(tx).apply(replica.batch)
           change.merge(replica.batch.change)
         }
         let receipt = ActReceipt(gestureId: gestureId, segments: receipts, retired: retired, superseded: superseded,
@@ -167,21 +158,37 @@ extension Store {
     }
   }
 
-  // One gesture as the act's segment at `offset`, over the rows it reads and the entries that touch them; a plan that drew
-  // ids its load did not read is planned again over the same draws with those records read. Its outcome, and the batch it
-  // would write.
+  // One gesture as the act's segment at `offset` (`planOverReads`).
   func commitSegment(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction, instance: Instance,
                      identities: IdentitySource, offset: Int, firstOrder: Int64, capture: String?) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
+    try planOverReads(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
+      try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: false, draws: draws,
+                                  actOffset: offset, actFirstOrder: firstOrder, capture: capture)
+    }
+  }
+
+  // A commit's plan over the rows its gesture reads and the entries that touch them, and of the journal only what settles
+  // an ended entry's slot; a plan that found it needed more (`UnreadRows`: the records of ids it drew, a capped type it may
+  // grow, every entry a silent fold may reach) is planned again over the same draws with those read too. Each plan reads
+  // more than the one before, or the planner asked again for what it read, which traps. Its outcome, and the batch it
+  // would write.
+  func planOverReads(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction,
+                     _ commit: (inout LoadedReplica, [Draw]) throws -> CommitOutcome) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
     var reads = planners.commits.reads(of: gesture, in: scope)
+    var entries = planners.commits.entryReads(of: gesture)
     var draws: [Draw] = []
     while true {
-      var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
+      var replica = try loaded(active, in: tx, reads: reads, entries: entries, journal: .whereUnsettled)
       do {
-        let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities,
-                                                  gestureIdTaken: false, draws: draws, actOffset: offset, actFirstOrder: firstOrder, capture: capture)
+        let outcome = try commit(&replica, draws)
         return (outcome, replica.batch)
-      } catch let unread as UnreadDraws {
-        reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+      } catch let unread as UnreadRows {
+        let read = reads[scope, default: RowSelection()]
+        let next = RowSelection(keys: read.keys.union(unread.keys), types: read.types.union(unread.types), all: read.all)
+        precondition(next != read || unread.everyEntry && !entries.all,
+                     "a commit's plan asked again for what it read: keys \(unread.keys), types \(unread.types), every entry \(unread.everyEntry)")
+        reads[scope] = next
+        if unread.everyEntry { entries = .every }
         draws = unread.draws
       }
     }
@@ -279,10 +286,14 @@ extension Store {
     }
   }
 
-  // A hello's offset sample (§10.4).
-  public func sample(serverTime: Int64, timing: Timing) throws -> Written<Void> {
-    try onActive(.offset) { replica in
-      replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
+  // A hello's answer to the active replica, which reads its meta alone: its offset sample (§10.4) and the server's schema it
+  // records or forgets (§9.2). Its pause is the engine's, which checks the token first.
+  public func hear(_ hello: Answer<HelloResponse>, timing: Timing) throws -> Written<Void> {
+    try onActive(.offset, entries: EntrySelection(), journal: .unread) { replica in
+      replica.update { meta in
+        if let serverTime = hello.serverTime { meta.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
+        meta.hear(hello)
+      }
     }
   }
 
@@ -291,7 +302,7 @@ extension Store {
   // What the scopes asked make of `replica`'s next request; nil when the replica is no longer active.
   public func pullPlan(_ scopes: [ScopeRef], replica id: String) throws -> PullPlan? {
     try read { tx in
-      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let replica = try tx.replica(id) else { return nil }
+      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let replica = try tx.replica(id, journal: .unread) else { return nil }
       return planners.pages.plan(scopes, in: replica)
     }
   }
@@ -445,28 +456,32 @@ extension Store {
   // waits for its governing record's create. Nil when the store holds no such replica.
   public func subscriptions(of replica: String, _ subscribed: SubscriptionSet) throws -> (set: [ScopeRef], pulled: [ScopeRef])? {
     try read { tx in
-      guard let loaded = try tx.replica(replica, reads: planners.lifecycle.reads(of: subscribed)) else { return nil }
+      guard let loaded = try tx.replica(replica, reads: planners.lifecycle.reads(of: subscribed), journal: .unread) else { return nil }
       let set = try planners.lifecycle.subscriptionSet(of: loaded, subscribed)
       return (set, set.filter { planners.pages.pulls($0, in: loaded) })
     }
   }
 
   public func anonCount(of product: String, in replica: String) throws -> [String: Int] {
-    try read { tx in planners.lifecycle.anonCount(of: product, in: try loaded(replica, in: tx)) }
+    try read { tx in planners.lifecycle.anonCount(of: product, in: try loaded(replica, in: tx, journal: .unread)) }
   }
 
   // MARK: The Action shapes
 
   func loaded(_ id: String, in tx: StoreTransaction, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
-              notices: Bool = false) throws -> LoadedReplica {
-    guard let replica = try tx.replica(id, reads: reads, entries: entries, notices: notices) else { throw StoreError.noReplica(id) }
+              notices: Bool = false, journal: JournalSelection = .whole) throws -> LoadedReplica {
+    guard let replica = try tx.replica(id, reads: reads, entries: entries, notices: notices, journal: journal) else {
+      throw StoreError.noReplica(id)
+    }
     return replica
   }
 
-  // A planner over the active replica, which reads no rows; `notices` loads its notices.
-  func onActive<Value>(_ tx: TxName, notices: Bool = false, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
+  // A planner over the active replica, which reads no rows: every entry and the whole journal, or what `entries` and
+  // `journal` name; `notices` loads its notices.
+  func onActive<Value>(_ tx: TxName, entries: EntrySelection = .every, notices: Bool = false, journal: JournalSelection = .whole,
+                       _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      var replica = try loaded(try transaction.activeReplica(), in: transaction, notices: notices)
+      var replica = try loaded(try transaction.activeReplica(), in: transaction, entries: entries, notices: notices, journal: journal)
       let value = try plan(&replica)
       return Planned(value, replica.batch)
     }

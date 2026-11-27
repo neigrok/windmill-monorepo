@@ -5,6 +5,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <cstdint>
 #include <future>
@@ -44,8 +45,8 @@ struct Harness {
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock,
-                                          entitlements, SelectionRules{}, SweepBudget{})),
+      : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock, SelectionRules{},
+                                          SweepBudget{})),
         explainer(std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator,
                                                   pages)),
         api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,
@@ -70,7 +71,7 @@ drogon::HttpRequestPtr request(drogon::HttpMethod method, const std::string& pat
     req->setBody(body);
   }
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 Json::Value listOf(Harness& h, const std::string& session) {

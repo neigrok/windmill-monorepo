@@ -1,8 +1,11 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
+import { jcs, sameJson } from '../core/jcs.js';
 import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
+import { widestAloneBytes } from '../core/wire.js';
 import { CommitError, commitGesture } from './commit.js';
+import { acknowledgedWrites, stepOver } from './journal.js';
 import { drawn, stored } from './views.js';
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -18,17 +21,19 @@ function captureCommandOf(registry, scope) {
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
 // initial snapshot (§7.1 Ordered local acts), each with the sequence of the row it was read over (the confirmed row,
-// else the dead row the record's spent id keeps; null where neither holds one) and the server epoch that sequence
-// counts in; a life's preimage also keeps the record
-// as read, which a revival draws. A slot unset there takes the recipe's explicit default; with none, the act
-// fails before anything changes. A segment named with no recipes is journaled for its receipts alone, as
-// evidence, and an act names at least one recipe. Answers the plan by segment index, or null.
+// else the dead row the record's spent id keeps; null where neither holds one), stepped over each of the device's
+// own acknowledged writes of the record whose receipt continues it, and the server epoch that sequence counts in; a
+// life's preimage also keeps the record as read, which a revival draws. A slot unset there takes the recipe's
+// explicit default; with none, the act fails before anything changes. A segment named with no recipes is journaled
+// for its receipts alone, as evidence, and an act names at least one recipe. Answers the plan by segment index, or
+// null.
 function planUndo(replica, registry, request) {
   const { undo } = request;
   if (undo === undefined || undo === null) return null;
   if (!isObject(undo) || Object.keys(undo).sort().join() !== 'segments,version' || undo.version !== 1 || !Array.isArray(undo.segments))
     throw new CommitError('an act undo is {version: 1, segments}');
   const plan = new Map();
+  const writes = acknowledgedWrites(replica);
   for (const segment of undo.segments) {
     if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
       || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
@@ -46,9 +51,11 @@ function planUndo(replica, registry, request) {
         const value = valueIn(read, target.slot);
         if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
         const readOver = replica.confirmedRow(target.scope, target.t, target.id) ?? replica.spentIds[target.scope]?.[recordKey(target.t, target.id)];
-        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
+        const preimage = { target: structuredClone(target), value: structuredClone(value ?? defaultValue),
           rowSeq: readOver?.seq ?? null, epoch: replica.meta.serverEpoch,
-          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) });
+          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) };
+        for (const entry of writes.get(jcs([target.scope, target.t, target.id])) ?? []) stepOver(preimage, entry);
+        preimages.push(preimage);
       }
     }
     plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });
@@ -66,8 +73,11 @@ function optedGesture(registry, scope, opts) {
 }
 
 // The act's journal record, from the segments that left an entry: one source entry each, in commit order, with
-// the value the act left in each target, which a Redo writes back.
-function recordAct(replica, registry, actId, plan, receipts) {
+// the value the act left in each target, which a Redo writes back. Each ordinary entry still queued that a journaled
+// preimage read over takes its scope kind's capture command, so its ACK carries the receipt a restore's walk steps
+// over; an entry already sent keeps its intent, and so does one the command would carry past a push alone.
+function recordAct(replica, ctx, actId, plan, receipts) {
+  const { registry } = ctx;
   if (plan === null) return;
   const sourceEntries = [];
   for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
@@ -81,7 +91,18 @@ function recordAct(replica, registry, actId, plan, receipts) {
     });
     sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, written, attempts: [] });
   }
-  if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+  if (sourceEntries.length === 0) return;
+  replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+  for (const { target } of sourceEntries.flatMap((source) => source.preimages)) {
+    for (const entry of replica.entries(target.scope)) {
+      const queued = entry.gestureId !== actId && ['held', 'ready'].includes(entry.state) && entry.intent.cmd === undefined;
+      if (!queued || !(entry.intent.d ?? []).some((delta) => delta.t === target.t && sameJson(delta.id, target.id))) continue;
+      const captured = { ...entry.intent, cmd: { name: captureCommandOf(registry, target.scope), args: {} } };
+      if (widestAloneBytes(replica.meta, captured) > (ctx.limits ?? CONSTANTS).PUSH_MAX_BYTES) continue;
+      entry.intent = captured;
+      entry.predictions = [{ scope: entry.scope, d: [] }];
+    }
+  }
 }
 
 
@@ -236,7 +257,7 @@ export class ActCommit {
       delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
-    recordAct(working, ctx.registry, this.gestureId, this.undoPlan, this.receipts);
+    recordAct(working, ctx, this.gestureId, this.undoPlan, this.receipts);
     for (const key of ['meta', 'outbox', 'notices', 'device', 'journal']) replica[key] = working[key];
     ctx.ended.push(...this.ended);
     return { outcome: { gestureId: this.gestureId, segments: this.receipts, retired: [...this.retired], superseded: [...this.superseded],

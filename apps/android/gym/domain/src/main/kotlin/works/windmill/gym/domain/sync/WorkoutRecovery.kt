@@ -257,7 +257,7 @@ class StrandedSet(val set: TrainingSet) {
             number, set.weightKg, set.reps, set.completedAt, set.rpe, set.note, rpeNamed = true)), preserveOtherSets = true)
     }
 
-    fun start(session: Id<Session>): ServerCommand = nonJoiningStart(Session(session, set.completedAt))
+    fun start(session: Id<Session>): ServerCommand = StartSessionCommand(session, null, set.completedAt)
     fun append(session: Id<Session>, id: Id<TrainingSet>): AppendSet =
         AppendSet(TrainingSet(id, session, set.exerciseId, set.weightKg, set.reps, set.rpe, set.note, set.completedAt))
     fun finish(session: Id<Session>): ServerCommand =

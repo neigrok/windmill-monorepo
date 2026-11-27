@@ -536,15 +536,18 @@ TEST(the_gym_registry_reads_as_declared) {
   const std::map<std::string, DeviceRowDef>& device = gym.products().at("gym").device;
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
-  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
-  CHECK_EQ(gym.version(), 13);
-  CHECK_EQ(gym.minVersion(), 11);
+  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningRound", "runningTurn"}));
+  CHECK_EQ(gym.version(), 15);
+  CHECK_EQ(gym.minVersion(), 15);
   CHECK(gym.type("message")->fields.at("threadId").parent);
   CHECK_EQ(gym.type("message")->fields.at("state").kind, FieldKind::ranked);
   CHECK_EQ(gym.type("message")->fields.at("state").rank.at("completed"), 2);
   CHECK(device.at("picture").localOnly);
   CHECK_FALSE(device.at("runningTurn").localOnly);
   CHECK(device.at("runningTurn").keyPattern.matches("runningTurn"));
+  CHECK_FALSE(device.at("runningRound").localOnly);
+  CHECK(device.at("runningRound").keyPattern.matches("runningRound"));
+  CHECK_FALSE(device.at("runningRound").keyPattern.matches("runningRound:coach0000001"));
   for (const char* row : {"movement", "movementOrder", "offer", "picture", "rack"}) CHECK(device.at(row).keyPattern.matches(std::string(row) + ":session0001"));
   for (const std::string& row : deviceRows) CHECK(gym.type(row) == nullptr);
   CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);
@@ -570,8 +573,8 @@ TEST(the_roadmap_registry_reads_as_declared) {
                                                                  "roadmap.captureTree", "roadmap.captureOverlay", "roadmap.restore", "roadmap.restoreTree",
                                                                  "roadmap.restoreOverlay"}));
   CHECK_EQ(roadmap.products().at("roadmap").codes, (std::vector<std::string>{"step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"}));
-  CHECK_EQ(roadmap.version(), 13);
-  CHECK_EQ(roadmap.minVersion(), 11);
+  CHECK_EQ(roadmap.version(), 15);
+  CHECK_EQ(roadmap.minVersion(), 15);
   CHECK_EQ(roadmap.governingType()->name, std::string("tree"));
   CHECK_EQ(roadmap.type("node")->cap, std::optional<std::int64_t>(10'000));
   CHECK_EQ(roadmap.type("edge")->cap, std::optional<std::int64_t>(20'000));
@@ -579,7 +582,9 @@ TEST(the_roadmap_registry_reads_as_declared) {
   CHECK(roadmap.type("node")->revivable);
   CHECK(roadmap.type("kind")->revivable);
   CHECK_FALSE(roadmap.type("tree")->revivable);
-  CHECK_EQ(roadmap.type("meta")->fields.at("reach").opens, (std::vector<std::string>{"unlisted", "public"}));
+  for (const char* field : {"visibility", "reach"})
+    CHECK_EQ(roadmap.type("meta")->fields.at(field).domain->oneOf, (std::vector<std::string>{"private", "public"}));
+  CHECK_EQ(roadmap.type("meta")->fields.at("reach").opens, (std::vector<std::string>{"public"}));
   for (const char* command : {"roadmap.undoCreateRoadmap", "roadmap.undoCreateSubtree", "roadmap.redoCreateSubtree"}) CHECK(roadmap.command(command)->inverse);
 }
 
@@ -588,8 +593,8 @@ TEST(the_roadmap_registry_reads_as_declared) {
 TEST(the_deployment_composition_embeds_every_manifest_member_in_order) {
   const Json::Value composition = parseJson(compositionText());
   CHECK_EQ(productRegistry().name(), composition["composition"].asString());
-  CHECK_EQ(productRegistry().version(), 13);
-  CHECK_EQ(productRegistry().minVersion(), 11);
+  CHECK_EQ(productRegistry().version(), 15);
+  CHECK_EQ(productRegistry().minVersion(), 15);
   const std::vector<Registry> registries = productRegistries();
   const auto catalog = productCatalog();
   std::vector<std::string> types, commands;

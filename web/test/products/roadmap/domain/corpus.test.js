@@ -6,7 +6,7 @@ import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { Contract, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
 import { roadmapBook, runAction, runRead, runScene } from './vectors.js';
 
-const READS = ['account', 'board', 'diagnostics', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'replica', 'search'].map((name) => `${name}.json`);
+const READS = ['account', 'activity', 'board', 'diagnostics', 'effects', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'replica', 'search'].map((name) => `${name}.json`);
 const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing'].map((name) => `${name}-actions.json`);
 const SCENES = ['undo.json'];
 const PINNED = ['rules.json', 'values.json'];

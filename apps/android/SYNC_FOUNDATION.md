@@ -70,9 +70,10 @@ renames each delta, guard, receipt row and argument in two passes, global leaves
 scope-local ones, and a proposed creation moves only with its own retained target.
 
 An act opted into Undo (engine §7.3 Undo of an act, `ActRequest.undo`) journals each segment's source
-entry with its recipes, its first local preimages (each with the confirmed row and epoch it was read at)
-and the values it left, and each `ok` or terminal refusal in the result's own transaction. An Undo skips
-a field unless the journal's own receipts chain from that row to the act's last write; a Redo writes back
+entry with its recipes, its first local preimages (each with the confirmed row and epoch it was read at,
+stepped over each of the device's own acknowledged writes of the record whose receipt continues it, at the
+capture or at that write's ACK) and the values it left, and each `ok` or terminal refusal in the result's own
+transaction. An Undo skips a field unless the journal's own receipts chain from that row to the act's last write; a Redo writes back
 the values the act left. An `ok` whose receipt or inverse outcomes the replica cannot read still
 acknowledges its entry, ends its projections and reports `sync-push-malformed`. The `Replica` port's `cancelHeld` is the held-only Undo; its `requestInverse` cancels a
 wholly held act, or reserves inverse slots at the end of commit order that stop the sender until the
@@ -96,7 +97,7 @@ Step mode leaves sender waits pending until the caller advances its virtual cloc
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
 channels close on replica renewal, leave, authentication pause and shutdown.
 
-Gym consumes registry v13/minimum 11. The model server binds the Coach conversation types `thread` and
+Gym consumes registry v15/minimum 15. The model server binds the Coach conversation types `thread` and
 `message` (gym Coach §9.1), and authors routine revision/original count,
 proposal base revision/name/change count, note content time and immutable Coach creation snapshots.
 The gym domain decodes that metadata without including it in client fields, plans or guards;
@@ -159,7 +160,7 @@ commits and forbids pushing.
 
 ## Interpretations and discrepancies
 
-- Generate the full gym+journal+roadmap composition v13/minVersion 11; production automatic
+- Generate the full gym+journal+roadmap composition v15/minVersion 15; production automatic
   subscriptions remain gym-only. Journal client vectors and fuzz are mandatory. The corpus README
   includes `journal/claim-edit.json`, which §11.1's table omits; the client runner claims it too.
 - The runner guard follows Kotlin's coroutine context through an injected pure port. It cannot

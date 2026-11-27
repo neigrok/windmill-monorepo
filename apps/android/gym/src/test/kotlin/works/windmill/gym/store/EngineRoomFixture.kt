@@ -53,11 +53,14 @@ internal class EngineRoomFixture(
     private val localCoach: LocalCoach? = null,
     private val coachImports: ((Engine) -> works.windmill.gym.coach.onboarding.CoachRoutineImports)? = null,
     private val coachAccess: suspend () -> works.windmill.gym.coach.AnonymousCoachAccess = { works.windmill.gym.coach.AnonymousCoachAccess.Unavailable },
-    coachServer: works.windmill.agent.TurnTransport? = null,
-    coachBeat: Duration = 1.seconds,
+    coachServer: works.windmill.gym.coach.turn.ScriptedTurns? = null,
+    coachTextEvery: Duration = 5.seconds,
+    coachShares: () -> works.windmill.gym.net.GymRest? = { null },
     private val coachInstallation: works.windmill.platform.ai.AiInstallation? = null,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
+    // Session ids count up from here: two phones of one account pass it apart, as their random ids never meet.
+    mintedSessions: Int = 0,
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
@@ -100,7 +103,7 @@ internal class EngineRoomFixture(
     }
     var now = 1_800_000_000_000L
     var selected: String? = null
-    private var nextSession = 0
+    private var nextSession = mintedSessions
     private val engineClock = object : EngineClock { override fun now() = now }
     val engine = createEngine?.invoke(snapshot, engineClock) ?: Engine.memory(SyncSchema.registry, snapshot, clock = engineClock,
         intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
@@ -108,8 +111,12 @@ internal class EngineRoomFixture(
     val training = EngineTraining(engine, writeAuthority = writeAuthority)
     val coachTurns: CoachTurns? = coachServer?.let { server ->
         val dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        // A test's virtual clock where the room runs on one, so a refusal retried for thirty seconds waits thirty virtual ones.
+        val elapsed = (dispatcher as? kotlinx.coroutines.test.TestDispatcher)?.scheduler?.let { scheduler -> { scheduler.currentTime } } ?: { System.nanoTime() / 1_000_000 }
         CoachTurns(training, server, coachInstallation ?: TurnPhoneInstallation.onMemory(), { "account-token".takeIf { selected != null } },
-            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, telemetry, {}, "https://windmill.works", this.scope, dispatcher, coachBeat)
+            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, lazy { TurnPhone.words() }, telemetry, {}, "https://windmill.works",
+            coachShares, this.scope, dispatcher, works.windmill.platform.agent.CoachRuntime(works.windmill.platform.agent.CoachBackgroundLease { AutoCloseable {} }, elapsed),
+            coachTextEvery, elapsed).also { server.stopAsked = it.stopping }
     }
     val controlsFile = File(directory, "control.json")
     val store = freshStore()

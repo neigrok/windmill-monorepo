@@ -1,0 +1,149 @@
+import Foundation
+import DomainKit
+import RoadmapDomain
+import SyncCore
+import SyncEngine
+
+// The requests the room makes of the backend (Roadmap on iOS §3, INV-1), all of them sharing and named as the backend's HTTP
+// surface names them, each with the account's token where the phone is signed in: the owner's progress a cover shows
+// (`GET /v1/trees/{id}/progress`) and Fork (`POST /v1/trees/{id}/fork`). Every other read and change of a roadmap goes
+// through the sync engine.
+protocol RoadmapSharing {
+  // The owner's progress on a roadmap someone else owns, as the server shows it to a reader.
+  func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress
+  // A copy of the roadmap in the person's own list, which arrives by sync: the copy's id. `request` names the fork, so the
+  // same fork asked again, after an answer that was lost, answers the same copy.
+  func fork(_ tree: String, request: String) async throws(SharingFailure) -> String
+}
+
+// Why a sharing request came to nothing: no connection; no session the phone can send as, or one the server no longer
+// takes (401), which a fork needs; the server's refusal, a roadmap the person may not read or a subtree's id; the server
+// busy for a moment (503), to be tried again; the request given up by whoever asked, as a cover that closed; or a failure,
+// an answer the room cannot read among them.
+enum SharingFailure: Error, Equatable {
+  case offline, signedOut, refused, busy, cancelled, failed
+}
+
+// The requests over HTTP to the site the app syncs with. Each failure is told as an `api_request_failed` under its
+// operation, `roadmap_progress` or `roadmap_fork`, and reported where nobody expects it: neither no connection, a status
+// the server answers on purpose, nor the server busy. A request given up is no failure and tells nothing.
+final class SharingRequests: RoadmapSharing {
+  let baseURL: URL?
+  // The signed-in account's token; none signed out, or while the session waits to be renewed.
+  let credential: () -> SessionToken?
+  let online: () -> Bool
+  let telemetry: any Telemetry
+  let session: URLSession
+
+  init(baseURL: URL?, credential: @escaping () -> SessionToken?, online: @escaping () -> Bool, telemetry: any Telemetry,
+       session: URLSession = NativeAuth.nativeSession()) {
+    self.baseURL = baseURL; self.credential = credential; self.online = online; self.telemetry = telemetry; self.session = session
+  }
+
+  func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
+    let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", token: credential())
+    guard let progress = try? OwnersProgress(answer: answer) else {
+      telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"])
+      throw .failed
+    }
+    if progress.unread > 0 { telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"]) }
+    return progress
+  }
+
+  func fork(_ tree: String, request id: String) async throws(SharingFailure) -> String {
+    guard let token = credential() else { throw .signedOut }
+    let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", token: token, body: ["requestId": id])
+    guard case .string(let copy)? = (try? JSON(parsing: Array(answer)))?["data"]?["id"] else {
+      telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees"])
+      throw .failed
+    }
+    return copy
+  }
+
+  // One request and its answer's body; a status other than success is the server's refusal where it answers it on purpose.
+  func request(_ path: String, method: String, operation: String, token: SessionToken?, body: [String: String]? = nil) async throws(SharingFailure) -> Data {
+    let started = ContinuousClock.now
+    var kind = "offline"
+    var status: Int?
+    do {
+      guard let baseURL, online() else { throw URLError(.notConnectedToInternet) }
+      var request = URLRequest(url: baseURL.appending(path: path))
+      request.httpMethod = method
+      request.httpShouldHandleCookies = false
+      request.setValue("application/json", forHTTPHeaderField: "Accept")
+      if let token { request.setValue("Bearer " + token.value, forHTTPHeaderField: "Authorization") }
+      if let body {
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+      }
+      kind = "transport"
+      let (data, response) = try await NativeAuth.data(for: request, session: session)
+      guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+      status = response.statusCode
+      guard (200..<300).contains(response.statusCode) else {
+        kind = "http"
+        throw URLError(.badServerResponse)
+      }
+      return data
+    } catch {
+      if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled { throw .cancelled }
+      if let failure = error as? URLError {
+        if [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost].contains(failure.code) { kind = "offline" }
+        if failure.code == .timedOut { kind = "timeout" }
+      }
+      let elapsed = started.duration(to: .now).components
+      let ms = elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000
+      var properties = ["method": method, "route": "/v1/trees", "operation": operation, "failure_kind": kind]
+      if let status { properties["status"] = String(status) }
+      telemetry.event("api_request_failed", properties: properties, durationMs: ms)
+      if kind != "offline", status != 503, !ExpectedStatuses.contains(status) { telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms) }
+      if kind == "offline" || kind == "timeout" { throw .offline }
+      if status == 401 { throw .signedOut }
+      if status == 503 { throw .busy }
+      throw ExpectedStatuses.contains(status) ? .refused : .failed
+    }
+  }
+}
+
+// The owner's progress on a roadmap someone else owns, as the server shows it to a reader: their marks, which the phone
+// holds none of, and what each subtree the roadmap's steps own has come to, which the phone holds no copy of.
+struct OwnersProgress {
+  let marks: [RoadmapTree.Mark]
+  let subtrees: [RoadmapAccount.Told]
+  // The rows of the server's answer the room could not read, left out.
+  let unread: Int
+
+  init(marks: [RoadmapTree.Mark], subtrees: [RoadmapAccount.Told] = []) {
+    self.marks = marks
+    self.subtrees = subtrees
+    unread = 0
+  }
+
+  // The server's progress answer, `{marks: [{node, status, at, markedAt, outOfOrder?}], subtrees?: [{node, tree, done,
+  // total}]}`: each mark dated as the phone's copy dates a mark, by its stamp's time where it was made and by the server's
+  // receipt, `complete` or not; and each subtree by its id with how many of its steps are done of how many. A mark row that
+  // names no step or holds no stamp, and a subtree row that names no roadmap or holds no counts, are left out and counted.
+  // Throws where the answer is no such object.
+  init(answer: Data) throws {
+    let body = try JSON(parsing: Array(answer))
+    let rows = try body.member("marks").asArray()
+    var marks: [RoadmapTree.Mark] = []
+    for row in rows {
+      guard case .string(let node)? = row["node"], !node.isEmpty, case .string(let at)? = row["at"], let stamp = try? Stamp(at) else { continue }
+      let complete: Bool = if case .string("complete")? = row["status"] { true } else { false }
+      let received = (try? row["markedAt"]?.asInteger()).flatMap { $0 }.map(Instant.init(ms:))
+      let outOfOrder: Bool = if case .bool(true)? = row["outOfOrder"] { true } else { false }
+      marks.append(RoadmapTree.Mark(node: node, status: complete ? "complete" : "none", outOfOrder: outOfOrder, recordedAt: received,
+                                    deviceAt: Instant(ms: stamp.ms), stamp: stamp))
+    }
+    let counted = try body["subtrees"]?.asArray() ?? []
+    let subtrees = counted.compactMap { (row: JSON) -> RoadmapAccount.Told? in
+      guard case .string(let tree)? = row["tree"], !tree.isEmpty, let done = try? row["done"]?.asInteger(), let total = try? row["total"]?.asInteger(),
+            done >= 0, done <= total else { return nil }
+      return RoadmapAccount.Told(tree: tree, counts: Counts(done: Int(done), total: Int(total)))
+    }
+    self.marks = marks
+    self.subtrees = subtrees
+    unread = rows.count - marks.count + counted.count - subtrees.count
+  }
+}

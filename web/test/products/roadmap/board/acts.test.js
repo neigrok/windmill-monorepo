@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, StepSelection, deletable, takesEveryRoot, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
+import { HeldDelete, StepSelection, deletable, editGesture, completionOutcome, creationOutcome } from '../../../../src/products/roadmap/board/acts.js';
+import { readEffects } from '../../../../src/products/roadmap/model/effects.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -39,7 +40,7 @@ test('creation outcome derives placement and clears exactly hiding filters', () 
   });
 });
 
-test('held delete projection equals committed BulkDelete and its cost counts surviving direct children', () => {
+test('held delete projection equals committed BulkDelete and its cost names the surviving steps that follow it', () => {
   const lattice = new TreeLattice('sail', 'Learn to sail');
   const clock = new HlcClock('tester');
   lattice.join(materialize({ kind: 'ImportSubgraph', nodes: [wind, dock, { id: 'solo', label: 'Solo' }, { id: 'other', label: 'Other' }],
@@ -48,34 +49,14 @@ test('held delete projection equals committed BulkDelete and its cost counts sur
   const held = new HeldDelete(['dock', 'dock'], 'Leave the dock');
   assert.deepEqual(held.ids, ['dock']);
   assert.equal(held.message, 'Leave the dock deleted');
-  assert.equal(deletionCost(tree, held.ids), 2);
-  assert.equal(deletionCost(tree, ['wind']), 2);
-  assert.equal(deletionCost(tree, ['wind', 'dock']), 2);
-  assert.equal(deletionCost(tree, ['solo']), 0);
+  assert.deepEqual([held.ids, ['wind'], ['wind', 'dock'], ['solo']].map((ids) => readEffects(tree, ids).follow),
+    [['solo', 'other'], ['dock', 'other'], ['solo', 'other'], []]);
   const projected = held.projected(tree);
   lattice.join(materialize({ kind: 'BulkDelete', nodeIds: held.ids }, lattice, clock));
   assert.deepEqual(projected.nodes, lattice.toTreeData().nodes);
   assert.equal(new HeldDelete(['wind', 'dock'], 'unused').message, '2 steps deleted');
   assert.ok(Object.isFrozen(held));
   assert.ok(Object.isFrozen(held.ids));
-});
-
-test('event counts are bounded buckets', () => {
-  assert.deepEqual([0, 1, 2, 5, 6, 20, 21, 5000].map(countBucket), ['0', '1', '2-5', '2-5', '6-20', '6-20', '21+', '21+']);
-});
-
-test('delete cost includes a child retaining another parent and counts shared children only once', () => {
-  const tree = treeOf([
-    wind,
-    { id: 'rig', label: 'Rig the boat', prerequisites: [] },
-    { ...dock, prerequisites: ['wind', 'rig'] },
-    { id: 'solo', label: 'Sail solo', prerequisites: ['dock'] },
-  ]);
-  assert.equal(deletionCost(tree, ['wind']), 1);
-  assert.equal(deletionCost(tree, ['rig']), 1);
-  assert.equal(deletionCost(tree, ['wind', 'rig', 'rig']), 1);
-  assert.equal(deletionCost(tree, ['wind', 'rig', 'dock']), 1);
-  assert.equal(deletionCost(tree, []), 0);
 });
 
 test('StepSelection toggles immutably and prunes to the pane order after filtering or regrouping', () => {
@@ -93,22 +74,6 @@ test('StepSelection toggles immutably and prunes to the pane order after filteri
   assert.deepEqual(selected.prune(board, 'upNext').ids, []);
   assert.ok(Object.isFrozen(selected));
   assert.ok(Object.isFrozen(selected.ids));
-});
-
-test('takesEveryRoot asks only whether the ids take every root a roadmap has', () => {
-  const sole = new SkillTree({ id: 'sole', title: 'Sole', nodes: [
-    { id: 'root', label: 'Root', prerequisites: [] },
-    { id: 'leaf', label: 'Leaf', prerequisites: ['root'] },
-  ] });
-  const twoRoots = new SkillTree({ id: 'two', title: 'Two', nodes: [
-    { id: 'root', label: 'Root', prerequisites: [] },
-    { id: 'other', label: 'Other', prerequisites: [] },
-  ] });
-  assert.deepEqual([
-    takesEveryRoot(sole, ['root']), takesEveryRoot(sole, ['leaf', 'root']), takesEveryRoot(sole, ['leaf']), takesEveryRoot(sole, []),
-    takesEveryRoot(sole, ['gone']), takesEveryRoot(twoRoots, ['root']), takesEveryRoot(null, ['root']),
-    takesEveryRoot(twoRoots, ['root', 'other']),
-  ], [true, true, false, false, false, false, false, true]);
 });
 
 test('deletable excludes the sole root, absent ids and empty selections', () => {

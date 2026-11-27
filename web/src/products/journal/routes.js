@@ -3,7 +3,7 @@
 
 import { createElement, lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
-import { migratePages } from './migrate.js';
+import { CarryOver, forgetClosedAccount, forgetUnclaimedPages, settleSeat } from './carry.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
 import { talkStore } from './talk/talkStore.js';
 import { track } from '../../telemetry/beacon.js';
@@ -58,7 +58,9 @@ export const journalRoutes = {
   preloadApp: importJournalApp,
   // How the journal rides the browser engine; the shell composes every product's hooks into it.
   sync: {
-    prepare: async (engine) => { await migratePages(engine); watchClaims(engine); },
+    prepare: async (engine) => { await new CarryOver(engine).start(); watchClaims(engine); },
+    // The old pages the replica's ledger records leave this browser's storage before the seat changes (carry.js).
+    seatWillChange: (engine) => settleSeat(engine),
     onPushResult: onSyncResult,
     pendingDeviceWork: pendingClaimWork,
     adoptDeviceRows,
@@ -71,12 +73,20 @@ export const journalRoutes = {
       many: t('journal.signedOutWork.many'),
     },
   },
+  // The export reads the replica, the browser's own pages signed out.
   settingsSections: {
     data: [YourJournalSection],
+    signedOut: [YourJournalSection],
   },
   signOutNotice,
-  // An account change forgets what Talk held for the last account: a recording never crosses accounts.
-  forgetDevice: () => talkStore.forget(),
+  // An account change forgets what Talk held for the last account: a recording never crosses accounts. The old pages no
+  // account can be shown to own leave this browser at every sign-out, and a closed account's old pages leave with it
+  // (carry.js).
+  forgetDevice: ({ previous, closed = false }) => {
+    talkStore.forget();
+    if (closed) forgetClosedAccount(previous);
+    return forgetUnclaimedPages();
+  },
   landing: {
     head: journalLandingHead,
     href: '/journal',

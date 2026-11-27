@@ -19,7 +19,8 @@ export function validateProfile(profile) {
   const names = new Set();
   for (const tool of profile.tools) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(tool.name) || names.has(tool.name) || typeof tool.description !== 'string'
-      || tool.input?.type !== 'object' || typeof tool.countsAsWrite !== 'boolean') throw new TypeError('invalid profile tool');
+      || tool.input?.type !== 'object' || typeof tool.countsAsWrite !== 'boolean'
+      || (tool.strict !== undefined && typeof tool.strict !== 'boolean')) throw new TypeError('invalid profile tool');
     names.add(tool.name);
   }
   const groups = new Set();
@@ -54,8 +55,8 @@ export function accessState(failure) {
 export class TurnRunner {
   constructor({ host, ai, telemetry, runtime }) {
     Object.assign(this, { host, ai, runtime });
-    this.telemetry = Object.fromEntries(['turn', 'ability', 'failure'].map((name) => [name, (value) => {
-      try { telemetry?.[name]?.(value); } catch { /* Observers cannot interrupt a write. */ }
+    this.telemetry = Object.fromEntries(['turn', 'ability', 'failure'].map((name) => [name, (value, error) => {
+      try { telemetry?.[name]?.(value, error); } catch { /* Observers cannot interrupt a write. */ }
     }]));
     this.active = null;
     this.barrier = Promise.resolve();
@@ -72,7 +73,7 @@ export class TurnRunner {
     await this.barrier.catch(() => {});
     try { if (turn.lease && !turn.done) await this.finish(turn, 'interrupted'); }
     catch (error) {
-      if (!(error instanceof HostUnavailable)) this.reportHostFailure(turn);
+      if (!(error instanceof HostUnavailable)) this.reportHostFailure(turn, error);
       throw error;
     }
     if (this.active === turn) this.active = null;
@@ -119,7 +120,7 @@ export class TurnRunner {
           if (turn.stop) return await this.finish(turn, 'stopped');
           turn.rounds++;
           const answer = await this.ai.text({ callId, request: { model: profile.model, system: profile.system,
-            tools: profile.tools.map(({ name, description, input }) => ({ name, description, input })), messages,
+            tools: profile.tools.map(({ name, description, input, strict }) => ({ name, description, input, ...(strict === undefined ? {} : { strict }) })), messages,
             output: { ...profile.output, schema: null }, effort: profile.effort, cache: true }, pictures: opened.pictures,
             label: profile.label, use: profile.name, version: profile.version, signal: turn.wait.signal,
             onText: (delta) => this.append(turn, delta) });
@@ -186,8 +187,8 @@ export class TurnRunner {
         if (!turn.done) { turn.done = true; turn.end = null; this.report(turn, 'interrupted', null); }
         return null;
       }
-      this.reportHostFailure(turn);
-      if (turn.lease && !turn.done) return await this.finish(turn, 'failed', { code: 'invalid-answer' });
+      this.reportHostFailure(turn, error);
+      if (turn.lease && !turn.done) return await this.finish(turn, 'failed', { code: 'host-fault' });
       throw error;
     } finally { if (this.active === turn) this.active = null; }
   }
@@ -223,10 +224,11 @@ export class TurnRunner {
       refusals: turn.refusals, answerBytes: bytes(turn.text), durationMs: Math.max(0, this.runtime.now() - turn.start) });
   }
 
-  reportHostFailure(turn) {
+  // The host's own fault, reported once a turn with the error that raised it.
+  reportHostFailure(turn, error) {
     if (turn.hostFailureReported) return;
     turn.hostFailureReported = true;
-    this.telemetry.failure('agent-host');
+    this.telemetry.failure('agent-host', error);
   }
 
   async finish(turn, state, { code = null, truncated = false, withdraw = false } = {}) {

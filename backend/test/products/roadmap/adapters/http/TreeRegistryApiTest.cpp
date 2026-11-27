@@ -9,6 +9,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <map>
 #include <mutex>
@@ -59,7 +60,7 @@ drogon::HttpRequestPtr post(const Json::Value& body, const std::string& session 
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr create(TreeRegistryApi& api, const drogon::HttpRequestPtr& request) {
@@ -73,7 +74,7 @@ void retire(TreeRegistryApi& api, const std::string& id, const std::string& sess
   request->setMethod(drogon::Delete);
   request->addCookie("wm_session", session);
   drogon::HttpResponsePtr captured;
-  api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+  api.deleteTree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
   CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
   CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[],"branch":{"subtrees":0,"steps":0}})"));
 }
@@ -99,7 +100,7 @@ drogon::HttpRequestPtr patch(const Json::Value& body, const std::string& session
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr sendPatch(TreeRegistryApi& api, const drogon::HttpRequestPtr& request,
@@ -322,7 +323,7 @@ TEST(patch_guide_on_a_fork_makes_the_copied_guide_its_owners_own) {
 TEST(patch_guide_refuses_a_non_owner_with_403_and_a_guide_that_is_not_a_string_with_400) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::public_};
 
   drogon::HttpResponsePtr stranger = sendPatch(h.api, patch(guided("Mine now"), "s-live"), "t");
   CHECK_EQ(stranger->getStatusCode(), drogon::k403Forbidden);
@@ -356,10 +357,10 @@ TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
   UserId me = h.signIn("s-live", "sam@example.com");
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
-  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(h.trees.byId["t"].visibility == Visibility::public_);
 }
 
 // A subtree is shared as its root is: aimed at a subtree, the change is refused 409 `not-a-root`, naming the step it hangs
@@ -388,11 +389,12 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
   UserId me = h.signIn("s-live", "sam@example.com");
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("world-readable"), "s-live"), "t");
+  for (const char* unknown : {"unlisted", "world-readable"}) {
+    drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo(unknown), "s-live"), "t");
 
-  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"error":"visibility must be private, unlisted, or public"})"));
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"visibility must be private or public"})"));
+  }
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
 }
 
@@ -400,14 +402,14 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
 TEST(patch_visibility_refuses_a_non_owner_with_403) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::public_};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("private"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
-  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(h.trees.byId["t"].visibility == Visibility::public_);
 }
 
 TEST(patch_visibility_of_an_unowned_tree_says_it_is_nobodys) {
@@ -428,7 +430,7 @@ TEST(patch_visibility_without_a_session_is_401) {
   Harness h;
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"X", {}}, 0, uid("owner")};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted")), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public")), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
@@ -438,7 +440,7 @@ TEST(patch_visibility_of_an_absent_tree_is_404) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_ghost");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_ghost");
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
 }
@@ -622,7 +624,7 @@ TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
     request->setBody(body);
     request->addCookie("wm_session", "s-me");
     drogon::HttpResponsePtr created;
-    h.api.createTree(request, [&](const drogon::HttpResponsePtr& r) { created = r; });
+    h.api.createTree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& r) { created = r; });
     CHECK_EQ(created->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(*created->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
 
@@ -632,7 +634,7 @@ TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
     patch->setBody(body);
     patch->addCookie("wm_session", "s-me");
     drogon::HttpResponsePtr patched;
-    h.api.patchTree(patch, [&](const drogon::HttpResponsePtr& r) { patched = r; }, "t_whatever");
+    h.api.patchTree(wm::test::DrogonLoopback::received(patch), [&](const drogon::HttpResponsePtr& r) { patched = r; }, "t_whatever");
     CHECK_EQ(patched->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(*patched->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
   }
@@ -691,7 +693,7 @@ TEST(patch_with_a_body_that_does_not_parse_as_json_is_400_and_an_empty_one_still
     request->setContentTypeCode(type);
     request->setBody(body);
     request->addCookie("wm_session", "s-live");
-    return sendPatch(h.api, request, "t");
+    return sendPatch(h.api, wm::test::DrogonLoopback::received(request), "t");
   };
 
   for (const std::string& body : {std::string(R"({"guide": "unterminated)"), std::string(R"({"guide":"x \ud83d"})"),
@@ -740,7 +742,7 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
     auto made = drogon::HttpRequest::newHttpRequest();
     made->setMethod(method);
     made->addCookie("wm_session", "s-live");
-    return made;
+    return wm::test::DrogonLoopback::received(made);
   };
   const auto remove = [&](const std::string& id) {
     drogon::HttpResponsePtr captured;
@@ -811,7 +813,7 @@ TEST(list_holds_roots_alone_and_patch_renames_a_subtree_through_its_owning_step)
     request->setMethod(drogon::Get);
     request->addCookie("wm_session", "s-live");
     drogon::HttpResponsePtr listed;
-    h.api.listTrees(request, [&](const drogon::HttpResponsePtr& response) { listed = response; });
+    h.api.listTrees(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { listed = response; });
     const Json::Value body = bodyOf(listed);
     std::map<std::string, std::string> doneOfTotal;
     for (const Json::Value& row : body["trees"])
@@ -878,7 +880,7 @@ TEST(patch_from_a_stranger_answers_a_private_tree_as_an_absent_one_at_every_dept
   CHECK_EQ(h.trees.byId["t_a"].title.value, std::string("Private year"));
   CHECK(h.trees.byId["t_a"].visibility == Visibility::private_);
   CHECK_EQ(sendPatch(h.api, patch(titled("My year"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
 }
 
 // A subtree is never removed or planted by its own id: DELETE aimed at one is refused 409 `not-a-root` to its owner,
@@ -900,7 +902,7 @@ TEST(a_subtree_is_never_deleted_or_planted_by_its_id_and_a_roots_row_counts_its_
     auto made = drogon::HttpRequest::newHttpRequest();
     made->setMethod(method);
     made->addCookie("wm_session", "s-live");
-    return made;
+    return wm::test::DrogonLoopback::received(made);
   };
   const auto remove = [&](const std::string& id) {
     drogon::HttpResponsePtr captured;
@@ -950,7 +952,7 @@ TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
     made->setMethod(drogon::Delete);
     made->addCookie("wm_session", session);
     drogon::HttpResponsePtr captured;
-    h.api.deleteTree(made, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    h.api.deleteTree(wm::test::DrogonLoopback::received(made), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
     return captured;
   };
 
@@ -987,7 +989,7 @@ struct SubtreeDoor {
     WriteObservation route{"roadmap.PUT.v1.trees.tree.steps.step.subtree", "roadmap", "rest"};
     WriteContext context{route};
     drogon::HttpResponsePtr answered;
-    api.createSubtree(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
+    api.createSubtree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
     route.finish(writeHttpOutcome(answered, "roadmap.PUT.v1.trees.tree.steps.step.subtree"));
     return std::to_string(answered->getStatusCode()) + " " + dump(parse(std::string(answered->getBody())));
   }

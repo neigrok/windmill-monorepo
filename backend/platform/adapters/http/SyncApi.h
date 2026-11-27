@@ -52,8 +52,8 @@ private:
   void onWorker(const drogon::HttpRequestPtr& req, Reply&& reply, std::function<SyncReply()> work);
   // §9.1's first check, on the version the header Sync-Schema carries.
   std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
-  // The credentials the request's header lines send as received, each token resolved to its session's account; the
-  // access log learns the account they resolve to.
+  // The credential the request's header lines send as received (SentCaller); the access log learns the account it is
+  // served as.
   Credential credentialOf(const drogon::HttpRequestPtr& req) const;
 
   SyncDeps deps_;

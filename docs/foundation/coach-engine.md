@@ -8,8 +8,8 @@ roadmap nodes can cite them.
 
 **Status:** Approved by the owner on 2026-11-15. Product-neutral turn libraries and AI clients are
 implemented for web, iOS and Android, together with the optional backend pass issuer and shared
-turn stories. Product screens do not use these libraries yet; their integrations and production
-acceptance remain separate work. The build order lives in the Coach engine
+turn stories. Gym's Coach on Android runs on the Kotlin libraries; the web's and the iPhone's
+screens do not use theirs yet. Those integrations and production acceptance remain separate work. The build order lives in the Coach engine
 roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `coach-engine`.
 
 **Scope:** What every Coach shares once its turn runs on the device (AI service I-3): the engine
@@ -54,8 +54,9 @@ the pass door and no turn; its move is designed apart (AI service I-5).
   - its name and version, as `gym.coach` and 1;
   - its words: the system prompt, the words of the first content (§5), and the sentence the model
     reads beside each refusal code (§6);
-  - its tools: for each ability offered, the name, the description, the input schema, and whether a
-    call counts toward the write cap;
+  - its tools: for each ability offered, the name, the description, the input schema, whether a
+    call counts toward the write cap, and, where the product says, whether the tool is strict
+    ([AI service §6.2](ai-service.md#62-the-wire));
   - the model class, the effort, the output cap and floor, and the label;
   - the limits and the groups of §6.
 - **D-4 Pass.** The statement the backend signs for a principal
@@ -64,6 +65,9 @@ the pass door and no turn; its move is designed apart (AI service I-5).
 - **D-6 Mark.** A row the device keeps for itself, which does not sync. It names the turn the
   device is running, the `callId` of the round in flight, and how many bytes of the Coach message's
   text, as UTF-8, had arrived before that round began. Before the first round, `callId` is null.
+  A product may keep the mark as more than one device row: gym keeps the turn in `runningTurn` and
+  the round in `runningRound`, whose absence stands for the null `callId` before round 1
+  ([gym Coach on the AI service §4.4](gym-coach-on-ai-service.md#44-text-the-mark-and-the-end)).
 
 ## §3 Where things live
 
@@ -85,7 +89,7 @@ apps/ios/                   the engine, in Swift: a module `Agent`, the twin of 
   data, and it reaches everything else through three ports: the tool host, the AI client and
   telemetry.
 - The types that read a catalog (an ability, a catalog, a schema check) are not the engine's. Kotlin
-  keeps them in the domain kit and Swift in gym's domain; the web's domain kit gains them. A
+  and Swift keep them in the domain kit; the web's domain kit gains them. A
   product's tool host builds the profile's tools from them and answers the gate's catalog rules
   (§6).
 - The AI client is platform code. It is the only code that knows the service's wire, and it checks

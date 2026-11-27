@@ -58,7 +58,7 @@ struct Edge {
   bool present = true;
 };
 
-// A person's `progress` mark on a step: the time the server received it, else the device's, and its stamp.
+// A person's `progress` mark on a step: the time the server received it, the device's, and its stamp.
 struct Mark {
   std::string node;
   std::string status = "none";
@@ -66,6 +66,9 @@ struct Mark {
   Instant recordedAt;
   Instant deviceAt;
   Hlc stamp;
+
+  // When the person made it: the device's time, else the server's receipt where the mark holds no device time.
+  Instant at() const { return deviceAt && *deviceAt > 0 ? deviceAt : recordedAt; }
 };
 
 // The owner's `pointer` on a step: the roadmap it opens (D-2), and the stamp it was set under.

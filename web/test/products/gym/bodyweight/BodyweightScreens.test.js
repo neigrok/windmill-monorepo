@@ -38,7 +38,10 @@ test('the log actions open one weigh-in sheet beside Add past workout and read t
   browserWith();
   const gym = await gymAccount(t);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog() }));
+  const unconfirmed = renderHook(t, () => LogList({ log: quietLog() }));
+  assert.deepEqual(findByClass(unconfirmed.tree, 'gym-history-share'), [], 'a log share waits for an account the shell has settled');
+  unconfirmed.unmount();
+  const screen = renderHook(t, () => LogList({ log: quietLog(), signedIn: true }));
   await settle();
   const header = findByClass(screen.tree, 'gym-history-actions')[0];
   const footer = findByClass(screen.tree, 'gym-log-footer')[0];
@@ -79,9 +82,9 @@ test('a refused save shows the log’s own sentence in the sheet and leaves it o
   findByClass(screen.tree, 'gym-history-weigh')[0].props.onClick();
   // Another tab signed this account out under the open sheet: the log refuses the write, in its words.
   const commit = gym.engine.commit.bind(gym.engine);
-  t.mock.method(gym.engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, replica: 'anotherAccount' })));
+  t.mock.method(gym.engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, binding: '["rp_another","B"]' })));
   const refused = await sheetOf(screen.tree).props.onSave({ dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
-  assert.equal(refused, 'Sign in to save to your training log.');
+  assert.equal(refused, 'That wasn’t saved — the account on this browser changed.');
   assert.notEqual(sheetOf(screen.tree), undefined);
   assert.deepEqual(gym.owed(), []);
 });

@@ -28,7 +28,7 @@ rejected for structure. Validity is a read model, not a gate.
   must be valid (Legacy pointers), judged on one read for the whole call
   (`TreeRepository::pointerTargets`), or the call is refused with nothing written (Legacy pointers).
   That read is made under the strand of the tree being written, not the target's, so an edit racing the
-  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. The tree a node opens may be private, so only a caller who
   can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
   reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
   a document node without `opens`, a
@@ -650,7 +650,10 @@ committed before its connection dropped lands once. Only a room closing — `evi
 
 ### Bounds
 
-Declared once in `domain/Command.h`. The MCP surface tells a cap in the refusal past it and publishes
+Declared in `domain/Command.h` for the backend's own doors, and in roadmap's sync registry
+(`packages/api-contract/sync/roadmap.registry.json`) for what the sync engine admits.
+`packages/api-contract/roadmap/limits.json` holds the caps Roadmap Coach checks first, and the Coach contracts
+workflow fails when one differs from either. The MCP surface tells a cap in the refusal past it and publishes
 none in a tool's schema (`adapters/mcp/README.md`). Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
 names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
@@ -817,16 +820,16 @@ Rules:
 
 ## Authorization
 
-Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `unlisted` and `public` are
-readable by anyone holding the id. `parseVisibility` fails closed to private. New trees are
-private.
+Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `public` is readable by anyone
+holding the id. `parseVisibility` fails closed: any text but `public`, `unlisted` among them, reads as
+private. New trees are private.
 
 Write: `canWrite(caller, owner)` — a tree is its owner's to change and nobody else's. An unowned
 tree is readable by the world and writable by no one. `WriteRefusal ∈ {notYours, nobodysTree}`;
 clients branch on the code, humans read the sentence.
 
-`unlisted` vs `public` is consent, not permission: `public` admits the tree to the gallery and
-lets its share page be indexed.
+`public` is consent as well as permission: it admits the tree to the gallery and lets its share page
+be indexed.
 
 A subtree's access is its root's (Model, Subtrees), read at every access: the root's owner and
 visibility, none at all while its root is deleted, and none while an owning step on its path is
@@ -1236,11 +1239,13 @@ Indexes that exist because their query runs on every render: `trees_owner` (the 
 
 `windmill_subtree_inventory` (`platform/infra/subtree_inventory.cpp`) counts how the pointers between
 the stored trees meet a model in which each step owns at most one subtree and each subtree has one
-owning step. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing else, and
-never writes. A failure prints one fixed sentence on stderr and exits 2 without `DATABASE_URL`, 1
-otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On production it runs
-inside the live server container through the **Ops · subtree inventory** workflow, which seals the
-counts to the owner's certificate before the public job log sees them (`deploy/README.md`).
+owning step, and, under `engine`, the sync engine's roadmaps by owner and visibility and its pointers
+alive with no `opens`. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing
+else, and never writes. A failure prints one fixed sentence on stderr and exits 2 without
+`DATABASE_URL`, 1 otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On
+production it runs inside the live server container through the **Ops · subtree inventory** workflow,
+which seals the counts to the owner's certificate and keeps them as the run's artifact, out of the
+public job log (`deploy/README.md`).
 
 The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
 in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches
@@ -1290,10 +1295,33 @@ socket's `subgraph` frame, MCP `create_node`, `update_nodes` and `import_subgrap
 owner's own tree, which keeps its pointers. A tend cannot set one. `tree_ops` does not record which
 door set a pointer: a frame's row is its headline deed, which never carries `opens`, so a frame or an
 `import_subgraph` graft that sets only a pointer leaves no row (Convergence), and a command's row
-carries the pointer under the `srv-` op id that MCP, tending and a removal's cascade share. The
-inventory counts no door.
+carries the pointer under the `srv-` op id that MCP, tending and a removal's cascade share. These
+counts name no door.
 
-What the inventory does not measure, because it is not in `trees` or `tree_nodes`:
+`engine` is read from the tables production serves, the engine's `roadmap_*` (`products/roadmap/sync/`),
+in a second transaction, `REPEATABLE READ READ ONLY`, so its two statements read one snapshot. It is a
+hand-run read of whole tables, so it sets `statement_timeout` to 60 s for itself, past the pool's 5 s: a
+large table is counted, not cut off, and a read past a minute fails like any other.
+
+- `visibility` — every roadmap whose `tree` record is alive, once, by whose it is: `house`, the roadmaps
+  of the house account (`kHouseAccount`, `domain/Access.h`), which owns every roadmap nobody owned
+  before roadmap's move onto the engine, the public demo among them, told apart by its product scope
+  key, as the gallery leaves it out; and `people`, every other account's. Within each, `roots` counts a
+  root by the `visibility` its meta holds, and `subtrees` counts a roadmap whose `tree` record holds a
+  `parent` by its `reach`, since only a root holds a visibility
+  (`docs/foundation/roadmap-on-the-engine.md` §4). Each splits into:
+  - `private` and `public`. A subtree's `private` includes the subtrees whose owning step is deleted,
+    since that step's death writes their reach private.
+  - `unset`, no meta or a meta that holds none, which reads as private. Among roots it holds one whose
+    creation or fork is under way, which has no meta yet, stands nowhere and is hidden, and a fork's
+    copy whose visibility nobody has set since, as a fork writes none.
+  - `other`, any other value, `unlisted` among them, which admission refuses.
+- `pointersWithoutOpens` — the `pointer` rows alive with no `opens` in an overlay that is alive, by the
+  door their life stamp's actor names: `restore` for the server's `srv`, as an Undo's restore that
+  wrote the life alone leaves it, and `clientPut` for any other actor, a client's put that revived the
+  pointer.
+
+What the counts beside `engine` do not measure, because it is not in `trees` or `tree_nodes`:
 
 - **The on-device store.** The web keeps each tree it holds, and the whole of every tree born signed
   out, in the browser's IndexedDB database `windmill-sync`, store `trees`: one record per tree with

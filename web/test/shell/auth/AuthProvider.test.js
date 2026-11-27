@@ -7,10 +7,11 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
 import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { gymRoutes } from '../../../src/products/gym/routes.js';
 import { PRODUCTS } from '../../../src/shell/products.js';
 import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
-async function account(t) {
+async function account(t, { me: signedIn = { id: 'A', name: 'Ada' } } = {}) {
   let view;
   t.after(() => view?.unmount());
   const env = environment();
@@ -37,12 +38,14 @@ async function account(t) {
   window.localStorage = localStorage;
   let engine = await BrowserSyncEngine.open(env.options);
   t.after(() => engine.close());
-  env.transport.account = 'A';
-  let me = { id: 'A', name: 'Ada' };
-  t.mock.method(globalThis, 'fetch', async () => ({ ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
+  env.transport.account = signedIn?.id ?? null;
+  let me = signedIn;
+  t.mock.method(globalThis, 'fetch', async (url) => (String(url).endsWith('/v1/auth/logout') ? { ok: true, status: 204, json: async () => ({}) }
+    : { ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
   const forgotten = [];
   t.mock.method(roadmapRoutes, 'forgetDevice', (change) => forgotten.push(change));
-  t.mock.method(syncSession, 'open', (options) => { engine.credentials = options.credentials; return Promise.resolve(engine); });
+  let opened;
+  t.mock.method(syncSession, 'open', (options) => { opened = options; engine.credentials = options.credentials; return Promise.resolve(engine); });
   t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, online: true, error: false }));
   const prior = { engine: syncSession.engine, opening: syncSession.opening };
   syncSession.engine = engine;
@@ -52,12 +55,11 @@ async function account(t) {
   const { default: AuthProvider } = await loadScreen('shell/auth/AuthProvider.jsx');
   view = renderHook(t, () => AuthProvider({ children: null }));
   const auth = () => view.tree.props.value;
-  await until(() => auth().status === 'signed-in');
-  assert.equal(auth().status, 'signed-in');
+  await until(() => auth().status === (signedIn ? 'signed-in' : 'ghost'));
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
-  return { env, get engine() { return engine; }, auth, get view() { return view; }, forgotten, replica, entries, broadcasts, async reload() {
+  return { env, get engine() { return engine; }, get opened() { return opened; }, auth, get view() { return view; }, forgotten, replica, entries, broadcasts, async reload() {
     view.unmount();
     await engine.close();
     engine = await BrowserSyncEngine.open(env.options);
@@ -103,6 +105,79 @@ for (const trigger of ['refresh', 'poll']) {
   });
 }
 
+test('the read that lapses the seat clears the cookie no live session holds once a lapse, across reloads, and again after the next sign-in lapses, keeping the account\'s copy', async (t) => {
+  const state = await account(t);
+  const calls = () => globalThis.fetch.mock.calls.map((call) => new URL(String(call.arguments[0])).pathname);
+  const logouts = () => calls().filter((path) => path === '/v1/auth/logout').length;
+  const mark = () => JSON.parse(localStorage.getItem('windmill:auth-hint'));
+  const before = calls().length;
+  state.setMe(null);
+  await state.auth().refresh();
+  const lapse = calls().slice(before);
+  await state.auth().refresh();
+  t.mock.timers.tick(20000);
+  await state.auth().refresh();
+  const lapsed = { logouts: logouts(), hint: mark(), status: state.auth().status, lapsed: state.auth().lapsed,
+    replica: state.engine.device.activeReplica.meta.state, outbox: state.engine.device.activeReplica.outbox, forgotten: state.forgotten };
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  await state.auth().refresh();
+  const reloaded = { logouts: logouts(), hint: mark() };
+  state.setMe({ id: 'A', name: 'Ada' });
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const signedIn = { logouts: logouts(), hint: mark() };
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.deepEqual({ lapse, lapsed, reloaded, signedIn, again: { logouts: logouts(), hint: mark() }, failures: state.env.failures }, {
+    lapse: ['/v1/me', '/v1/me', '/v1/auth/logout'],
+    lapsed: { logouts: 1, hint: { status: 'ghost', cleared: 'A' }, status: 'ghost', lapsed: true, replica: 'bound',
+      outbox: state.entries, forgotten: [] },
+    reloaded: { logouts: 1, hint: { status: 'ghost', cleared: 'A' } },
+    signedIn: { logouts: 1, hint: { status: 'signed-in', user: { id: 'A', name: 'Ada' } } },
+    again: { logouts: 2, hint: { status: 'ghost', cleared: 'A' } },
+    failures: [],
+  });
+});
+
+test('a clear that failed notes nothing, so the next page tries again, and a browser that lapsed with no mark clears once', async (t) => {
+  const state = await account(t);
+  let logout = 503;
+  globalThis.fetch.mock.mockImplementation(async (url) => (String(url).endsWith('/v1/auth/logout')
+    ? { ok: logout < 300, status: logout, json: async () => ({}) } : { ok: false, status: 401, json: async () => ({}) }));
+  const logouts = () => globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/auth/logout')).length;
+  const mark = () => JSON.parse(localStorage.getItem('windmill:auth-hint'));
+  await state.auth().refresh();
+  await state.auth().refresh();
+  const failed = { logouts: logouts(), hint: mark(), lapsed: state.auth().lapsed };
+  logout = 204;
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  const retried = { logouts: logouts(), hint: mark() };
+  localStorage.setItem('windmill:auth-hint', JSON.stringify({ status: 'ghost' }));
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  assert.deepEqual({ failed, retried, unmarked: { logouts: logouts(), hint: mark() } }, {
+    failed: { logouts: 1, hint: { status: 'ghost' }, lapsed: true },
+    retried: { logouts: 2, hint: { status: 'ghost', cleared: 'A' } },
+    unmarked: { logouts: 3, hint: { status: 'ghost', cleared: 'A' } },
+  });
+});
+
+test('a browser signed out all along reads no session at every refresh and never logs out', async (t) => {
+  const state = await account(t, { me: null });
+  await state.auth().refresh();
+  t.mock.timers.tick(20000);
+  await state.auth().refresh();
+  await state.reload();
+  await until(() => state.auth().status === 'ghost');
+  await state.auth().refresh();
+  assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed, replica: state.engine.device.activeReplica.meta.state,
+    logouts: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/auth/logout')).length },
+  { status: 'ghost', lapsed: false, replica: 'anon', logouts: 0 });
+});
+
 test('an account the page starts on with no connection is the cached one until the server answers for it, and a later blip does not unsay the answer', async (t) => {
   const state = await account(t);
   assert.equal(state.auth().confirmed, true);
@@ -131,6 +206,75 @@ test('an account the page starts on with no connection is the cached one until t
   await state.auth().refresh();
   assert.deepEqual({ status: state.auth().status, account: state.auth().account, confirmed: state.auth().confirmed },
     { status: 'ghost', account: null, confirmed: false });
+});
+
+test('each read of the account tells the engine whether the server answered, so a page whose engine sends nothing knows when it is out of reach', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  await state.auth().refresh();
+  const answer = globalThis.fetch;
+  let server = 'down';
+  t.mock.method(globalThis, 'fetch', async (...request) => {
+    if (server === 'down') throw new TypeError('Failed to fetch');
+    if (server === 'failing') return { ok: false, status: 503, json: async () => ({}) };
+    return answer(...request);
+  });
+  const told = [];
+  for (const next of ['down', 'up', 'failing', 'up']) {
+    server = next;
+    await state.auth().refresh();
+    told.push([next, state.engine.getSnapshot().connection, state.auth().status]);
+  }
+  assert.deepEqual(told, [['down', 'unreachable', 'ghost'], ['up', 'online', 'ghost'], ['failing', 'unreachable', 'ghost'], ['up', 'online', 'ghost']]);
+  assert.equal(state.env.requests.filter(({ endpoint }) => endpoint !== 'hello').length, 0, 'the paused replica sent nothing of its own');
+});
+
+test('a read that binds the seat tells the engine the replica its session last pushed for, and one the store never held is a cleared store, told once', async (t) => {
+  const state = await account(t);
+  const answer = (syncReplica) => t.mock.method(globalThis, 'fetch', async () => ({ ok: true, status: 200,
+    json: async () => ({ user: { id: 'A', name: 'Ada' }, signInMethods: [], syncReplica }) }));
+  const told = () => state.env.events.filter(({ name }) => name === 'sync-store-cleared');
+  answer(state.engine.activeReplica());
+  await state.auth().refresh();
+  assert.deepEqual({ storeCleared: state.engine.getSnapshot().storeCleared, told: told() }, { storeCleared: false, told: [] });
+  answer(`rp_${'e'.repeat(32)}`);
+  await state.auth().refresh();
+  await state.auth().refresh();
+  assert.deepEqual({ storeCleared: state.engine.getSnapshot().storeCleared, told: told(), status: state.auth().status, failures: state.env.failures },
+    { storeCleared: true, told: [{ name: 'sync-store-cleared', props: {} }], status: 'signed-in', failures: [] });
+});
+
+test('the seat-change hook runs before a sign-out finishes and before a sign-in binds the device, never at a refresh of the bound account', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const seen = [];
+  t.mock.method(gymRoutes.sync, 'seatWillChange', async (engine) => {
+    const replica = engine.device.activeReplica.meta;
+    seen.push({ state: replica.state, account: replica.account ?? null, signingOut: Boolean(engine.device.meta.signOut) });
+  });
+  const forgets = t.mock.method(gymRoutes.sync, 'signOutForgets', () => { seen.push('forgets'); return null; });
+  await state.auth().refresh();
+  assert.deepEqual(seen, []);
+  const finished = state.auth().signOut();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  assert.deepEqual(seen, [], 'the question comes first');
+  await elementsOf(state.view.tree).find((node) => node.props.onDecision).props.onDecision('keep');
+  assert.equal(await finished, true);
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  assert.deepEqual({ seen, forgets: forgets.mock.callCount(), status: state.auth().status, replica: state.engine.device.activeReplica.meta.state },
+    { seen: [{ state: 'bound', account: 'A', signingOut: true }, 'forgets', { state: 'anon', account: null, signingOut: false }],
+      forgets: 1, status: 'signed-in', replica: 'bound' });
+});
+
+test('a sign-in the engine resumes as it starts runs the seat-change hook in the shell’s preparation', async (t) => {
+  const state = await account(t);
+  const seen = [];
+  t.mock.method(gymRoutes.sync, 'seatWillChange', async () => { seen.push('seat'); });
+  await state.opened.prepare(state.engine);
+  assert.deepEqual(seen, []);
+  await state.engine.write(null, (device) => { device.meta.pendingSignIn = { account: 'A' }; });
+  await state.opened.prepare(state.engine);
+  assert.deepEqual(seen, ['seat']);
 });
 
 test('a different account after a lapse keeps its own replica and invokes roadmap account cleanup once', async (t) => {
@@ -271,6 +415,25 @@ test('an explicit sign-out broadcast still clears roadmap work instead of becomi
   assert.deepEqual(state.forgotten, [{ previous: 'A', next: null }]);
   assert.equal(state.auth().lapsed, false);
   assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
+});
+
+test('an account closed here tells each product its departure was a closure', async (t) => {
+  const state = await account(t);
+  let me = { id: 'A', name: 'Ada' };
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    const answer = (status, body = {}) => ({ ok: status < 300, status, json: async () => body });
+    const path = new URL(url, 'https://windmill.works').pathname;
+    if (path === '/v1/sessions') return answer(200, { sessions: [{ id: 's1', current: true }] });
+    if (path === '/v1/me' && init.method === 'DELETE') return answer(200, { closingOn: '2026-12-24', closesMs: 1 });
+    if (path === '/v1/auth/logout') { me = null; return answer(200); }
+    return me ? answer(200, { user: me, signInMethods: [] }) : answer(401);
+  });
+  const closing = state.auth().closeAccount('A');
+  await until(() => state.engine.device.meta.signOut);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS);
+  await closing;
+  assert.deepEqual({ forgotten: state.forgotten, status: state.auth().status, closing: state.engine.device.meta.closingAccount ?? null },
+    { forgotten: [{ previous: 'A', next: null, closed: true }], status: 'ghost', closing: null });
 });
 
 test('a tab that missed sign-out broadcast recognizes the completed replica transition on refresh', async (t) => {
@@ -763,7 +926,7 @@ test('a paused anon replica waits on the shell\'s 20-second read of the account,
   });
 });
 
-test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
+test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, else the shell’s around its count, and each answer pins what its question counted', async (t) => {
   const state = await account(t);
   const steps = [];
   const said = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
@@ -783,11 +946,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   });
   const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
   const asked = () => {
-    const { product, count, words: worded } = decision().props.question;
-    if (!worded) return { product, count, words: worded };
+    const { product, words: worded } = decision().props.question;
     const { onStep, ...shown } = worded;
     onStep('shown');
-    return { product, count, words: shown };
+    return { product, words: shown };
   };
 
   await state.auth().signIn({ id: 'A', name: 'Ada' });
@@ -796,8 +958,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   const second = asked();
   await decision().props.onDecision('discard');
   assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status, steps }, {
-    first: { product: 'journal', count: { page: 2 }, words: null },
-    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words: said },
+    first: { product: 'journal', words: { title: 'Add to your account?',
+      lead: 'This browser has 2 pages from before you signed in. Your account already has pages.', items: [{ label: '2 pages' }],
+      note: 'Add them, or discard them from this browser.', discard: { title: 'Discard 2 pages?', body: 'They are deleted from this browser. You can’t undo this.' } } },
+    second: { product: 'roadmap', words: said },
     steps: ['shown'],
     last: null,
     answered: [{}, { decisions: { journal: 'add' }, counted: { journal: ['j1'] } },

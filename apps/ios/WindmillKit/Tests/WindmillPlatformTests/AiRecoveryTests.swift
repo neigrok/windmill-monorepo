@@ -200,7 +200,9 @@ import SyncCore
     }
     while transport.requests.count < 3 { await Task.yield() }
     client.stopAskingAgain()
-    try await Task.sleep(for: .milliseconds(50))
+    // The pass never ends on its own, so the call finishes only by the stop: waited for while the stream stays open.
+    let bound = ContinuousClock.now + .seconds(10)
+    while !finished, ContinuousClock.now < bound { await Task.yield() }
     #expect(finished)
     pass.continuation.finish(throwing: AiTransportFailure.offline)
     do { try await call.value; Issue.record("Stopped refresh succeeded") }

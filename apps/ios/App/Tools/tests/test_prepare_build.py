@@ -58,6 +58,17 @@ class BuildConfigurationTests(unittest.TestCase):
         prepare_build.prepare(self.settings)
         self.assertEqual(self.group, self.read("Windmill.entitlements"))
 
+    def test_debug_alone_claims_the_sites_roadmap_links(self):
+        tools = Path(__file__).parents[1]
+        for enabled in ("NO", "YES"):
+            with self.subTest(apple=enabled):
+                with (tools / f"Windmill-{enabled}.entitlements").open("rb") as handle:
+                    release = plistlib.load(handle)
+                with (tools / f"Windmill-Debug-{enabled}.entitlements").open("rb") as handle:
+                    debug = plistlib.load(handle)
+                self.assertNotIn("com.apple.developer.associated-domains", release)
+                self.assertEqual({**release, "com.apple.developer.associated-domains": ["applinks:windmill.works"]}, debug)
+
     def test_the_widget_extension_shares_the_app_group(self):
         with (Path(__file__).parents[1] / "WorkoutActivity.entitlements").open("rb") as handle:
             self.assertEqual(self.group, plistlib.load(handle))
@@ -114,6 +125,17 @@ class BuildConfigurationTests(unittest.TestCase):
         with (self.source / "Debug/Windmill.Info.plist").open("rb") as handle:
             self.assertEqual("development", plistlib.load(handle)["WMTelemetryEnvironment"])
         self.assertEqual("production", self.read()["WMTelemetryEnvironment"])
+
+
+class RoadmapRoomSwitchTests(unittest.TestCase):
+    # The Roadmap room ships dark: the app's setting is NO, Debug alone turns it on, and the Info.plist carries it.
+    def test_the_roadmap_room_is_on_in_debug_alone(self):
+        app = (Path(__file__).parents[2] / "project.yml").read_text().split("  WindmillWorkoutActivity:\n", 1)[0]
+        debug, release = app.split("        Debug:\n", 1)[1].split("    preBuildScripts:\n", 1)[0].split("        Release:\n", 1)
+        self.assertIn('        WM_ROADMAP_ROOM_ENABLED: "NO"\n', app)
+        self.assertIn('          WM_ROADMAP_ROOM_ENABLED: "YES"\n', debug)
+        self.assertNotIn("WM_ROADMAP_ROOM_ENABLED", release)
+        self.assertIn("        WMRoadmapRoomEnabled: $(WM_ROADMAP_ROOM_ENABLED)\n", app)
 
 
 class ReleaseProjectTests(unittest.TestCase):

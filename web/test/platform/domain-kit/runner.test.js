@@ -11,20 +11,22 @@ import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wi
 import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
+import { ProbeProduct } from '../../../../packages/api-contract/sync/reference/probe/product.js';
 import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { ActDecision, ActPlan, ScopedPlan } from '../../../src/platform/domain-kit/acts.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../src/platform/domain-kit/entities.js';
-import { Plan, Prediction } from '../../../src/platform/domain-kit/plans.js';
+import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../src/platform/domain-kit/plans.js';
 import { Placement, Reader, Views } from '../../../src/platform/domain-kit/reading.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
-import { Fault } from '../../../src/platform/domain-kit/values.js';
+import { Fault, Path, Violation } from '../../../src/platform/domain-kit/values.js';
 import { environment, tick, until } from '../sync/fakes.js';
 import { OTHER, product, productScope, row, serverState, st, treeScope } from '../sync/oracle-adapters/fixtures.js';
+import { Harness } from './harness.js';
 import { PROBE_SCOPE, PROBE_TREE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
 import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
@@ -244,6 +246,8 @@ test('a commit reads the current tab transaction, including confirmed values ben
     drawn: read.repository(Probe.run).find(id, 'drawn')?.fields() ?? null, devices: read.devices('picture:'),
     commands: read.commands(), checkpoint: read.checkpoint(), actor: read.actor,
     isAnonymous: read.isAnonymous, complete: read.firstPullComplete() });
+  await peer.write(null, (/** @type {any} */ device) => { Object.assign(device.activeReplica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' }); });
+  await engine.refresh();
   const before = runner.read(PROBE_SCOPE, metadata);
   await peer.write(null, (/** @type {any} */ device) => {
     device.activeReplica.putConfirmed(PROBE_SCOPE, { ...confirmed, seq: 5, rc: 1, ru: 1 });
@@ -257,7 +261,6 @@ test('a commit reads the current tab transaction, including confirmed values ben
   const receipt = queued.kind === 'committed' ? queued.receipt : assert.fail('not committed');
   await peer.write(null, (/** @type {any} */ device) => {
     const replica = device.activeReplica;
-    Object.assign(replica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' });
     replica.cursors[PROBE_SCOPE] = { cursor: Cursor.encode({ e: 'ep-current', m: 'live', s: 5 }), digest: ZERO_DIGEST, booted: true };
     Object.assign(replica.entry(receipt.localIds[0]), { state: 'acked', n: 1, resultEpoch: 'ep-current', resultSeq: 6 });
   }, [PROBE_SCOPE]);
@@ -560,3 +563,101 @@ for (const [name, { before, change }] of Object.entries(bindingChanges)) for (co
     engine.close();
   });
 }
+
+// K-3 an act's Undo with the checks its plan names, over the real engine and the reference server: a card's title written
+// with its Undo, which a check reads before anything is asked of the engine.
+async function titled() {
+  const phone = await Harness.open({ registry: probeRegistry, product: new ProbeProduct(), scope: PROBE_SCOPE });
+  const card = new Id('card0001', Probe.card);
+  /** @param {string} title @param {import('../../../src/platform/domain-kit/plans.js').UndoCheck[]} checks */
+  const write = (title, checks) => phone.runner.runAct({ refusals: ProbeRefusals, load: () => null, decide: () => {
+    const plan = new Plan();
+    const value = probeValue(Probe.card, 'card0001', { title, claim: '' });
+    if (title === 'Old') {
+      plan.insert(new Valid(value, phone.runner.moment()), null);
+    } else {
+      plan.update(new Valid(value, phone.runner.moment(), ['title']));
+      plan.undoBy(UndoRecipe.fields('probe.restore', [UndoTarget.field(card, 'title')]));
+    }
+    for (const check of checks) plan.undoCheckedBy(check);
+    return ActDecision.write(new ActPlan([new ScopedPlan(PROBE_SCOPE, plan)]), null);
+  } });
+  const title = () => phone.runner.read(PROBE_SCOPE, (read) => read.repository(Probe.card).find(card, 'drawn')?.fields().title ?? null);
+  // A check that refuses while `refusing.now` holds, or fails as a store would where `failing` is set, counting its reads.
+  const refusing = { now: false, failing: /** @type {Error | null} */ (null), reads: 0 };
+  /** @type {import('../../../src/platform/domain-kit/plans.js').UndoCheck} */
+  const check = { scope: PROBE_SCOPE, check: (read) => {
+    refusing.reads += 1;
+    read.repository(Probe.card).all('drawn');
+    if (refusing.failing) throw refusing.failing;
+    if (refusing.now) throw new Violation('card.title.taken', new Path('title'), { kind: 'custom', custom: 'taken' });
+  } };
+  assert.equal((await write('Old', [])).kind, 'committed');
+  await phone.sync();
+  return { phone, write, title, check, refusing };
+}
+
+test('an Undo whose check refuses what stands answers unavailable, refused, and writes nothing; once it stands the Undo runs', async () => {
+  const { phone, write, title, check, refusing } = await titled();
+  try {
+    const wrote = await write('New', [check]);
+    assert.equal(wrote.kind, 'committed');
+    const act = /** @type {any} */ (wrote).receipt.undo;
+    assert.deepEqual({ actId: act.actId, checks: act.checks }, { actId: /** @type {any} */ (wrote).receipt.gestureId, checks: [check] });
+    refusing.now = true;
+    assert.deepEqual(await phone.runner.undo(act), { kind: 'unavailable', requestId: null, reason: 'refused' });
+    await phone.sync();
+    assert.equal(title(), 'New');
+    refusing.now = false;
+    assert.deepEqual({ ...(await phone.runner.undo(act)), requestId: '', inverseActId: '' }, { kind: 'pending', requestId: '', inverseActId: '', localChanged: true });
+    assert.deepEqual({ title: title(), reads: refusing.reads }, { title: 'Old', reads: 2 });
+  } finally { phone.close(); }
+});
+
+test('an error a check throws that is no violation propagates from the Undo, and nothing is asked of the engine', async () => {
+  const { phone, write, title, check, refusing } = await titled();
+  try {
+    const wrote = /** @type {any} */ (await write('New', [check]));
+    refusing.failing = new Error('the store could not be read');
+    await assert.rejects(phone.runner.undo(wrote.receipt.undo), /the store could not be read/);
+    assert.equal(title(), 'New');
+  } finally { phone.close(); }
+});
+
+test('an act that names no check is undone as the engine undoes it', async () => {
+  const { phone, write, title } = await titled();
+  try {
+    const wrote = /** @type {any} */ (await write('New', []));
+    assert.deepEqual(wrote.receipt.undo.checks, []);
+    assert.equal((await phone.runner.undo(wrote.receipt.undo)).kind, 'pending');
+    await phone.sync();
+    assert.equal(title(), 'Old');
+  } finally { phone.close(); }
+});
+
+test('a Redo answers the Undo of the act it wrote, with the checks of the act it took back', async () => {
+  const { phone, write, title, check, refusing } = await titled();
+  try {
+    const wrote = /** @type {any} */ (await write('New', [check]));
+    const undone = /** @type {any} */ (await phone.runner.undo(wrote.receipt.undo));
+    await phone.sync();
+    const { result, undo } = await phone.runner.redo(undone.requestId, wrote.receipt.undo);
+    assert.equal(result.kind, 'pending');
+    assert.deepEqual({ actId: undo?.actId, checks: undo?.checks }, { actId: /** @type {any} */ (result).inverseActId, checks: [check] });
+    await phone.sync();
+    refusing.now = true;
+    assert.deepEqual(await phone.runner.undo(/** @type {any} */ (undo)), { kind: 'unavailable', requestId: null, reason: 'refused' });
+    assert.equal(title(), 'New');
+  } finally { phone.close(); }
+});
+
+test('a plan that checks an Undo it does not opt into is a plan fault', async () => {
+  const { phone, check } = await titled();
+  try {
+    const plan = new Plan();
+    plan.update(new Valid(probeValue(Probe.card, 'card0001', { title: 'New' }), phone.runner.moment(), ['title']));
+    plan.undoCheckedBy(check);
+    await assert.rejects(phone.runner.runAct({ refusals: ProbeRefusals, load: () => null,
+      decide: () => ActDecision.write(new ActPlan([new ScopedPlan(PROBE_SCOPE, plan)]), null) }), /plan rule 11/);
+  } finally { phone.close(); }
+});

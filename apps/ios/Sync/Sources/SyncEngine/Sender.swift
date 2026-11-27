@@ -114,7 +114,7 @@ package actor Sender {
       guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
       guard let token = core.tokens.token(for: account) else { return try core.pauseAuth(seat.replica, sentUnder: nil) ? .paused : .again }
       let queued = try core.storageRead { tx in
-        try tx.replica(seat.replica)?.outbox.contains { $0.state == .ready || $0.state == .sent } ?? false
+        try tx.replica(seat.replica, journal: .unread)?.outbox.contains { $0.state == .ready || $0.state == .sent } ?? false
       }
       guard queued else { return .idle }
       let network = core.connectivityGeneration.withLock { $0 }

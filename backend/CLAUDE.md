@@ -11,8 +11,12 @@ telemetry, access, the HTTP host, the AI usage meter (`domain/AiUsage`, `domain/
 `ports/AiBudgetRepository`). The durable mode owns free daily/monthly pools, lifetime devices,
 funded subscription/owner periods, permanent device binding, concurrency and threshold alerts.
 `platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
-`platform/ai_passes/` holds the optional Ed25519 issuer and `POST /v1/ai/passes`; it reads identity and entitlement facts without funding a grant. Every hosted AI call, including background work, debits its individual allowance in that mode;
-[AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
+`platform/ai_passes/` holds the optional Ed25519 issuer and `POST /v1/ai/passes`; it reads identity and entitlement facts without funding a grant,
+and signs the backend's own server pass, which the door never issues. `platform/ai_service/` is the backend's client of the
+AI service's text door (`AiText`, `AiServiceClient`): an account's background work under a server pass, which Journal
+Echoes' two model calls use ([echoes-on-ai-service.md](../docs/foundation/echoes-on-ai-service.md)). Every other hosted AI
+call the backend makes debits its individual allowance in that mode; [AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its
+rollout switch and unsupported edges.
 `platform/subscriptions/` follows the Windmill One subscription service's feed into `account_entitlements`, the
 backend's own copy of every account's entitlement ([subscriptions.md](../docs/foundation/subscriptions.md) §6.1): the
 feed's vocabulary and cursor (`Feed.h`), the copy and the seam each entry passes through (`EntitlementCopy.h`), the
@@ -44,8 +48,9 @@ process; it builds `windmill_server`, the harness-clocked `windmill_server_test_
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
 pair makes a repeated rotation idempotent, `resum_sync_digests.cpp` is the offline tool that rewrites
 every alive scope's digest from its feed after a registry change (`deploy/README.md`),
-`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step,
-reading only (`SPEC.md`, Subtree inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
+`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step, and the
+engine's roadmaps by owner and visibility and its pointers alive with no `opens`, reading only (`SPEC.md`, Subtree
+inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
 stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
 
 ## How a product plugs in
@@ -98,13 +103,13 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v13/minimum 11 and composition.json.
+(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v15/minimum 15 and composition.json.
 `windmill_sync_tests` replays the server's files again over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's thirteen types and nine commands, `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`, and
 `products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
-their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v13/minimum-11 catalog.
+their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v15/minimum-15 catalog.
 `windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
 where `ROADMAP_ENGINE_ENABLED` is `true` or `1`, and elsewhere withholds them, so they read as absent and admit
 nothing. Production reads it only from the host's `roadmap-engine.env`, which holds `ROADMAP_ENGINE_ENABLED=1`
@@ -176,7 +181,7 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
 
 ## A green local build is not a green CI
 
-macOS/Homebrew and the CI Linux image disagree on two things that compile green on one side and fail
+macOS/Homebrew and the CI Linux image disagree on three things that compile green on one side and fail
 on the other:
 
 - **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read rows through
@@ -185,6 +190,9 @@ on the other:
 - **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds throw
   instead, so the two toolchains can disagree on the same value (`ToolArgs.cpp` names such a value
   rather than rendering it).
+- **The order a call's operands run in** is unspecified: Clang runs `a() + b()` left to right, GCC can
+  run `b()` first. When one side reads what the other side writes (a door's answer, then what the door
+  stored), take the first into a variable before the second.
 
 Watch `gh run list` after every backend push, because **a push to `main` IS a deploy**.
 `.github/workflows/backend.yml` builds, tests and publishes the image, and a green run triggers

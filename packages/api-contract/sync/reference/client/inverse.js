@@ -9,9 +9,10 @@
 import { Clock } from '../core/clock.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
+import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, REVIVAL_VALUES_SCHEMA, revivalValues, revivesKeyed, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError } from './commit.js';
+import { ownCommandOf } from './dependents.js';
 import { undo } from './hold.js';
 import { ordinalOf, settleRequest, settleSlot } from './journal.js';
 import { effectsOf } from './projections.js';
@@ -121,11 +122,11 @@ function projectionOf(registry, view, operations, stamp) {
 }
 
 // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces,
-// the values the inverted act wrote (`forward`), never what a later local edit shows. A created record comes
-// back by its life only where a write can bring it back, with the record as `before` drew it, and one the
-// inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the
-// product's. A preimage's row sequence is the row its restore wrote over, which the restore's version check
-// proved held it (`anchorPreimages`).
+// the values the inverted act wrote (`forward`), never what a later local edit shows. A life the slot takes away,
+// a created record's among them, comes back only where a write can bring it back, with the record as `before`
+// drew it, and a record the inverse creates goes again by its strict recipe; a product slot has no generic recipe,
+// and its Redo is the product's. A preimage's row sequence is the row its restore wrote over, which the restore's
+// version check proved held it (`anchorPreimages`).
 function inverseJournal(registry, inverseActId, slots, forward, before) {
   const sourceEntries = slots.map(({ localId, scope, recipe }) => {
     const empty = { localId, originScope: scope, recipes: [], preimages: [], written: [], attempts: [] };
@@ -143,7 +144,7 @@ function inverseJournal(registry, inverseActId, slots, forward, before) {
       const target = op.kind === 'field' ? structuredClone(op.target) : { ...structuredClone(op.record), slot: { kind: 'life' } };
       const value = op.kind === 'field' ? forward.get(jcs(target)) : 'alive';
       if (value === undefined) continue;
-      const drew = op.kind === 'createdRecord' ? before.get(scope).get(recordKey(target.t, target.id)) : undefined;
+      const drew = target.slot.kind === 'life' && value === 'alive' ? before.get(scope).get(recordKey(target.t, target.id)) : undefined;
       preimages.push({ target, value: structuredClone(value), rowSeq: null, epoch: null, ...(drew ? { record: recordValues(drew) } : {}) });
       written.push({ target: structuredClone(target), value: op.kind === 'field' ? structuredClone(op.before) : 'dead' });
     }
@@ -224,7 +225,7 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
 // folded silently, and reports whether anything drawn changed. The act leaves the journal.
 function cancelHeld(replica, ctx, act, entries) {
   const { registry } = ctx;
-  const ordinary = (entry) => entry.intent.cmd === undefined || registry.command(entry.intent.cmd.name)?.engine === 'capture';
+  const ordinary = (entry) => ownCommandOf(registry, entry) === undefined;
   const scopes = [...new Set(entries.flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)))];
   const before = new Map(scopes.map((scope) => [scope, drawn(replica, registry, scope)]));
   const written = entries.filter(ordinary).flatMap((entry) => (entry.intent.d ?? []).map((delta) => ({ entry, scope: entry.scope, delta })));
@@ -349,8 +350,10 @@ function ownedHistory(replica, act) {
 const rowsOf = (effects, address) => effects.filter(({ scope }) => scope === address.scope)
   .flatMap(({ rows }) => rows.filter((row) => row.t === address.t && sameJson(row.id, address.id)));
 
-// A Redo of a cancellation waits while an entry its references name has no result yet.
+// A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and
+// while an entry its references name has no result yet.
 function referencesAuthoritative(replica, request) {
+  if (replica.meta.serverEpoch === null && request.slots.some((slot) => slot.state === 'waiting')) return false;
   const pending = request.slots.filter((slot) => slot.state === 'waiting' && slot.recipe.kind === 'restore')
     .flatMap((slot) => slot.recipe.operations.flatMap((op) => [op.reference, op.reference?.recordBirth]))
     .filter((reference) => reference?.kind === 'pending');
@@ -478,12 +481,19 @@ function createdScope(history, scope) {
 
 // What one planned restore operation becomes: its wire form, a skip by `code` the request counts, or nothing
 // (`null`) where the act never wrote the target, so there is nothing to take back. Where a source's history is
-// unavailable, an unowned target may be one it wrote, and skips.
-function bound(replica, act, history, op) {
+// unavailable, an unowned target may be one it wrote, and skips. A keyed record's life brought back alive carries
+// the values its preimage's record read, as the slot's projection draws them, to a server that declares them.
+function bound(replica, registry, act, history, op) {
   const epoch = replica.meta.serverEpoch;
+  const field = (expected) => {
+    const type = registry.type(op.target.t);
+    const declared = (replica.meta.serverSchema ?? 0) >= REVIVAL_VALUES_SCHEMA;
+    const values = declared && op.record && revivesKeyed(type, op.target.slot, op.before) ? revivalValues(type, op.record) : {};
+    return { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected, before: op.before, ...(Object.keys(values).length ? { values } : {}) };
+  };
   if (op.kind === 'field' && op.reference) {
     const expected = expectedOf(replica, op.reference);
-    return expected ? { wire: { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected, before: op.before } } : { skip: 'reference-unbound' };
+    return expected ? { wire: field(expected) } : { skip: 'reference-unbound' };
   }
   if (op.kind === 'field') {
     const expected = latestOwned(history, op.target);
@@ -491,7 +501,7 @@ function bound(replica, act, history, op) {
     const preimage = act.sourceEntries.flatMap((source) => source.preimages).find(({ target }) => sameJson(target, op.target));
     if ((preimage?.epoch ?? epoch) !== epoch) return { skip: 'epoch-changed' };
     if (!preimage || !unbroken(replica, history, op.target, preimage.rowSeq)) return { skip: 'history-changed' };
-    return { wire: { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected, before: op.before } };
+    return { wire: field(expected) };
   }
   if (op.kind === 'createdRecord') {
     const proof = createdFootprint(history, op.record);
@@ -506,10 +516,8 @@ function bound(replica, act, history, op) {
 // its evidence, or skips whole. Settlement only removes operations and projections; a slot left with nothing to
 // send settles unnumbered.
 export function materialize(replica, ctx, request) {
-  if (request.state !== 'waiting') return;
+  if (!bindable(replica, request)) return;
   const act = replica.journal.find((candidate) => candidate.actId === request.sourceActId);
-  if (act && !authoritative(replica, act)) return;
-  if (!act && !referencesAuthoritative(replica, request)) return;
   const source = act ?? { sourceEntries: [] };
   const history = ownedHistory(replica, source);
   const epoch = replica.meta.serverEpoch;
@@ -521,10 +529,11 @@ export function materialize(replica, ctx, request) {
     }
     const { recipe } = slot;
     let args = null;
-    slot.skipped = [];
+    const recorded = slot.skipped ?? [];
+    slot.skipped = recorded;
     if (recipe.kind === 'restore' && epoch !== null) {
-      const results = recipe.operations.map((op) => ({ op, result: bound(replica, source, history, op) }));
-      slot.skipped = results.filter(({ result }) => result?.skip).map(({ result }) => ({ code: result.skip }));
+      const results = recipe.operations.map((op) => ({ op, result: bound(replica, ctx.registry, source, history, op) }));
+      slot.skipped = [...recorded, ...results.filter(({ result }) => result?.skip).map(({ result }) => ({ code: result.skip }))];
       const sent = results.filter(({ result }) => result?.wire);
       recipe.operations = sent.map(({ op }) => op);
       if (sent.length) args = { expectedEpoch: epoch, operations: sent.map(({ result }) => result.wire) };
@@ -540,7 +549,7 @@ export function materialize(replica, ctx, request) {
           }),
           unchangedCreatedRecords: records.map(({ record, proof }) => ({ record: structuredClone(record), ...proof })),
           unchangedCreatedScopes: scopes } };
-      } else slot.skipped = [{ code: 'history-changed' }];
+      } else slot.skipped = [...recorded, { code: 'history-changed' }];
     }
     if (args === null) {
       if (recipe.kind === 'restore') recipe.operations = [];
@@ -574,6 +583,21 @@ function keepProjection(entry, operations) {
       return [next];
     });
   }
+}
+
+// Whether a waiting request binds now: once every source of its act is authoritative, or, for a Redo of a
+// cancellation, once its references are.
+function bindable(replica, request) {
+  if (request.state !== 'waiting') return false;
+  const act = replica.journal.find((candidate) => candidate.actId === request.sourceActId);
+  return act ? authoritative(replica, act) : referencesAuthoritative(replica, request);
+}
+
+// Whether an inverse slot's entry still stops numbering: its slot waits and its request cannot bind yet. Reads
+// the replica and changes nothing.
+export function waitsAtBarrier(replica, entry) {
+  const found = slotOf(replica, entry);
+  return found !== null && found.slot.state === 'waiting' && !bindable(replica, found.request);
 }
 
 // The sender's barrier (§7.4): an inverse slot not yet materialized is materialized now if it can be; one
@@ -620,6 +644,43 @@ function anchorPreimages(replica, request, entry, epoch) {
     const row = rowsOf(entry.acceptedEffects ?? [], preimage.target)[0];
     if (row) Object.assign(preimage, { rowSeq: row.beforeRowSeq, epoch });
   }
+}
+
+// §7.10 Add: an act adopted from `from` never read `into`'s own writes, which reach the server before its own. Each
+// adopted act gives up every field target whose record `into` holds a write of, an outbox entry whose stored effects
+// write it or a receipt row its journal keeps: the target leaves its recipes, preimages and written values, and a waiting
+// request withdraws its operation there, counted skipped `history-changed`. A created record and a command recipe stay,
+// proven by the act's own receipts alone. Answers how many targets the adopted acts gave up.
+export function giveUpUnread(into, from) {
+  const written = new Set();
+  const note = (scope, t, id) => written.add(jcs([scope, t, id]));
+  for (const entry of into.entries()) for (const { scope, d } of effectsOf(entry)) for (const delta of d) note(scope, delta.t, delta.id);
+  for (const source of into.journal.flatMap((act) => act.sourceEntries)) {
+    for (const effect of source.attempts.flatMap((attempt) => attempt.acceptedEffects ?? [])) for (const row of effect.rows) note(effect.scope, row.t, row.id);
+  }
+  const unread = ({ scope, t, id }) => written.has(jcs([scope, t, id]));
+  let given = 0;
+  for (const source of from.journal.flatMap((act) => act.sourceEntries)) {
+    source.recipes = source.recipes.flatMap((recipe) => {
+      if (recipe.kind !== 'fields') return [recipe];
+      const targets = recipe.targets.filter(({ target }) => !unread(target));
+      given += recipe.targets.length - targets.length;
+      return targets.length ? [{ ...recipe, targets }] : [];
+    });
+    source.preimages = source.preimages.filter(({ target }) => !unread(target));
+    source.written = (source.written ?? []).filter(({ target }) => !unread(target));
+  }
+  for (const request of from.inverses.filter(({ state }) => state === 'waiting')) {
+    for (const slot of request.slots.filter((candidate) => candidate.state === 'waiting' && candidate.recipe.kind === 'restore')) {
+      const kept = slot.recipe.operations.filter((op) => op.kind !== 'field' || op.reference || !unread(op.target));
+      const withdrawn = slot.recipe.operations.length - kept.length;
+      if (withdrawn === 0) continue;
+      slot.recipe.operations = kept;
+      slot.skipped = [...(slot.skipped ?? []), ...Array.from({ length: withdrawn }, () => ({ code: 'history-changed' }))];
+      keepProjection(from.entry(slot.localId), kept);
+    }
+  }
+  return given;
 }
 
 // readInverseResult(requestId): cancelled, pending, settled or unavailable.

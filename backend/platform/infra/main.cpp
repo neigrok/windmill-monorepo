@@ -7,10 +7,12 @@
 #include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 #include "platform/ai_passes/AiPassApi.h"
+#include "platform/ai_service/AiServiceClient.h"
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
 #include "products/gym/onboarding/OnboardingService.h"
 #include "products/gym/coach/AnthropicCoachModel.h"
+#include "products/gym/coach/CoachWords.h"
 #include "products/gym/coach/TurnService.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
@@ -87,9 +89,9 @@
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "platform/adapters/llm/AnthropicClient.h"
-#include "products/journal/adapters/llm/AnthropicCurator.h"
+#include "products/journal/adapters/llm/AiServiceCurator.h"
 #include "products/journal/adapters/llm/UnconfiguredModels.h"
-#include "products/journal/adapters/llm/AnthropicSegmenter.h"
+#include "products/journal/adapters/llm/AiServiceSegmenter.h"
 #include "products/journal/adapters/llm/HttpEmbedder.h"
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
@@ -139,6 +141,7 @@
 #include "products/probe/adapters/postgres/PgProbe.h"
 #endif
 
+#include <curl/curl.h>
 #include <drogon/drogon.h>
 
 #include <algorithm>
@@ -163,13 +166,15 @@ struct SyncChanges : wm::sync::ChangeFeed {
 
 struct SyncEngine {
   SyncEngine(std::shared_ptr<wm::sync::SyncCatalog> catalog, std::shared_ptr<wm::PgPool> pool,
-             wm::Clock& clock, wm::FailureReporter& errors, std::size_t workerCount, std::size_t queueCeiling)
+             wm::Clock& clock, wm::FailureReporter& errors, std::shared_ptr<wm::SessionReplicas> sessionReplicas,
+             std::size_t workerCount, std::size_t queueCeiling)
       : catalog(std::move(catalog)), store(std::move(pool), limits.lockTimeoutMs),
         physicalClock(std::make_shared<wm::sync::PhysicalClock>(clock)),
         live(std::make_shared<wm::sync::SyncLive>(*this->catalog, store, limits)),
         changes{live}, admission(*this->catalog, store, changes, serverClock, errors, limits),
         service(std::make_shared<wm::sync::SyncService>(*this->catalog, store, admission, *physicalClock,
-                                                        std::make_shared<wm::FailureWindow>(errors, "sync.push.bind_unavailable"))),
+                                                        std::make_shared<wm::FailureWindow>(errors, "sync.push.bind_unavailable"),
+                                                        std::move(sessionReplicas))),
         workers(std::make_shared<wm::WorkerPool>("sync", workerCount, queueCeiling,
                                                  std::make_shared<wm::FailureWindow>(errors, "worker_pool.saturated"))) {}
 
@@ -499,7 +504,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto entitlements = std::make_shared<Entitlements>(
       *entitlementCopy, *systemClock, *aiUsageRepo,
       Allowlists{EmailList{ownerEmailsEnv ? ownerEmailsEnv : ""}, EmailList{sandboxEmailsEnv ? sandboxEmailsEnv : ""}},
-      std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
+      aiBudgets);
 
   // An empty SENTRY_DSN leaves a no-op client.
   auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
@@ -602,6 +607,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.onStop([aiInstallationWorkers] { aiInstallationWorkers->stopAndJoin(); }, aiInstallationApi, authService,
                   aiInstallations, entitlements, sentry);
 
+  // The backend's pass issuer, for the pass door (POST /v1/ai/passes) and for the backend's own background calls to the
+  // AI service. Without AI_PASS_PRIVATE_SEED there is neither.
+  std::shared_ptr<AiPasses> aiPasses;
   std::shared_ptr<AiPassApi> aiPassApi;
   std::shared_ptr<WorkerPool> aiPassWorkers;
   if (const char* seed = std::getenv("AI_PASS_PRIVATE_SEED"); seed && *seed) {
@@ -611,9 +619,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     };
     const std::string environment = configured("AI_PASS_ENVIRONMENT", secureCookies ? "production" : "development");
     if (secureCookies && environment != "production") throw std::runtime_error("HTTPS AI passes require production environment");
-    auto passes = std::make_shared<AiPasses>(seed, configured("AI_PASS_KID", ""), environment,
-                                           configured("AI_PASS_MIN_VERSIONS", ""));
-    aiPassApi = std::make_shared<AiPassApi>(passes, authService, aiInstallations, entitlements,
+    aiPasses = std::make_shared<AiPasses>(seed, configured("AI_PASS_KID", ""), environment,
+                                          configured("AI_PASS_MIN_VERSIONS", ""));
+    aiPassApi = std::make_shared<AiPassApi>(aiPasses, authService, aiInstallations, entitlements,
         std::make_shared<RateLimiter>(30.0 / 60.0, 30.0), *systemClock, allowedOrigins, installationProxy);
     aiPassWorkers = std::make_shared<WorkerPool>("ai-pass-http", 2, 16,
                                                  std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
@@ -645,7 +653,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 #else
   auto syncCatalog = productsCatalog;
 #endif
-  auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
+  auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, authRepo, kSyncWorkers, kSyncQueueCeiling);
   lifetime.watch(syncEngine, systemClock, sentry);
 
   // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
@@ -829,12 +837,18 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  entitlementCopy, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
+  // The words Coach's model reads parse here, and Ask's prompts with them, so a malformed contract
+  // file stops the start rather than a turn.
+  gym::coach::CoachWords::shipped();
+  gym::coachSystemPrompt(gym::CoachRoutineRule::drafts);
+  gym::coachSystemPrompt(gym::CoachRoutineRule::unavailable);
+
   // The phone Coach's turn wire shares Ask's key, endpoint, fuse, sink and budget; its routes are
   // mounted under the same condition as Ask's.
   const std::string coachBaseUrl = std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl;
   auto gymCoachModel = std::make_shared<gym::coach::AnthropicCoachModel>(anthropicKey ? anthropicKey : "", coachBaseUrl,
                                                                          sentry, aiFuse, aiSpendSink, aiCallBudget);
-  auto gymTurns = std::make_shared<gym::coach::TurnService>(gymCoachModel, gym::coach::gymAbilityCatalog(), *gymTools, *gymDoor,
+  auto gymTurns = std::make_shared<gym::coach::TurnService>(gymCoachModel, gym::coach::gymCatalogs(), *gymTools, *gymDoor,
                                                             *entitlements, aiInstallations, *systemClock,
                                                             gym::coachMaxOutputTokens(std::getenv("COACH_MAX_OUTPUT_TOKENS")), sentry);
   gymTurns->start();
@@ -1306,32 +1320,26 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   } else
     journalEmbedder = std::make_shared<NullEmbedder>();
 
-  std::shared_ptr<Curator> journalCurator;
-  if (anthropicKey && *anthropicKey) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
-    lifetime.watch(transport);
-    journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink, 0.6f, aiCallBudget);
-  } else
-    journalCurator = std::make_shared<NullCurator>();
-  // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
-  std::shared_ptr<Segmenter> journalSegmenter;
-  if (anthropicKey && *anthropicKey) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
-    lifetime.watch(transport);
-    journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink, aiCallBudget);
-  } else
-    journalSegmenter = std::make_shared<RuleSegmenter>();
+  // Echoes' two model calls go to the AI service's text door (AI_SERVICE_URL) as each writer's background work, under a
+  // pass the backend signs for the writer's account (docs/foundation/echoes-on-ai-service.md). Without the pass signer
+  // or the address, the line-and-sentence rule cuts the page and no curator is configured, so no echo pass runs.
+  const char* aiServiceUrlEnv = std::getenv("AI_SERVICE_URL");
+  std::shared_ptr<Curator> journalCurator = std::make_shared<NullCurator>();
+  std::shared_ptr<Segmenter> journalSegmenter = std::make_shared<RuleSegmenter>();
+  if (aiPasses && aiServiceUrlEnv && *aiServiceUrlEnv) {
+    auto aiService = std::make_shared<AiServiceClient>(aiServiceUrlEnv, aiPasses, *systemClock, *sentry);
+    journalCurator = std::make_shared<AiServiceCurator>(aiService);
+    journalSegmenter = std::make_shared<AiServiceSegmenter>(aiService);
+  }
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
   // The live path, the repair pass and the read layer must all hold this one object, or one of them
   // reads a staler copy.
   auto journalEchoes = std::make_shared<WarmEchoRepository>(*journalSpans, *systemClock);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
-  auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter,
-                                                      *journalEmbedder, *journalCurator,
-                                                      *systemClock, *entitlements,
-                                                      SelectionRules{}, SweepBudget{});
-  lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder,
-                 journalCurator, systemClock, entitlements, entitlementCopy, aiUsageRepo);
+  auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter, *journalEmbedder,
+                                                      *journalCurator, *systemClock, SelectionRules{}, SweepBudget{});
+  lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder, journalCurator,
+                 systemClock, sentry);
   journalEchoSweep->start();
   // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =
@@ -1345,7 +1353,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *journalPages);
   lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
-                 journalPages);
+                 journalPages, systemClock, sentry);
   // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503. OPENAI_BASE_URL points it at another
   // origin speaking the same protocol, a local stub in tests.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
@@ -1452,6 +1460,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
 int main() {
   using namespace wm;
+  // libcurl's process-wide state, set up once before any thread can start a transfer (AnthropicStream, AiServiceClient):
+  // the libcurl the image carries does not set it up safely from two threads at once.
+  if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+    std::fprintf(stderr, "refusing to start: libcurl could not be initialised\n");
+    return 1;
+  }
   std::shared_ptr<SentryClient> reporter;
   int code = 1;
   bool reportsSent = true;

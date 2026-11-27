@@ -28,7 +28,7 @@ export function undo(replica, registry, ended, gestureId) {
   if (gesture.length === 0 || gesture.some((entry) => entry.state !== 'held')) return false;
   const parts = silentFoldOf(replica, registry, gesture.map((entry) => ({ entry, deltas: deltasOf(entry) })));
   for (const entry of gesture) moveEntry(replica, ended, entry, 'undo');
-  foldSilently(replica, ended, parts);
+  foldSilently(replica, registry, ended, parts);
   settleEnded(replica, 'undone');
   return true;
 }

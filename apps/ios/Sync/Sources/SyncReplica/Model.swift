@@ -49,6 +49,8 @@ public struct ReplicaMeta: Sendable, Hashable {
   public var serverEpoch: String?
   public var ackThrough: Int64
   public var authPaused: Bool
+  // §9.2 the schema the latest hello served as `account` advertised, which gates what a version declares (§2.4).
+  public var serverSchema: Int64?
 
   // A new replica: numbered from 1, its clock and offset unset (corpus/README.md "Client steps").
   public init(replica: String, state: State, account: String? = nil) {
@@ -92,6 +94,16 @@ public struct ReplicaMeta: Sendable, Hashable {
     if offset.take(serverTime: serverTime, send: send, recv: recv) { serverOffsetMs = offset.ms }
   }
 
+  // §9.2 a hello's verdict on the server's schema: a 200 served as the account records it, an answer handled as a 401
+  // forgets it.
+  public mutating func hear(_ hello: Answer<HelloResponse>) {
+    if hello.isUnauthenticated(for: account) {
+      serverSchema = nil
+    } else if case .ok(let body) = hello, let account, body.isServed(to: account) {
+      serverSchema = Int64(body.schema)
+    }
+  }
+
   public init(json: JSON) throws {
     let object = try json.asObject()
     replica = try object.member("replica").asString()
@@ -110,6 +122,7 @@ public struct ReplicaMeta: Sendable, Hashable {
     serverEpoch = epoch.isNull ? nil : try epoch.asString()
     ackThrough = try object.member("ackThrough").asInteger()
     authPaused = try object.member("authPaused").asBool()
+    serverSchema = try object["serverSchema"]?.asInteger()
   }
 
   public var json: JSON {
@@ -121,6 +134,7 @@ public struct ReplicaMeta: Sendable, Hashable {
     ]
     object["account"] = account.map { .string($0) }
     object["clockReading"] = offset.clockReading?.json
+    object["serverSchema"] = serverSchema.map { JSON($0) }
     return .object(object)
   }
 
@@ -585,7 +599,7 @@ public struct EntrySelection: Sendable, Hashable {
   public var scopes: Set<ScopeRef>
   // The scopes uncovered projections target, which a subscription set read in the transaction joins (§7.9).
   public var projectionTargets: Bool
-  // Entries by local id: those the journal names, loaded with it (§7.3 Undo of an act).
+  // Entries by local id: those the journal names, loaded with it where a load reads the journal (§7.3 Undo of an act).
   public var localIds: Set<String>
 
   public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil,
@@ -600,6 +614,15 @@ public struct EntrySelection: Sendable, Hashable {
   }
 
   public static let every = EntrySelection(all: true)
+}
+
+// What a planner reads of one replica's journal (§7.3 Undo of an act): none of it, as a reader's load, whose cost does not
+// follow what the journal holds; every act, request and cancellation, with the entries it names; or its requests, and the
+// rest only where one is unsettled, which is all a commit settles.
+public enum JournalSelection: Sendable, Hashable {
+  case unread
+  case whole
+  case whereUnsettled
 }
 
 // §7.5 step 2 the acked entries with an uncovered effect in `scope` that a cursor live at `cleanSeq` covers in `epoch`,
@@ -629,9 +652,12 @@ public enum EngineEvent: Sendable, Hashable {
   case pushMalformed
   // `activeReplica()` answers `replica` where it answered `previous`; not durable.
   case activeReplicaChanged(previous: String, replica: String)
-  // An inverse request the device sent settled, with its operation counts; the engine reports it as a product event, which
-  // the shared contract does not describe.
-  case inverseSettled(applied: Int, skipped: Int)
+  // An inverse request the device sent settled, with its operation counts and why any were skipped; the engine reports it
+  // as a product event, which the shared contract does not describe.
+  case inverseSettled(applied: Int, skipped: Int, reason: InverseSkipReason)
+  // Sign-in's Add made the acts it adopted give up targets the adopting replica holds writes of (§7.10), with how many;
+  // the engine reports it as a product event, which the shared contract does not describe.
+  case adoptionGaveUp(targets: Int)
 
   public var json: JSON {
     switch self {
@@ -643,15 +669,18 @@ public enum EngineEvent: Sendable, Hashable {
     case .pushMalformed: return ["event": "sync-push-malformed"]
     case .activeReplicaChanged(let previous, let replica):
       return ["event": "activeReplicaChanged", "previous": .string(previous), "replica": .string(replica)]
-    case .inverseSettled(let applied, let skipped):
-      return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped)]
+    case .inverseSettled(let applied, let skipped, let reason):
+      return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped), "reason": .string(reason.rawValue)]
+    case .adoptionGaveUp(let targets): return ["event": "sync-inverse", "outcome": "adopted", "givenUp": JSON(targets)]
     }
   }
 
   // Whether the shared corpus describes it: every event but the engine's own product reports.
   public var isContract: Bool {
-    if case .inverseSettled = self { return false }
-    return true
+    switch self {
+    case .inverseSettled, .adoptionGaveUp: false
+    case .ended, .digestMismatch, .pushMalformed, .activeReplicaChanged: true
+    }
   }
 
   public var isEnded: Bool {
@@ -661,7 +690,7 @@ public enum EngineEvent: Sendable, Hashable {
 
   public var isTelemetry: Bool {
     switch self {
-    case .digestMismatch, .pushMalformed, .inverseSettled: true
+    case .digestMismatch, .pushMalformed, .inverseSettled, .adoptionGaveUp: true
     case .ended, .activeReplicaChanged: false
     }
   }

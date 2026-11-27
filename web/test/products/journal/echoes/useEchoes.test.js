@@ -858,6 +858,27 @@ test('THE MOUNT READ PRESENTS ITSELF AS IT LANDS, so no later commit can mistake
   assert.equal(run.log.lit, null, 'the journal claimed something was new that was there when it opened');
 });
 
+test('a signed-out seat asks for no echoes, opening or on the beat, until an account signs in', async (t) => {
+  const server = reading(t, { wide: false, pages: [] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let account = null;
+  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account, bodyOf: server.bodyOf }));
+  const asked = [];
+  const beat = async () => { t.mock.timers.tick(15000); await settle(8); asked.push(server.asked.echoes); };
+  await settle(8);
+  await beat();
+  account = 'reader';
+  run.redraw();
+  await settle(8);
+  asked.push(server.asked.echoes);
+  await beat();
+  account = null;
+  run.redraw();
+  await settle(8);
+  await beat();
+  assert.deepEqual(asked, [0, 1, 2, 2]);
+});
+
 test('A READ THAT OUTLIVES A SIGN-OUT IS DROPPED — it may not draw, light or announce another account', async (t) => {
   let account = 'alice';
   const server = reading(t, { wide: false, pages: [] });

@@ -3,9 +3,12 @@
 #include "platform/adapters/json/JsonText.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <regex>
 #include <set>
+#include <utility>
 
 namespace wm::gym::coach {
 
@@ -185,8 +188,9 @@ bool Ability::mintsId() const {
   return declaration.descriptor["inputSchema"]["properties"].isMember("id");
 }
 
-AbilityCatalog AbilityCatalog::of(const std::vector<ToolDeclaration>& declarations) {
+AbilityCatalog AbilityCatalog::of(const std::vector<ToolDeclaration>& declarations, int version) {
   AbilityCatalog catalog;
+  catalog.version_ = version;
   for (const ToolDeclaration& declaration : declarations) {
     Ability ability{declaration};
     if (const AppendixRow* row = appendixRow(declaration.name())) {
@@ -226,10 +230,42 @@ std::vector<ToolDeclaration> AbilityCatalog::offered(Seat seat) const {
   return out;
 }
 
-const AbilityCatalog& gymAbilityCatalog() {
-  static const AbilityCatalog catalog = AbilityCatalog::of(gymToolCatalog());
-  return catalog;
+ServedCatalogs::ServedCatalogs(AbilityCatalog second, AbilityCatalog third)
+    : first_(second.at(1)), second_(std::move(second)), third_(std::move(third)) {}
+
+const AbilityCatalog& ServedCatalogs::at(int version) const {
+  if (version <= first_.version()) return first_;
+  if (version == second_.version()) return second_;
+  return third_;
 }
+
+namespace {
+
+// The order catalog/1 and catalog/2 turns have always offered their tools in, so a released build's model request
+// stays byte for byte what it was; catalog/3 follows its file.
+constexpr const char* kReleasedOrder[] = {
+    "list_exercises", "list_sessions", "get_session", "last_time", "list_routines", "get_stats", "list_notes",
+    "list_bodyweight", "get_sessions", "get_last_times", "save_note", "start_session", "log_set", "finish_session",
+    "create_routine", "propose_routine_change", "propose_workout_change", "create_exercise", "update_exercise",
+    "share_session", "log_sets", "import_session", "discard_session", "propose_routine_removal", "revoke_share"};
+
+std::vector<ToolDeclaration> inReleasedOrder(std::vector<ToolDeclaration> declarations) {
+  const auto rank = [](const ToolDeclaration& declaration) {
+    return std::ranges::find(kReleasedOrder, declaration.name()) - std::begin(kReleasedOrder);
+  };
+  std::ranges::stable_sort(declarations, {}, rank);
+  return declarations;
+}
+
+}  // namespace
+
+const ServedCatalogs& gymCatalogs() {
+  static const ServedCatalogs catalogs{AbilityCatalog::of(inReleasedOrder(declarationsOf(catalog2Text())), 2),
+                                       AbilityCatalog::of(gymToolCatalog(), 3)};
+  return catalogs;
+}
+
+const AbilityCatalog& gymAbilityCatalog() { return gymCatalogs().at(kNewestCatalog); }
 
 std::optional<std::string> schemaViolation(const Json::Value& schema, const Json::Value& value) {
   return violation(schema, value, "");

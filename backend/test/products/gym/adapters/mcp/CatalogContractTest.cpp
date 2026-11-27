@@ -8,18 +8,24 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
-// packages/api-contract/gym/catalog.json is the catalog of record (gym_coach.md D-2, §3.1); the server's tool
-// declarations are pinned to it byte for byte.
+// packages/api-contract/gym/catalog-3.json is the catalog of every door (gym-coach-on-ai-service.md §3, R-11), and MCP
+// lists its tools byte for byte; catalog.json is catalog/2, which released builds open turns with until the cutover.
 using namespace wm;
 using namespace wm::gym;
 
 namespace {
 
 const Json::Value& catalog() {
-  static const Json::Value parsed = sync::parseJson(catalogText());
+  static const Json::Value parsed = sync::parseJson(catalog3Text());
   return parsed;
+}
+
+// Both files the server serves, each with the version it names.
+std::vector<std::pair<std::string, Json::Value>> servedFiles() {
+  return {{"catalog/2", sync::parseJson(catalog2Text())}, {"catalog/3", catalog()}};
 }
 
 // The abilities the server declares a tool for: every entry but those marked `"declared": false`.
@@ -50,29 +56,37 @@ std::vector<std::string> openObjects(const Json::Value& schema) {
 
 }
 
-TEST(gym_catalog_json_is_catalog_2_and_every_ability_carries_exactly_the_declared_fields) {
-  REQUIRE_EQ(catalog()["catalog"].asString(), std::string("catalog/2"));
-  REQUIRE(catalog()["abilities"].isArray());
-  const std::set<std::string> fields{"name", "description", "input", "result", "class", "agent", "seats", "phrase", "ui"};
-  std::set<std::string> names;
-  for (const Json::Value& ability : catalog()["abilities"]) {
-    std::set<std::string> carried;
-    for (const std::string& field : ability.getMemberNames()) carried.insert(field);
-    if (ability.isMember("declared")) {
-      CHECK(ability["declared"] == Json::Value(false));
-      carried.erase("declared");
+TEST(gym_catalog_files_name_their_version_and_every_ability_carries_exactly_the_declared_fields) {
+  for (const auto& [version, file] : servedFiles()) {
+    REQUIRE_EQ(file["catalog"].asString(), version);
+    REQUIRE(file["abilities"].isArray());
+    const std::set<std::string> fields{"name", "description", "input", "result", "class", "agent", "seats", "phrase", "ui"};
+    std::set<std::string> names;
+    for (const Json::Value& ability : file["abilities"]) {
+      std::set<std::string> carried;
+      for (const std::string& field : ability.getMemberNames()) carried.insert(field);
+      if (ability.isMember("declared")) {
+        CHECK(ability["declared"] == Json::Value(false));
+        carried.erase("declared");
+      }
+      if (ability.isMember("since")) {
+        CHECK(ability["since"] == Json::Value("catalog/2"));
+        carried.erase("since");
+      }
+      // Whether a device turn declares the tool strict to the provider: catalog/3's word, every ability's.
+      CHECK_EQ(ability.isMember("strict"), version == "catalog/3");
+      if (ability.isMember("strict")) {
+        CHECK(ability["strict"].isBool());
+        carried.erase("strict");
+      }
+      CHECK(carried == fields);
+      CHECK(names.insert(ability["name"].asString()).second);
+      CHECK((std::set<std::string>{"read", "add", "change", "remove"}.contains(ability["class"].asString())));
+      CHECK((std::set<std::string>{"runs", "proposes", "withheld"}.contains(ability["agent"].asString())));
+      CHECK((std::set<std::string>{"any", "bound"}.contains(ability["seats"].asString())));
+      CHECK(!ability["phrase"].asString().empty() && !ability["phrase"].asString().ends_with('.'));
+      CHECK(!ability["ui"].asString().empty());
     }
-    if (ability.isMember("since")) {
-      CHECK(ability["since"] == Json::Value("catalog/2"));
-      carried.erase("since");
-    }
-    CHECK(carried == fields);
-    CHECK(names.insert(ability["name"].asString()).second);
-    CHECK((std::set<std::string>{"read", "add", "change", "remove"}.contains(ability["class"].asString())));
-    CHECK((std::set<std::string>{"runs", "proposes", "withheld"}.contains(ability["agent"].asString())));
-    CHECK((std::set<std::string>{"any", "bound"}.contains(ability["seats"].asString())));
-    CHECK(!ability["phrase"].asString().empty() && !ability["phrase"].asString().ends_with('.'));
-    CHECK(!ability["ui"].asString().empty());
   }
 }
 
@@ -89,8 +103,9 @@ TEST(gym_catalog_derived_result_metrics_admit_explicit_null) {
       collect(schema[key]);
     }
   };
-  for (const auto& ability : catalog()["abilities"]) collect(ability["result"]);
-  CHECK_EQ(metrics.size(), std::size_t(11));
+  for (const auto& [version, file] : servedFiles())
+    for (const auto& ability : file["abilities"]) collect(ability["result"]);
+  CHECK_EQ(metrics.size(), std::size_t(23));
   const auto expected = sync::parseJson(R"({"type":["number","null"]})");
   for (const auto& schema : metrics) {
     CHECK_EQ(schema, expected);
@@ -100,34 +115,65 @@ TEST(gym_catalog_derived_result_metrics_admit_explicit_null) {
   }
 }
 
-// MCP keeps working because each tool's name, description and input schema ARE the catalog's, compared as JCS.
-TEST(gym_catalog_json_declares_every_server_tool_byte_for_byte) {
+// MCP lists catalog/3: each tool's name, description and input schema ARE the file's, compared as JCS on the wire, and a
+// structured answer's outputSchema is the ability's `result`.
+TEST(gym_catalog_3_is_what_mcp_lists_byte_for_byte) {
   std::map<std::string, Json::Value> abilities = declaredAbilities();
-  std::set<std::string> undeclared;
-  for (const Json::Value& ability : catalog()["abilities"])
-    if (!ability.get("declared", true).asBool()) undeclared.insert(ability["name"].asString());
-
   for (const ToolDeclaration& tool : gymToolCatalog()) {
-    CHECK_FALSE(undeclared.contains(tool.name()));
     const auto ability = abilities.find(tool.name());
     if (ability == abilities.end()) {
-      ::testing::fail(("no catalog.json ability for the server tool " + tool.name()).c_str(), __FILE__, __LINE__);
+      ::testing::fail(("no catalog-3.json ability for the server tool " + tool.name()).c_str(), __FILE__, __LINE__);
       continue;
     }
     Json::Value pinned(Json::objectValue);
     pinned["name"] = ability->second["name"];
     pinned["description"] = ability->second["description"];
     pinned["inputSchema"] = ability->second["input"];
-    Json::Value declared(Json::objectValue);
-    for (const char* field : {"name", "description", "inputSchema"}) declared[field] = tool.descriptor[field];
-    if (sync::jcs(pinned) != sync::jcs(declared))
-      ::testing::fail(("catalog.json drifts from the server's " + tool.name() + "; it declares " + sync::jcs(declared)).c_str(),
-                      __FILE__, __LINE__);
+    if (answersStructured(tool.name())) pinned["outputSchema"] = ability->second["result"];
+    const Json::Value wire = tool.wire();
+    Json::Value listed(Json::objectValue);
+    for (const char* field : {"name", "description", "inputSchema", "outputSchema"})
+      if (wire.isMember(field)) listed[field] = wire[field];
+    if (sync::jcs(pinned) != sync::jcs(listed))
+      ::testing::fail(("MCP lists " + tool.name() + " apart from catalog-3.json: " + sync::jcs(listed)).c_str(), __FILE__, __LINE__);
     abilities.erase(ability);
   }
   for (const auto& [name, ability] : abilities)
-    ::testing::fail(("catalog.json declares " + name + ", which the server does not; mark it \"declared\": false").c_str(),
-                    __FILE__, __LINE__);
+    ::testing::fail(("catalog-3.json declares " + name + ", which the server does not list").c_str(), __FILE__, __LINE__);
+}
+
+// The two files hold one set of abilities, each of one class, agent rule and seats: catalog/3 moved inputs, says which
+// tools a device turn declares strict, and answers list_sessions with a row that names its lifts and holds no plan.
+// Every other ability returns the same in both.
+TEST(gym_catalog_2_and_catalog_3_differ_in_what_they_take_and_in_the_log_row) {
+  const Json::Value second = sync::parseJson(catalog2Text());
+  REQUIRE_EQ(second["abilities"].size(), catalog()["abilities"].size());
+  for (Json::ArrayIndex i = 0; i < second["abilities"].size(); ++i) {
+    Json::Value older = second["abilities"][i];
+    Json::Value newer = catalog()["abilities"][i];
+    for (const char* moved : {"input", "description"}) {
+      older.removeMember(moved);
+      newer.removeMember(moved);
+    }
+    newer.removeMember("strict");
+    if (newer["name"] == "list_sessions") {
+      // catalog/3's row drops the frozen plan, adds a line per movement and names the top set's movement; the rest is catalog/2's.
+      const auto without = [](const Json::Value& names, const std::string& name) {
+        Json::Value kept(Json::arrayValue);
+        for (const Json::Value& each : names)
+          if (each.asString() != name) kept.append(each);
+        return kept;
+      };
+      Json::Value& olderRow = older["result"]["properties"]["sessions"]["items"];
+      Json::Value& newerRow = newer["result"]["properties"]["sessions"]["items"];
+      olderRow["properties"].removeMember("plan");
+      newerRow["properties"].removeMember("movements");
+      newerRow["required"] = without(newerRow["required"], "movements");
+      newerRow["properties"]["topSet"]["properties"].removeMember("exerciseId");
+      newerRow["properties"]["topSet"]["required"] = without(newerRow["properties"]["topSet"]["required"], "exerciseId");
+    }
+    CHECK_EQ(sync::jcs(older), sync::jcs(newer));
+  }
 }
 
 // A read is a `read`-level tool, a removal a `delete`-level one, and only a `propose_*` tool proposes (INV-6, INV-7).
@@ -146,16 +192,10 @@ TEST(gym_catalog_json_class_and_agent_agree_with_each_tool_grant_level) {
   }
 }
 
-// §3.1 closes `input` at every depth, and this corpus's results likewise. Three object schemas in two server tools
-// predate the rule and stay open; they are pinned here, so a new one fails.
-TEST(gym_catalog_json_closes_every_object_schema_at_every_depth) {
-  const std::map<std::string, std::vector<std::string>> openInputs{
-      {"create_routine", {"/properties/entries/items/properties/sets/items", "/properties/pendingProposal"}},
-      {"propose_routine_change", {"/properties/entries/items/properties/sets/items"}}};
+// Strict mode closes every object catalog/3 takes or returns, at every depth.
+TEST(gym_catalog_3_closes_every_object_schema_at_every_depth) {
   for (const Json::Value& ability : catalog()["abilities"]) {
-    const std::string name = ability["name"].asString();
-    const auto known = openInputs.find(name);
-    CHECK(openObjects(ability["input"]) == (known == openInputs.end() ? std::vector<std::string>{} : known->second));
+    CHECK(openObjects(ability["input"]).empty());
     CHECK(openObjects(ability["result"]).empty());
     CHECK_EQ(ability["input"]["type"].asString(), std::string("object"));
   }

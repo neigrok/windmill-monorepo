@@ -13,7 +13,7 @@ NotesApi::NotesApi(std::shared_ptr<NotesRepository> notes, std::shared_ptr<AuthS
     : notes_(std::move(notes)), auth_(std::move(auth)) {}
 
 void NotesApi::listNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

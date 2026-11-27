@@ -2,12 +2,14 @@
 // client steps against the reference server, so every response a vector carries is one the server answered.
 
 import assert from 'node:assert/strict';
-import { freshMeta } from '../client/replica.js';
-import { pull } from '../server/pull.js';
+import { Device, freshMeta } from '../client/replica.js';
+import { onPushResponse } from '../client/sender.js';
+import { steadyTiming } from '../core/clock.js';
+import { CONSTANTS } from '../core/constants.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
-import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
-import { runSteps, settle, stepsVector } from './steps.js';
+import { ACTOR, OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
+import { Session, settle, stepsVector } from './steps.js';
 
 export const REPLICA = 'rp_00000000000000000000000000000001';
 export const BOARD = 'b_00000001';
@@ -38,77 +40,6 @@ export function world({ rows = {}, overlay } = {}) {
     rows: { 'acct:A/probe': confirmed['self/probe'], [`tree:${BOARD}`]: confirmed[TREE], ...(overlay ? { [`acct:A/overlay/${BOARD}`]: overlay } : {}) },
   }));
   return { device, state };
-}
-
-// Client steps paired with the reference server's answers: `push` and `pull` ask the device for its request
-// as the steps so far leave it, let the server answer, and append the answer.
-export class Session {
-  constructor({ device, state }, input = {}) {
-    this.device = device;
-    this.state = state;
-    this.input = input;
-    this.steps = [];
-    this.serverNow = 6000;
-  }
-
-  local(...steps) {
-    this.steps.push(...steps);
-    return this;
-  }
-
-  run() {
-    return runSteps({ device: this.device, ...this.input, steps: this.steps });
-  }
-
-  last() {
-    return this.run().returns.at(-1);
-  }
-
-  push({ deviceNow = this.serverNow, dieAfter, answer = (response) => response } = {}) {
-    this.steps.push({ op: 'push', deviceNow });
-    const request = this.last();
-    if (!request) return null;
-    this.serverNow += 1000;
-    const pushed = push({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    this.state = pushed.state;
-    const response = answer(structuredClone(pushed.response));
-    this.steps.push({ op: 'pushResponse', response, deviceNow, ...(dieAfter === undefined ? {} : { dieAfter }) });
-    return response;
-  }
-
-  // Pushes until nothing is left to number, each answer applied.
-  flush(limit = 8) {
-    for (let k = 0; k < limit; k++) if (this.push() === null) return this;
-    throw new Error('the session did not flush');
-  }
-
-  // Intents another replica of the same account pushes meanwhile, each at the server's present.
-  elsewhere(...intents) {
-    this.serverNow += 1000;
-    this.otherN = (this.otherN ?? 0) + intents.length;
-    const request = { replica: 'rp_0000000000000000000000000000000b', account: 'A', ackThrough: 0,
-      intents: intents.map((intent, k) => ({ n: this.otherN - intents.length + 1 + k, ...intent })) };
-    const pushed = push({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    assert.ok(pushed.response.body.results.every(({ s }) => s === 'ok'), 'a foreign write lands');
-    this.state = pushed.state;
-    return this;
-  }
-
-  pull(scopes, { deviceNow = this.serverNow, dieAfter, settle: perSlice } = {}) {
-    this.steps.push({ op: 'pull', scopes, deviceNow });
-    const request = this.last();
-    if (!request) return null;
-    this.serverNow += 1000;
-    const pulled = pull({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    this.state = pulled.state;
-    this.steps.push({ op: 'pullResponse', response: pulled.response, deviceNow,
-      ...(dieAfter === undefined ? {} : { dieAfter }), ...(perSlice === undefined ? {} : { settle: perSlice }) });
-    return pulled.response;
-  }
-
-  vector(name) {
-    return stepsVector(name, { device: this.device, ...this.input, steps: structuredClone(this.steps) });
-  }
 }
 
 const cardTitle = target('self/probe', 'card', CARD, 'field', 'title');
@@ -260,6 +191,9 @@ function lifecycle() {
 
 const outboxOf = (vector) => activeOf(vector)?.outbox ?? [];
 const requestStep = (actId, deviceNow = 9000) => ({ op: 'requestInverse', actId, deviceNow });
+// A hello served as A advertising `schema`, at the device's own time, so the offset stays.
+const helloStep = (schema, deviceNow = 9000) => ({ op: 'hello', deviceNow,
+  response: { status: 200, body: { serverTime: deviceNow, epoch: 'ep-1', as: 'A', schema, minSchema: 2 } } });
 const viewStep = (scope) => ({ op: 'view', scope, withHeld: true });
 const titleIn = (returned, t, id) => returned.records.find((record) => record.t === t && record.id === id)?.f?.title?.[0];
 
@@ -524,6 +458,51 @@ function heldRedo() {
   return [redone, pending, masked];
 }
 
+// A held put that makes a day present, cancelled and then redone. A Redo binds its references in an epoch: signed out
+// the replica holds none, so the Redo draws the day at once and waits, and the day reaches the server once sign-in
+// gives the replica an epoch, the account's dormant replica's or the first a fresh replica's pull takes.
+function heldBirthRedo() {
+  const id = '2026-11-24';
+  const held = { op: 'commitAct', deviceNow: 5200, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id, f: { score: 5 } }], opts: { hold: true } }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore',
+      targets: [{ target: target('self/probe', 'day', id, 'field', 'score'), defaultValue: 0 }] }] }] } } };
+  const signIn = { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } };
+  const scoreOf = (returned) => returned.records.find((record) => record.t === 'day' && record.id === id && record.life?.[0] === 'alive')?.f?.score?.[0] ?? null;
+  const dayOnServer = (session) => session.state.rows['acct:A/probe'][recordKeyOf('day', id)];
+  const redone = (name, session, { cancelledAt, redoneAt }) => {
+    session.pull(['self/probe']);
+    const sample = session.local({ op: 'readInverseResult', requestId: 'g5' }, viewStep('self/probe')).vector(name);
+    assert.deepEqual(sample.expect.returns[cancelledAt], { kind: 'cancelled', requestId: 'g3', inverseActId: 'g2', changed: true });
+    assert.deepEqual(sample.expect.returns[redoneAt], { kind: 'pending', requestId: 'g5', inverseActId: 'g4', localChanged: true });
+    assert.equal(scoreOf(sample.expect.returns[redoneAt + 1]), 5);
+    assert.deepEqual(sample.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 1, skippedCount: 0 });
+    assert.equal(scoreOf(sample.expect.returns.at(-1)), 5);
+    assert.deepEqual([dayOnServer(session).life[0], dayOnServer(session).f.score[0]], ['alive', 5]);
+    return sample;
+  };
+
+  const signedIn = new Session(world()).local(held, requestStep('g1', 5300), requestStep('g2', 5400), viewStep('self/probe'));
+  signedIn.flush();
+  const inPlace = redone('a Redo of a held put that made a record present creates it again', signedIn, { cancelledAt: 1, redoneAt: 2 });
+
+  const dormant = new Session(world(), { ids: ['rp_00000000000000000000000000000009'] }).local({ op: 'signOut', choice: 'keep', deviceNow: 5050 },
+    held, requestStep('g1', 5300), requestStep('g2', 5400), viewStep('self/probe'), signIn);
+  dormant.flush();
+  const backHome = redone('a Redo asked signed out of a held put that made a record present waits, and creates it once sign-in adds the work to the account\'s replica',
+    dormant, { cancelledAt: 2, redoneAt: 3 });
+
+  const anon = 'rp_00000000000000000000000000000009';
+  const fresh = new Session({ device: settle({ active: anon, replicas: [{ meta: freshMeta(anon, 'anon') }] }),
+    state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: {} })) }, { ids: ['rp_00000000000000000000000000000002'] })
+    .local(held, requestStep('g1', 5300), requestStep('g2', 5400), viewStep('self/probe'), signIn);
+  assert.equal(fresh.push(), null);
+  fresh.pull(['self/probe']);
+  fresh.flush();
+  const firstEpoch = redone('a Redo asked signed out on a fresh device waits past sign-in for the replica\'s first epoch, then creates the record',
+    fresh, { cancelledAt: 1, redoneAt: 2 });
+  return [inPlace, backHome, firstEpoch];
+}
+
 function requests() {
   const held = { ...titleAct(), segments: titleAct().segments.map((segment) => ({ ...segment, opts: { hold: true } })) };
   const cancelled = new Session(world()).local(held, requestStep('g1'), requestStep('g1'), viewStep('self/probe'), { op: 'requestInverse', actId: 'g9' })
@@ -631,14 +610,26 @@ function plainReference() {
   const plain = { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'First' } }] };
   const held = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'Second' } }], opts: { hold: true } }],
     opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } };
-  const session = new Session(world()).local(plain, held, requestStep('g2', 9000), requestStep('g3', 9500));
+  const session = new Session(world()).local(plain, { op: 'push', deviceNow: 5050 }, held, requestStep('g2', 9000), requestStep('g3', 9500));
   session.flush();
   session.pull(['self/probe']);
   const sample = session.local({ op: 'readInverseResult', requestId: 'g6' })
-    .vector('a Redo whose change now reads an ordinary pending edit binds that edit\'s accepted write and applies');
+    .vector('a Redo whose change now reads an ordinary edit sent and not yet answered binds that edit\'s accepted write and applies');
   assert.deepEqual(sample.expect.returns.at(-1).appliedCount, 1);
+  assert.ok(sample.expect.returns.filter((returned) => returned?.intents).flatMap(({ intents }) => intents)
+    .every((intent) => intent.gestureId !== 'g1' || intent.cmd === undefined));
   assert.equal(serverValue(session, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Second');
-  return [sample];
+
+  const queued = new Session(world()).local(plain, held, requestStep('g2', 9000), requestStep('g3', 9500));
+  queued.flush();
+  queued.pull(['self/probe']);
+  const receipted = queued.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo whose change now reads an ordinary edit still queued when the held act read over it binds the version that edit\'s receipt accepted, and applies');
+  assert.deepEqual(receipted.expect.returns.at(-1), { kind: 'settled', requestId: 'g6', inverseActId: 'g5', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(queued, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Second');
+  assert.ok(receipted.expect.returns.filter((returned) => returned?.intents).flatMap(({ intents }) => intents)
+    .some((intent) => intent.gestureId === 'g1' && intent.cmd?.name === 'probe.capture'));
+  return [sample, receipted];
 }
 
 function ownCreation() {
@@ -780,6 +771,62 @@ function revival() {
   const [gone, , back] = redrawn.expect.returns.slice(from);
   assert.deepEqual([labelOf(gone, 'elm'), labelOf(back, 'elm')], [null, 'Elm']);
   return [offline, redrawn];
+}
+
+// A keyed record keeps no field once dead (§6.10 G1). An Undo of its removal restores its life alone, as a roadmap
+// pointer's clear does, and to a server whose hello advertised schema 14 its restore carries the values the life's
+// preimage read, so the server brings the link back with its strength, as the device drew it. The Undo of a Redo of that
+// removal brings it back the same way. To a server that advertised an older schema it sends the life alone.
+function keyedRevival() {
+  const linked = () => new Session(world({ rows: { [TREE]: [
+    row({ t: 'tag', id: 'elm', born: st(1300), life: ['alive', st(1300)], f: { label: ['Elm', st(1300)] }, seq: 3 }),
+    row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(1400)], f: { strength: [3, st(1400)] }, seq: 4 }),
+  ] } }));
+  const remove = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'put', t: 'link', id: ['oak', 'elm'], present: false }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'link', ['oak', 'elm'], 'life') }] }] }] } } };
+  const linkIn = (returned) => returned.records.find((record) => record.t === 'link') ?? null;
+  const serverLink = (session) => session.state.rows[`tree:${BOARD}`][JSON.stringify(['link', ['oak', 'elm']])];
+  const restoresOf = (vector) => vector.expect.returns.filter((returned) => returned?.intents)
+    .flatMap(({ intents }) => intents.filter(({ cmd }) => cmd?.name === 'probe.restoreTree').map(({ cmd }) => cmd.args.operations));
+
+  const undone = linked().local(remove);
+  undone.flush();
+  undone.pull([TREE]);
+  undone.local(helloStep(14), requestStep('g1'));
+  undone.flush();
+  undone.pull([TREE]);
+  const back = undone.local(viewStep(TREE))
+    .vector('an Undo of a synced removal of a keyed record brings back the fields its death dropped, on the server as on the device');
+  assert.deepEqual(restoresOf(back), [[{ kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected: { kind: 'stamp', stamp: st(5000) },
+    before: 'alive', values: { f: { strength: 3 } } }]]);
+  assert.deepEqual(serverLink(undone).f, { strength: [3, serverLink(undone).life[1]] });
+  assert.deepEqual(linkIn(back.expect.returns.at(-1)), { t: 'link', id: ['oak', 'elm'], life: serverLink(undone).life, f: serverLink(undone).f });
+
+  const redone = linked().local(remove);
+  redone.flush();
+  redone.pull([TREE]);
+  redone.local(helloStep(14, redone.serverNow));
+  for (const actId of ['g1', 'g2', 'g4']) {
+    redone.local(requestStep(actId, redone.serverNow));
+    redone.flush();
+    redone.pull([TREE]);
+  }
+  const again = redone.local(viewStep(TREE))
+    .vector('an Undo of a Redo of a keyed record\'s removal brings the record back with the fields it had before the Redo');
+  assert.deepEqual(restoresOf(again).map((operations) => operations.map(({ before, values }) => [before, values ?? null])),
+    [[['alive', { f: { strength: 3 } }]], [['dead', null]], [['alive', { f: { strength: 3 } }]]]);
+  assert.deepEqual(serverLink(redone).f, { strength: [3, serverLink(redone).life[1]] });
+  assert.deepEqual(linkIn(again.expect.returns.at(-1)), { t: 'link', id: ['oak', 'elm'], life: serverLink(redone).life, f: serverLink(redone).f });
+
+  const older = linked().local(remove);
+  older.flush();
+  older.pull([TREE]);
+  older.local(helloStep(13), requestStep('g1'));
+  older.flush();
+  const alone = older.vector('to a server whose hello advertised schema 13 a keyed revival\'s restore carries the life alone, which that server admits');
+  assert.deepEqual(restoresOf(alone), [[{ kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected: { kind: 'stamp', stamp: st(5000) },
+    before: 'alive' }]]);
+  return [back, again, alone];
 }
 
 // A revival of a tag the device knows only by its spent id: its preimages are read over the dead row the spent id
@@ -945,11 +992,441 @@ function typedValues() {
   return [preimage, reserved, written, unit, created];
 }
 
+// A tag born by an act whose journal the product releases at once, as roadmap's Add Kind keeps no Undo, then removed
+// by an act opted into Undo: the removal's preimage was read over the birth's write, so its Undo walks from the row that
+// birth left, whichever pushes the two reach the server in. Another device's write between them still breaks the walk.
+// A preimage steps over writes made before its act only, never over an earlier segment of the act itself, and over
+// several in commit order. Signed out, a day born and removed and its removal undone comes back once sign-in adds the
+// work and sends it.
+function releasedBirth() {
+  const elm = { scope: TREE, t: 'tag', id: 'elm' };
+  const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: elm }] }] } } };
+  const released = { op: 'releaseReversibleAct', actId: 'g1' };
+  const removal = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'elm' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'life') }] }] }] } } };
+  const undone = (session) => {
+    session.flush();
+    session.pull([TREE]);
+    return session.local({ op: 'readInverseResult', requestId: 'g4' }, viewStep(TREE));
+  };
+  const elmOf = (session) => session.state.rows[`tree:${BOARD}`][recordKeyOf('tag', 'elm')];
+  const labelOf = (returned) => returned.records.find((record) => record.t === 'tag' && record.id === 'elm' && record.life?.[0] === 'alive')?.f?.label?.[0] ?? null;
+  const restored = (name, session) => {
+    const sample = undone(session).vector(name);
+    assert.deepEqual(sample.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+    assert.equal(labelOf(sample.expect.returns.at(-1)), 'Elm');
+    assert.deepEqual([elmOf(session).life[0], elmOf(session).f.label[0]], ['alive', 'Elm']);
+    return sample;
+  };
+  const skipped = (name, session) => {
+    const sample = undone(session).vector(name);
+    assert.deepEqual(sample.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+    assert.equal(labelOf(sample.expect.returns.at(-1)), null);
+    assert.equal(elmOf(session).life[0], 'dead');
+    return sample;
+  };
+
+  const together = new Session(world()).local(birth, released, removal);
+  together.flush();
+  together.pull([TREE]);
+  together.local(requestStep('g2'));
+  const unsentBoth = restored('an Undo of a removal brings back a record whose birth, by an act that keeps no journal, was still unsent when it was removed', together);
+
+  const unsent = new Session(world()).local(birth, released, removal, requestStep('g2'), viewStep(TREE));
+  const pending = restored('an Undo of a removal asked before the record\'s birth or removal was sent draws it at once and brings it back once both went up', unsent);
+  assert.deepEqual(pending.expect.returns[3], { kind: 'pending', requestId: 'g4', inverseActId: 'g3', localChanged: true });
+  assert.equal(labelOf(pending.expect.returns[4]), 'Elm');
+
+  const alone = new Session(world()).local(birth, released);
+  alone.flush();
+  alone.pull([TREE]);
+  alone.local(removal, requestStep('g2'));
+  const birthAlone = restored('an Undo of a removal brings back a record whose birth went up alone before it was removed', alone);
+
+  const acked = new Session(world()).local(birth, released);
+  acked.flush();
+  const birthSeq = elmOf(acked).seq;
+  acked.local(removal, requestStep('g2'));
+  const unpulled = restored('an Undo of a removal brings back a record whose birth the server acknowledged before the device pulled it, the removal\'s preimage read over that birth\'s row', acked);
+  assert.deepEqual(journalOf(unpulled).find(({ actId }) => actId === 'g2').sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [birthSeq]);
+
+  const apart = new Session(world()).local(birth, released);
+  apart.flush();
+  apart.pull([TREE]);
+  apart.local(removal);
+  apart.flush();
+  apart.pull([TREE]);
+  apart.local(requestStep('g2'));
+  const eachAlone = restored('an Undo of a removal brings back a record whose birth and removal each went up alone', apart);
+
+  const raced = new Session(world()).local(birth, released);
+  raced.flush();
+  raced.elsewhere({ scope: TREE, d: [{ t: 'tag', id: 'elm', born: st(5000), f: { label: ['Theirs', st(7500, 0, OTHER)] } }] });
+  raced.local(removal);
+  raced.flush();
+  raced.local(requestStep('g2'));
+  const unseen = skipped('an Undo of a removal skips when another device wrote the record between its birth and its removal', raced);
+
+  const oak = target(TREE, 'tag', 'oak', 'life');
+  const renamedAndRemoved = new Session(world()).local({ op: 'commitAct', deviceNow: 5000, segments: [
+    { scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Pine' } }] },
+    { scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] },
+  ], opts: { undo: { version: 1, segments: [{ index: 0, recipes: [] },
+    { index: 1, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: oak }] }] }] } } });
+  renamedAndRemoved.flush();
+  renamedAndRemoved.local(requestStep('g1'));
+  renamedAndRemoved.flush();
+  renamedAndRemoved.pull([TREE]);
+  const ownSegment = renamedAndRemoved.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('a preimage never steps over an earlier segment of its own act, which the act read it before');
+  assert.deepEqual(journalOf(ownSegment)[0].sourceEntries[1].preimages.map(({ rowSeq }) => rowSeq), [2]);
+  assert.deepEqual(ownSegment.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+
+  const anon = 'rp_00000000000000000000000000000009';
+  const day = { scope: 'self/probe', t: 'day', id: '2026-11-23' };
+  const dayOf = (returned) => returned.records.some((record) => record.t === 'day' && record.id === day.id && record.life?.[0] === 'alive');
+  const signedOut = new Session({ device: settle({ active: anon, replicas: [{ meta: freshMeta(anon, 'anon') }] }),
+    state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: {} })) }, { ids: ['rp_00000000000000000000000000000002'] }).local(
+    { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: day.id, f: { score: 7 } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore', record: day }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g1' },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'delete', t: 'day', id: day.id }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'day', day.id, 'life') }] }] }] } } },
+    requestStep('g2', 5200), viewStep('self/probe'),
+    { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } }, helloStep(14, 5300));
+  signedOut.flush();
+  signedOut.pull(['self/probe']);
+  const added = signedOut.local({ op: 'readInverseResult', requestId: 'g4' }, viewStep('self/probe'))
+    .vector('an Undo asked signed out of a removal whose record was born there brings it back once sign-in adds the work and sends it');
+  assert.deepEqual(added.expect.returns[3], { kind: 'pending', requestId: 'g4', inverseActId: 'g3', localChanged: true });
+  assert.ok(dayOf(added.expect.returns[4]) && dayOf(added.expect.returns.at(-1)));
+  assert.deepEqual(added.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(signedOut.state.rows['acct:A/probe'][recordKeyOf('day', day.id)].life[0], 'alive');
+
+  const renamed = new Session(world()).local(birth, released,
+    { op: 'commitAct', deviceNow: 5010, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'Elder' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'field', 'label') }] }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g2' });
+  renamed.flush();
+  const renamedSeq = elmOf(renamed).seq;
+  renamed.local(removal, requestStep('g3'));
+  renamed.flush();
+  renamed.pull([TREE]);
+  const twoWrites = renamed.local({ op: 'readInverseResult', requestId: 'g5' }, viewStep(TREE))
+    .vector('an Undo of a removal walks over two acknowledged own writes of the record in commit order, its birth and then its rename');
+  assert.deepEqual(journalOf(twoWrites).find(({ actId }) => actId === 'g3').sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [renamedSeq]);
+  assert.deepEqual(twoWrites.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(labelOf(twoWrites.expect.returns.at(-1)), 'Elder');
+  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ownSegment, added, twoWrites];
+}
+
+// An ordinary entry's answer carries no receipt, so a restore's walk cannot step over the row it wrote. An opted act
+// that reads over an ordinary write still queued sends that entry with its scope kind's capture command, and the
+// walk follows its receipt: a tag born or renamed by an ordinary entry and removed before the entry went up comes back
+// as the device left it, signed in or signed out. An entry already sent keeps its intent: sent before the removal, or
+// answered and not yet pulled, its write still breaks the walk; so does one the command would carry past a push alone.
+// A captured entry whose deltas fold away is empty, and ends as an ordinary entry would.
+function queuedOrdinaryWrites() {
+  const elm = { scope: TREE, t: 'tag', id: 'elm' };
+  const plainBirth = { op: 'commit', scope: TREE, deviceNow: 5000, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] };
+  const actBirth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: elm }] }] } } };
+  const rename = { op: 'commit', scope: TREE, deviceNow: 5050, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'Ash' } }] };
+  const removal = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'elm' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'life') }] }] }] } } };
+  const labelOf = (returned) => returned.records.find((record) => record.t === 'tag' && record.id === 'elm' && record.life?.[0] === 'alive')?.f?.label?.[0] ?? null;
+  const elmOnServer = (session) => session.state.rows[`tree:${BOARD}`][recordKeyOf('tag', 'elm')];
+  const captured = (sample, gestureId, name = 'probe.captureTree') => sample.expect.returns.some((returned) => returned?.intents?.some((intent) => intent.gestureId === gestureId
+    && intent.cmd?.name === name));
+  const undone = (session, removalId, requestId) => {
+    session.flush();
+    session.pull([TREE]);
+    session.local(requestStep(removalId));
+    session.flush();
+    session.pull([TREE]);
+    return session.local({ op: 'readInverseResult', requestId }, viewStep(TREE));
+  };
+
+  const queuedBirth = undone(new Session(world()).local(plainBirth, removal), 'g2', 'g4')
+    .vector('an Undo of a removal brings back a record born by an ordinary entry still unsent when it was removed, which the removal sends with its capture command');
+  assert.deepEqual(queuedBirth.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(labelOf(queuedBirth.expect.returns.at(-1)), 'Elm');
+  assert.ok(captured(queuedBirth, 'g1'));
+
+  const answered = new Session(world()).local(plainBirth);
+  answered.flush();
+  const answeredBirth = undone(answered.local(removal), 'g2', 'g4')
+    .vector('an Undo of a removal skips when the record\'s birth was an ordinary entry the server answered before the removal and the device had not pulled, whose answer proves nothing of the row it wrote');
+  assert.deepEqual(answeredBirth.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.equal(labelOf(answeredBirth.expect.returns.at(-1)), null);
+  assert.ok(!captured(answeredBirth, 'g1'));
+
+  const queued = new Session(world()).local(actBirth, { op: 'releaseReversibleAct', actId: 'g1' }, rename, removal);
+  const queuedRename = undone(queued, 'g3', 'g5')
+    .vector('an Undo of a removal brings the record back as the device\'s own rename left it, an ordinary entry still unsent when the record was removed');
+  assert.deepEqual(queuedRename.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(labelOf(queuedRename.expect.returns.at(-1)), 'Ash');
+  assert.deepEqual([elmOnServer(queued).life[0], elmOnServer(queued).f.label[0]], ['alive', 'Ash']);
+  assert.ok(captured(queuedRename, 'g2'));
+
+  const sent = new Session(world()).local(actBirth, { op: 'releaseReversibleAct', actId: 'g1' });
+  sent.flush();
+  sent.pull([TREE]);
+  const sentRename = undone(sent.local(rename, { op: 'push', deviceNow: 5060 }, removal), 'g3', 'g5')
+    .vector('an Undo of a removal skips when the device\'s own rename was sent before the record was removed and answered after: an intent on the wire never changes');
+  assert.deepEqual(sentRename.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.equal(elmOnServer(sent).life[0], 'dead');
+  assert.ok(!captured(sentRename, 'g2'));
+
+  const planted = { op: 'commit', scope: TREE, deviceNow: 5050, opts: { atomic: true }, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Pine' } },
+    ...['ash', 'elm', 'fir', 'yew', 'box', 'bay'].map((id) => ({ op: 'create', t: 'tag', id, f: { label: id.toUpperCase() } }))] };
+  const oakRemoval = { ...removal, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'oak', 'life') }] }] }] } } };
+  const tight = new Session(world(), { limits: { PUSH_MAX_BYTES: 1150 } }).local(planted, oakRemoval);
+  const outgrown = undone(tight, 'g2', 'g4')
+    .vector('an Undo of a removal skips when the device\'s own edit of the record, still unsent, would outgrow a push alone with the capture command: it keeps its intent and lands');
+  const oakOnServer = tight.state.rows[`tree:${BOARD}`][recordKeyOf('tag', 'oak')];
+  assert.deepEqual(outgrown.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.deepEqual([oakOnServer.life[0], oakOnServer.f.label[0]], ['dead', 'Pine']);
+  assert.ok(!captured(outgrown, 'g1'));
+
+  const relabel = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'Fir' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'field', 'label') }] }] }] } } };
+  const outboxIds = (sample) => (activeOf(sample).outbox ?? []).map(({ localId }) => localId);
+  const endsOf = (sample) => sample.expect.ended.filter(({ localId }) => ['g2/0', 'g3/0'].includes(localId));
+  const withdrawn = new Session(world()).local({ ...plainBirth, opts: { hold: true } }, rename, relabel, { op: 'undo', gestureId: 'g1', deviceNow: 5200 });
+  assert.equal(withdrawn.push(), null);
+  const silent = withdrawn.vector('a rename an act read over, and the act, both left with only their capture commands once the held birth they depend on is undone, end with it and send nothing');
+  assert.deepEqual(outboxIds(silent), []);
+  assert.deepEqual(endsOf(silent), [{ localId: 'g2/0', outcome: 'undone', event: 'silent-fold' }, { localId: 'g3/0', outcome: 'undone', event: 'silent-fold' }]);
+
+  const taken = new Session(world()).elsewhere({ scope: TREE, d: [{ t: 'tag', id: 'elm', born: st(4000, 0, OTHER), life: ['alive', st(4000, 0, OTHER)],
+    f: { label: ['Theirs', st(4000, 0, OTHER)] } }] }).local(plainBirth, { op: 'push', deviceNow: 5010 });
+  const request = taken.last();
+  taken.local(rename, relabel);
+  const pushed = push({ state: taken.state, registry, product, account: 'A', request, serverNow: 7000 });
+  taken.state = pushed.state;
+  taken.local({ op: 'pushResponse', deviceNow: 5300, response: pushed.response });
+  assert.equal(taken.push(), null);
+  const folded = taken.vector('a rename an act read over, and the act, both left with only their capture commands once the birth they depend on is refused, fold into its notice and send nothing');
+  assert.deepEqual(pushed.response.body.results.map(({ s, code }) => [s, code]), [['refused', 'id-taken']]);
+  assert.deepEqual(outboxIds(folded), []);
+  assert.deepEqual(endsOf(folded), [{ localId: 'g2/0', outcome: 'refused', event: 'fold', orphanOf: 'g1/0' }, { localId: 'g3/0', outcome: 'refused', event: 'fold', orphanOf: 'g1/0' }]);
+
+  const anon = 'rp_00000000000000000000000000000009';
+  const id = '2026-11-23';
+  const signedOut = new Session({ device: settle({ active: anon, replicas: [{ meta: freshMeta(anon, 'anon') }] }),
+    state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: {} })) }, { ids: ['rp_00000000000000000000000000000002'] }).local(
+    { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id, f: { score: 7 } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore', record: { scope: 'self/probe', t: 'day', id } }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g1' },
+    { op: 'commit', scope: 'self/probe', deviceNow: 5050, changes: [{ op: 'put', t: 'day', id, f: { score: 8 } }] },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'delete', t: 'day', id }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'day', id, 'life') }] }] }] } } },
+    requestStep('g3', 5200), viewStep('self/probe'),
+    { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } }, helloStep(14, 5300));
+  signedOut.flush();
+  signedOut.pull(['self/probe']);
+  const scoreOf = (returned) => returned.records.find((record) => record.t === 'day' && record.id === id && record.life?.[0] === 'alive')?.f?.score?.[0] ?? null;
+  const signedOutEdit = signedOut.local({ op: 'readInverseResult', requestId: 'g5' }, viewStep('self/probe'))
+    .vector('an Undo asked signed out of a removal brings the record back as the device\'s own ordinary edit left it, once sign-in adds the work and sends it');
+  assert.deepEqual(signedOutEdit.expect.returns[4], { kind: 'pending', requestId: 'g5', inverseActId: 'g4', localChanged: true });
+  assert.equal(scoreOf(signedOutEdit.expect.returns[5]), 8);
+  assert.deepEqual(signedOutEdit.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(signedOutEdit.expect.returns.at(-1)), 8);
+  const dayOnServer = signedOut.state.rows['acct:A/probe'][recordKeyOf('day', id)];
+  assert.deepEqual([dayOnServer.life[0], dayOnServer.f.score[0]], ['alive', 8]);
+  assert.ok(captured(signedOutEdit, 'g2', 'probe.capture'));
+  return [queuedBirth, answeredBirth, queuedRename, sentRename, outgrown, silent, folded, signedOutEdit];
+}
+
+// An act made signed out never read what the account's dormant replica wrote meanwhile, and sign-in's Add numbers the
+// act after it: the dormant write reaches the server first. So the Add makes each adopted act give up every target whose
+// record the dormant replica holds a write of, an unsent entry, an entry acknowledged but not yet pulled, or a receipt
+// its journal keeps, and the act's Undo restores nothing there. The journaled ones close a hole older than the step over
+// own writes: the walk took any journaled receipt for a write the act had seen. A waiting Undo counts what it gives up,
+// and a write of another record takes nothing away.
+function adoptedAct() {
+  const id = '2026-11-24';
+  const day = { scope: 'self/probe', t: 'day', id };
+  const put = (value, deviceNow, undo, dayId = id) => ({ op: 'commitAct', deviceNow,
+    segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: dayId, f: { score: value } }] }], ...(undo ? { opts: { undo } } : {}) });
+  const created = (dayId = id) => ({ version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore',
+    record: { ...day, id: dayId } }] }] });
+  const scored = { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore',
+    targets: [{ target: target('self/probe', 'day', id, 'field', 'score'), defaultValue: 0 }] }] }] };
+  const signOut = { op: 'signOut', choice: 'keep', deviceNow: 5050 };
+  const signIn = { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } };
+  const anon = { ids: ['rp_00000000000000000000000000000009'] };
+  const scoreOf = (session) => session.state.rows['acct:A/probe'][recordKeyOf('day', id)].f.score[0];
+  const undone = (session, actId, requestId, name) => {
+    session.flush();
+    session.pull(['self/probe']);
+    session.local(requestStep(actId));
+    session.flush();
+    session.pull(['self/probe']);
+    return session.local({ op: 'readInverseResult', requestId }).vector(name);
+  };
+  const givenUp = (session, name) => {
+    const sample = undone(session, 'g2', 'g4', name);
+    assert.deepEqual(sample.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 0 });
+    const adopted = journalOf(sample).find(({ actId }) => actId === 'g2').sourceEntries[0];
+    assert.deepEqual([adopted.recipes, adopted.preimages, adopted.written], [[], [], []]);
+    assert.equal(scoreOf(session), 9);
+    return sample;
+  };
+
+  const released = givenUp(new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, signOut,
+    put(9, 5100, scored), signIn), 'an act made signed out gives up at sign-in a target the dormant replica holds an unsent write of, by an act that keeps no journal');
+  const journaled = givenUp(new Session(world(), anon).local(put(3, 5000, created()), signOut, put(9, 5100, scored), signIn),
+    'an act made signed out gives up at sign-in a target the dormant replica\'s journaled act writes unsent, which the walk once took for a write the act had seen');
+
+  const kept = new Session(world(), anon).local(put(3, 5000, created()));
+  kept.flush();
+  kept.pull(['self/probe']);
+  kept.local(signOut, put(9, 5100, scored), signIn);
+  const receipt = givenUp(kept, 'an act made signed out gives up at sign-in a target whose receipt the dormant replica\'s journal keeps');
+
+  const late = new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, { op: 'push', deviceNow: 5010 });
+  const request = late.last();
+  late.serverNow += 1000;
+  const answered = push({ state: late.state, registry, product, account: 'A', request, serverNow: late.serverNow });
+  late.state = answered.state;
+  const signedOut = new Device(late.local(signOut).run().device);
+  const dormant = signedOut.replicas.find((replica) => replica.meta.state === 'dormant');
+  onPushResponse(dormant, { registry, ended: [], telemetry: [], events: [], limits: CONSTANTS, actor: ACTOR, deviceNow: 5060 }, request,
+    answered.response, steadyTiming(5060, 5060));
+  assert.deepEqual(dormant.entries().map(({ state }) => state), ['acked']);
+  const answeredLate = new Session({ device: signedOut.toJSON(), state: late.state }).local(put(9, 5100, scored), signIn);
+  answeredLate.serverNow = late.serverNow;
+  const acked = givenUp(answeredLate, 'an act made signed out gives up at sign-in a target the dormant replica holds a write of acknowledged after sign-out and not yet pulled');
+
+  const alone = new Session(world(), anon).local(signOut, put(9, 5100, scored), signIn);
+  const control = undone(alone, 'g1', 'g3', 'an act made signed out keeps at sign-in a target the dormant replica holds no write of, and its Undo restores it');
+  assert.deepEqual(control.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(alone), 0);
+
+  const elsewhere = new Session(world(), anon).local(put(3, 5000, created('2026-11-25'), '2026-11-25'), signOut, put(9, 5100, scored), signIn);
+  const other = undone(elsewhere, 'g2', 'g4', 'an act made signed out keeps at sign-in a target when the dormant replica writes only another record');
+  assert.deepEqual(other.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(elsewhere), 0);
+
+  const asked = new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, signOut,
+    put(9, 5100, scored), requestStep('g2', 5200), viewStep('self/probe'), signIn, viewStep('self/probe'));
+  asked.flush();
+  asked.pull(['self/probe']);
+  const waiting = asked.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('an Undo waiting signed out withdraws at sign-in its operation on a target the dormant replica holds a write of, and counts it skipped');
+  const scoreIn = (returned) => returned.records.find((record) => record.t === 'day' && record.id === id)?.f?.score?.[0];
+  assert.deepEqual([scoreIn(waiting.expect.returns[5]), scoreIn(waiting.expect.returns[7])], [0, 9]);
+  assert.deepEqual(waiting.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.equal(scoreOf(asked), 9);
+
+  const plain = (value, deviceNow) => ({ op: 'commit', scope: 'self/probe', deviceNow, changes: [{ op: 'put', t: 'day', id, f: { score: value } }] });
+  const held = { op: 'commitAct', deviceNow: 5200, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id, f: { score: 5 } }], opts: { hold: true } }],
+    opts: { undo: scored } };
+  const redone = new Session(world(), anon).local(plain(3, 5000), signOut, plain(9, 5100), held, requestStep('g3', 5300), requestStep('g4', 5400), signIn);
+  redone.flush();
+  redone.pull(['self/probe']);
+  const redo = redone.local({ op: 'readInverseResult', requestId: 'g7' })
+    .vector('a Redo waiting signed out keeps at sign-in its operation over a dormant write, which the version it expects guards on the server');
+  assert.deepEqual(redo.expect.returns.at(-1), { kind: 'settled', requestId: 'g7', inverseActId: 'g6', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(redone), 5);
+  return [released, journaled, receipt, acked, control, other, waiting, redo];
+}
+
+// What a step needs, each pinned on its own: the own write's receipt row starts where the preimage stands, the write was
+// answered in the preimage's epoch, the entry's stored effects write the record, and the entry was committed before the
+// act's own. Each Undo below would otherwise walk over a write its act never read.
+function stepConditions() {
+  const oak = { t: 'tag', id: 'oak', born: st(1300) };
+  const life = target(TREE, 'tag', 'oak', 'life');
+  const removal = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: life }] }] }] } } };
+  const preimagesOf = (sample, actId) => journalOf(sample).find((act) => act.actId === actId).sourceEntries[0].preimages.map(({ rowSeq, epoch }) => [rowSeq, epoch]);
+  const settledAs = (sample, requestId, inverseActId, applied, skipped) =>
+    assert.deepEqual(sample.expect.returns.at(-1), { kind: 'settled', requestId, inverseActId, changed: applied > 0, appliedCount: applied, skippedCount: skipped });
+  const codesOf = (sample, requestId) => activeOf(sample).inverses.find((request) => request.requestId === requestId).slots
+    .flatMap((slot) => [...(slot.skipped ?? []), ...(slot.outcomes ?? [])]).map(({ code, s }) => code ?? s);
+
+  const unseen = new Session(world());
+  unseen.elsewhere({ scope: TREE, d: [{ ...oak, f: { label: ['Theirs', st(4500, 0, OTHER)] } }] });
+  unseen.local({ op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Mine' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'oak', 'field', 'label') }] }] }] } } },
+  { op: 'releaseReversibleAct', actId: 'g1' });
+  unseen.flush();
+  unseen.local(removal);
+  unseen.flush();
+  unseen.local(requestStep('g2'));
+  unseen.flush();
+  unseen.pull([TREE]);
+  const startsElsewhere = unseen.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own write whose receipt starts at a row another device wrote after the one it read');
+  assert.deepEqual(preimagesOf(startsElsewhere, 'g2'), [[2, 'ep-1']]);
+  settledAs(startsElsewhere, 'g4', 'g3', 0, 1);
+
+  const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: TREE, t: 'tag', id: 'elm' } }] }] } } };
+  const elmRemoval = { ...removal, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'elm' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'life') }] }] }] } } };
+  const restored = new Session(world(), { ids: ['rp_00000000000000000000000000000002'], actors: ['r_cccccccccccc'] })
+    .local(birth, { op: 'releaseReversibleAct', actId: 'g1' }, elmRemoval);
+  restored.state = new ServerState({ ...restored.state.toJSON(), epoch: 'ep-2' });
+  restored.flush();
+  restored.pull([TREE]);
+  restored.local(requestStep('g2'));
+  restored.flush();
+  restored.pull([TREE]);
+  const otherEpoch = restored.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own write answered in another epoch than the one it was read in, and its Undo skips the epoch');
+  assert.deepEqual(preimagesOf(otherEpoch, 'g2'), [[null, 'ep-1']]);
+  settledAs(otherEpoch, 'g4', 'g3', 0, 1);
+  assert.deepEqual(codesOf(otherEpoch, 'g4'), ['epoch-changed']);
+
+  const child = 'b_00000002';
+  const metaTitle = target(TREE, 'meta', 'meta', 'field', 'title');
+  const discovered = new Session(world()).local(
+    { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: { cmd: { name: 'probe.branch', args: { parent: BOARD, child, title: 'Branch' } },
+      scopedPredict: [{ scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: child }] }] } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Grown' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: metaTitle }] }] }] } } });
+  discovered.flush();
+  discovered.pull([TREE]);
+  discovered.local(requestStep('g2'));
+  discovered.flush();
+  discovered.pull([TREE]);
+  const unpredicted = discovered.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own command\'s receipt row of a record the command did not predict, which the act never drew');
+  assert.deepEqual(preimagesOf(unpredicted, 'g2'), [[1, 'ep-1']]);
+  settledAs(unpredicted, 'g4', 'g3', 0, 1);
+
+  const cardTitle = target('self/probe', 'card', CARD, 'field', 'title');
+  const heldFirst = new Session(world()).local(
+    { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'New' } }], opts: { hold: true } }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { body: 'later' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'card', CARD, 'field', 'body'), defaultValue: '' }] }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g2' });
+  heldFirst.flush();
+  heldFirst.local({ op: 'release', localId: 'g1/0' });
+  heldFirst.flush();
+  heldFirst.pull(['self/probe']);
+  heldFirst.local(requestStep('g1'));
+  heldFirst.flush();
+  heldFirst.pull(['self/probe']);
+  const committedAfter = heldFirst.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a held act\'s preimage does not step over a write committed after it that went up first, which its drawn never read');
+  assert.deepEqual(preimagesOf(committedAfter, 'g1'), [[2, 'ep-1']]);
+  settledAs(committedAfter, 'g4', 'g3', 0, 1);
+  return [startsElsewhere, otherEpoch, unpredicted, committedAfter];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
-    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues()],
+    'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...heldBirthRedo(), ...discarded(),
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...keyedRevival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...queuedOrdinaryWrites(), ...adoptedAct(), ...stepConditions()],
   };
 }

@@ -30,9 +30,15 @@ async fn main() {
 async fn run() -> Result<(), &'static str> {
     let config = Arc::new(Config::from_environment(|key| std::env::var(key).ok())?);
     let _sentry = telemetry::start(&config);
-    let tiers = std::fs::read_to_string("config/tiers.toml").map_err(|_| "tiers_unreadable")?;
-    let prices = std::fs::read_to_string("config/prices.toml").map_err(|_| "prices_unreadable")?;
-    let policy = Arc::new(Policy::parse(&tiers, &prices).map_err(|_| "policy_invalid")?);
+    let policy = std::fs::read_to_string("config/tiers.toml")
+        .map_err(|_| "tiers_unreadable")
+        .and_then(|tiers| {
+            let prices =
+                std::fs::read_to_string("config/prices.toml").map_err(|_| "prices_unreadable")?;
+            Policy::parse(&tiers, &prices).map_err(|_| "policy_invalid")
+        })
+        .inspect_err(|code| telemetry::report_failure("policy.load", code, None))?;
+    let policy = Arc::new(policy);
     let ledger = ai_server::database(
         "ledger.connect",
         Ledger::connect(

@@ -24,6 +24,12 @@ public typealias WriterObserver = @Sendable (WriterTiming) -> Void
 public final class SyncEngine: Replica {
   @TaskLocal package static var taskExecutor: (any TaskExecutor)?
 
+  // iOS 18's Swift runtime crashes on a task created with a nil executor preference, so only a set one is passed.
+  package static func task<Success: Sendable>(_ operation: sending @escaping () async -> Success) -> Task<Success, Never> {
+    guard let taskExecutor else { return Task(operation: operation) }
+    return Task(executorPreference: taskExecutor, operation: operation)
+  }
+
   struct Loops {
     var tasks: [Task<Void, Never>] = []
     var started = false
@@ -466,8 +472,11 @@ final class EngineCore: Sendable {
         telemetry.failure("sync_digest", kind: "digest_mismatch", properties: ["scope_kind": kind])
       case .pushMalformed:
         telemetry.failure("sync_admission", kind: "malformed")
-      case .inverseSettled(let applied, let skipped):
-        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped)])
+      case .inverseSettled(let applied, let skipped, let reason):
+        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped),
+                                                     "skip_reason": reason.rawValue])
+      case .adoptionGaveUp(let targets):
+        telemetry.event("sync_inverse", properties: ["outcome": "adopted", "given_up": String(targets)])
       case .ended, .activeReplicaChanged: break
       }
     }
@@ -554,7 +563,8 @@ final class EngineCore: Sendable {
   func firstPullComplete(_ tx: StoreTransaction, of scope: ScopeRef, in replica: String) throws -> Bool {
     let lifecycle = ReplicaLifecycle(registry: registry)
     let subscriptions = subscriptions()
-    guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection(projectionTargets: true)) else {
+    guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection(projectionTargets: true),
+                                      journal: .unread) else {
       throw StoreError.noReplica(replica)
     }
     return lifecycle.firstPullComplete(scope, in: loaded, subscribed: Set(try lifecycle.subscriptionSet(of: loaded, subscriptions)))
@@ -569,11 +579,11 @@ final class EngineCore: Sendable {
     let start = clock.wall.reading().mono
     return await TransportDiagnostics.$invocation.withValue(invocation) {
       let race = RequestRace<Body>()
-      let request = Task(executorPreference: SyncEngine.taskExecutor) {
+      let request = SyncEngine.task {
         guard !Task.isCancelled else { return race.settle(.stopped) }
         race.settle(.answered(await call()))
       }
-      let deadline = Task(executorPreference: SyncEngine.taskExecutor) { [sleeper = clock.sleeper] in
+      let deadline = SyncEngine.task { [sleeper = clock.sleeper] in
         do {
           try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
           race.settle(.timedOut)
@@ -625,7 +635,7 @@ final class EngineCore: Sendable {
     if let account = before?.account, tokens.token(for: account) != token { return .unreachable }
     let timing = Timing(send: send, recv: clock.wall.reading())
     guard case .answered(let answer) = reply else { return reply }
-    if let serverTime = answer.serverTime { _ = try? write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
+    _ = try? write { store, _ in try store.hear(answer, timing: timing) }
     if let seat = try? seat(), answer.isUnauthenticated(for: seat.account) {
       _ = try? pauseAuth(seat.replica, sentUnder: token)
     }
@@ -859,7 +869,7 @@ package final class Releaser: Sendable {
     do {
       let deviceNow = core.clock.wall.nowMs()
       let due = try core.storageRead { tx in
-        try tx.replica(tx.activeReplica())?.outbox.filter { $0.state == .held }.map(\.releaseAt).min()
+        try tx.replica(tx.activeReplica(), journal: .unread)?.outbox.filter { $0.state == .held }.map(\.releaseAt).min()
       }
       guard let due else { return .idle }
       guard due <= deviceNow else { return .wait(ms: due - deviceNow) }

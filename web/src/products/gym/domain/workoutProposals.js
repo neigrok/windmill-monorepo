@@ -51,6 +51,11 @@ export class WorkoutProposalValue {
   }
 
   get document() { return RoutineChange.document(this.changes); }
+
+  // The count its card, History and its receipt say: the log's once it has counted, else every line that is not kept and
+  // every kept line that moves in the plan it changes.
+  /** @param {readonly RoutineEntry[]} base */
+  countChanges(base) { return this.changeCount ?? RoutineChange.count(base, this.changes); }
 }
 
 /** @type {EntityType<WorkoutProposalValue, string>} */
@@ -81,16 +86,17 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
   return Object.freeze({
     scope: WorkoutProposal.scope,
     refusals: GymRefusals,
+    id,
     /** @param {Reader} read */
     load(read) { return OpenWorkout.of(read, sessionId); },
-    /** @param {OpenWorkout} loaded */
-    decide(loaded) {
+    /** @param {OpenWorkout} loaded @returns {import('./proposals.js').Proposed<WorkoutProposalValue>} */
+    proposed(loaded) {
       const refused = loaded.refusal(id.ref);
-      if (refused !== null) return Decision.refuse(refused);
+      if (refused !== null) return { kind: 'refuse', refusal: refused };
       const stored = loaded.plan.entries;
       const proposal = new Valid(new WorkoutProposalValue({ id, sessionId, summary, changes: RoutineChange.between(stored, proposed) }), loaded.moment);
       if (proposed.some((entry) => loaded.catalogue.find(entry.exerciseId) === null)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')));
+        return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')) };
       }
       const second = proposed.findIndex((entry, at) => proposed.slice(0, at).some((before) => before.exerciseId.equals(entry.exerciseId)));
       if (second >= 0) throw new Violation(WorkoutPlanRules.duplicate, new Path('entries').plus(second).plus('exerciseId'), { kind: 'custom', custom: 'duplicate' });
@@ -98,13 +104,42 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
       const entryOf = (side, movement) => side.find((entry) => entry.exerciseId.equals(movement))?.json ?? null;
       const changed = [...stored, ...proposed].map((entry) => entry.exerciseId)
         .find((movement) => loaded.isLogged(movement) && !sameJson(entryOf(stored, movement), entryOf(proposed, movement)));
-      if (changed !== undefined) return Decision.refuse(loggedRefusal(changed, id.ref));
+      if (changed !== undefined) return { kind: 'refuse', refusal: loggedRefusal(changed, id.ref) };
       RoutineChange.floored(proposal.value.changes, loaded.catalogue, new Path('changes'));
-      if (sameJson(stored.map((entry) => entry.json), proposed.map((entry) => entry.json))) return Decision.unchanged(id);
+      if (sameJson(stored.map((entry) => entry.json), proposed.map((entry) => entry.json))) return { kind: 'unchanged' };
       const plan = new Plan();
       plan.create(proposal);
       plan.guardRead(sessionId, ['plan']);
-      return Decision.write(plan, id);
+      return { kind: 'minted', proposal, plan };
+    },
+    /** @param {OpenWorkout} loaded */
+    decide(loaded) {
+      const decided = this.proposed(loaded);
+      if (decided.kind === 'refuse') return Decision.refuse(decided.refusal);
+      if (decided.kind === 'unchanged') return Decision.unchanged(id);
+      return Decision.write(decided.plan, id);
+    },
+  });
+}
+
+// A proposal a signed-out workout held, issued again once the account holds the workout: one standing under its id is
+// done, a workout the account does not hold is gone, and otherwise it is proposed as it was, against the plan stored now.
+/** @param {WorkoutProposalValue} saved */
+export function ReissueWorkoutProposal(saved) {
+  const proposing = ProposeWorkout({ id: saved.id, sessionId: saved.sessionId, entries: saved.document, summary: saved.summary });
+  return Object.freeze({
+    scope: WorkoutProposal.scope,
+    refusals: GymRefusals,
+    /** @param {Reader} read */
+    load(read) {
+      return { written: read.repository(WorkoutProposal).record(saved.id.record, 'stored') !== undefined,
+        confirmed: read.confirmed(Session, saved.sessionId) !== null, workout: proposing.load(read) };
+    },
+    /** @param {{ written: boolean, confirmed: boolean, workout: OpenWorkout }} loaded */
+    decide(loaded) {
+      if (loaded.written) return Decision.unchanged(saved.id);
+      if (!loaded.confirmed) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', saved.sessionId.ref, null, 'predicted')));
+      return proposing.decide(loaded.workout);
     },
   });
 }
@@ -146,6 +181,12 @@ export class WorkoutProposalState {
     }
     const moved = proposal.changes.find((change) => change.kind !== 'kept' && workout.isLogged(change.exerciseId));
     return moved === undefined ? null : { reason: 'workout-moved', exerciseId: moved.exerciseId.json };
+  }
+
+  // Whether applying it now would be refused for a load under a movement's floor, read in the catalogue the Apply floors it in.
+  get underFloor() {
+    const proposal = this.proposal;
+    return proposal?.state === 'pending' && this.workout !== null && RoutineChange.underFloor(proposal.changes, this.workout.catalogue);
   }
 
   // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the workout must be

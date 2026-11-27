@@ -358,7 +358,8 @@ test('no answer keeps the take, Try again waits for the browser to be online, an
   await talk.page.locator('.journal-talk-take').waitFor();
   assert.deepEqual((await talk.shown()).state, 'Couldn’t reach Windmill.');
   await talk.page.context().setOffline(true);
-  assert.equal(await talk.page.getByRole('button', { name: 'Try again' }).isDisabled(), true);
+  // The page hears that it went offline a moment after its context does, and Try again is disabled once that renders.
+  await talk.page.getByRole('button', { name: 'Try again', disabled: true }).waitFor();
   await talk.page.context().setOffline(false);
   await talk.page.getByRole('button', { name: 'Try again' }).click();
   await talk.page.getByText('Talk is part of Windmill One').waitFor();

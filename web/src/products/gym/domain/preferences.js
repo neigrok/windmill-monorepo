@@ -2,12 +2,15 @@
 
 import { Decision, decision } from '../../../platform/domain-kit/actions.js';
 import { Draft, SaveDraft } from '../../../platform/domain-kit/drafts.js';
-import { EntityType, Fields, Id } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
-import { ChoiceSpec, Path } from '../../../platform/domain-kit/values.js';
+import { ChoiceSpec, NumberSpec, Path } from '../../../platform/domain-kit/values.js';
 import { GymRefusals } from './gymRules.js';
 
 export const PreferencesRules = Object.freeze({ units: new ChoiceSpec('prefs.units', ['kg', 'lb']) });
+
+// The web alone sets the record's rest registers, so their rule is outside the book the three surfaces pin (`rules.json`).
+export const RestSettingsRules = Object.freeze({ seconds: new NumberSpec('prefs.restSeconds', { min: 15, max: 900, integer: true }) });
 
 export class PreferencesValue {
   /**
@@ -76,10 +79,61 @@ export function ChangePreferences(patch) {
   });
 }
 
+// The default rest and the rest sound, the `prefs` record's other two registers: `seconds` is the rest a movement on
+// Default takes, null for Off, and `sound` whether the rest reaching its target sounds.
+export class RestSettingsValue {
+  /**
+   * @param {Id<RestSettingsValue>} id
+   * @param {number | null} seconds
+   * @param {boolean} sound
+   */
+  constructor(id = new Id('prefs', RestSettings), seconds = null, sound = true) {
+    this.id = id;
+    this.seconds = seconds;
+    this.sound = sound;
+    Object.freeze(this);
+  }
+
+  fields() {
+    return { restSeconds: this.seconds, restSound: this.sound };
+  }
+}
+
+/** @type {EntityType<RestSettingsValue, string>} */
+export const RestSettings = new EntityType({
+  type: 'prefs', scope: 'self/gym', savesGuarded: false,
+  decode: (f) => new RestSettingsValue(new Id(f.id, RestSettings), f.optionalInt('restSeconds'), f.bool('restSound', true)),
+  checks: [new Check('restSeconds', (value) => new RestSettingsValue(value.id,
+    RestSettingsRules.seconds.applyOptional(value.seconds, new Path('restSeconds')), value.sound))],
+});
+
 /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
 export function restSettings(read) {
-  const record = read.repository(Preferences).record('prefs', 'drawn');
-  if (!record) return Object.freeze({ seconds: null, sound: true });
-  const fields = Fields.record(record);
-  return Object.freeze({ seconds: fields.optionalInt('restSeconds'), sound: fields.bool('restSound', true) });
+  return read.repository(RestSettings).find(new Id('prefs', RestSettings), 'drawn') ?? new RestSettingsValue();
+}
+
+// Settings' change of either rest setting, opened in the commit as a switch's is: `restSeconds` null is Off, and a setting
+// the change leaves out keeps what the record holds. It writes the settings it changed and nothing of the phones' three.
+/** @param {{ restSeconds?: number | null, restSound?: boolean }} change */
+export function SaveRestSettings(change) {
+  const { restSeconds, restSound } = change;
+  return Object.freeze({
+    scope: RestSettings.scope,
+    refusals: GymRefusals,
+    /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
+    load(read) {
+      const id = new Id('prefs', RestSettings);
+      const current = read.repository(RestSettings).find(id, 'drawn');
+      const draft = (current === null ? Draft.new(new RestSettingsValue(id)) : Draft.opening(current))
+        .edit((value) => new RestSettingsValue(value.id, restSeconds === undefined ? value.seconds : restSeconds, restSound ?? value.sound));
+      const save = SaveDraft.ofDraft(draft, GymRefusals);
+      return { save, loaded: save.load(read) };
+    },
+    /**
+     * @param {{ save: SaveDraft<RestSettingsValue, import('./gymRules.js').GymRefusal>,
+     *   loaded: import('../../../platform/domain-kit/drafts.js').SaveDraftLoaded<RestSettingsValue> }} loaded
+     * @param {import('../../../platform/domain-kit/actions.js').IDSource} ids
+     */
+    decide(loaded, ids) { return decision(loaded.save, loaded.loaded, ids); },
+  });
 }

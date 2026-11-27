@@ -11,13 +11,24 @@ import works.windmill.sync.core.*
 // A local id's ordinal: its position in its act's commit order.
 internal fun ordinalOf(localId: String): Int = localId.substringAfterLast('/').toInt()
 
-// A target's value before the act, with the confirmed row it was read over (null where none was) and the epoch that row counts in. An
-// inverse act's preimage is anchored at its restore's ACK to the row the restore wrote over. A life's keeps the record as `drawn` read it
-// (`drawn`: its birth, field registers and texts), which a revival draws.
+// A target's value before the act, with the row it was read over (null where none was) and the epoch that row counts in. An inverse act's
+// preimage is anchored at its restore's ACK to the row the restore wrote over. A life's keeps the record as `drawn` read it (`drawn`: its
+// birth, field registers and texts), which a revival draws.
 internal data class Preimage(val target: RecordSlot, val value: Json, val rowSeq: Long? = null, val epoch: String? = null, val drawn: Json? = null) {
     constructor(json: Json) : this(RecordSlot(json.member("target")), json.member("value"), json["rowSeq"]?.orNull()?.long(), json["epoch"]?.orNull()?.str(), json["record"])
     val json: Json get() = Json.objectOf("target" to target.json, "value" to value, "rowSeq" to (rowSeq?.let(Json::of) ?: Json.Null),
         "epoch" to (epoch?.let(Json::of) ?: Json.Null)).with("record" to drawn)
+
+    // §7.3 Capture: `drawn` read over this device's own earlier write of the record, so the preimage stands on the row that write left, once
+    // the write's receipt shows it started where the preimage stood, in the preimage's epoch (one taken before the replica held an epoch
+    // takes the receipt's). An entry with no receipt, an ordinary one, moves nothing.
+    fun steppedOver(entry: Entry): Preimage {
+        val answered = entry.json["resultEpoch"]?.str() ?: return this
+        if (entry.state != "acked" || (epoch ?: answered) != answered) return this
+        if (entry.effects.none { effect -> effect.scope == target.scope && effect.deltas.any { it.key == target.key } }) return this
+        val row = entry.acceptedEffects.firstOrNull { it.scope == target.scope }?.row(target.key) ?: return this
+        return if (row.beforeRowSeq == rowSeq) copy(rowSeq = row.rowSeq, epoch = answered) else this
+    }
 }
 
 // A record in its view form as a revival draws it: its birth, field registers and texts, never its life.
@@ -242,6 +253,29 @@ internal fun ReplicaState.retainOutcome(localId: String, attempt: Attempt) {
     val source = sourceOf(localId)?.second ?: return
     source.attempts = source.attempts.filter { it.epoch != attempt.epoch } + attempt
     if (attempt.ok && attempt.acceptedEffects == null) source.unavailable = true
+}
+
+// §7.3 Capture: the acknowledged entries with a receipt that write each record, in commit order, the only writes a capture's preimages can
+// step over; an entry still unanswered is passed over before its deltas are read.
+internal fun ReplicaState.acknowledgedWrites(): Map<RecordAddress, List<Entry>> {
+    val writes = linkedMapOf<RecordAddress, MutableList<Entry>>()
+    for (entry in entries()) {
+        if (entry.state != "acked" || entry.acceptedEffects.isEmpty()) continue
+        for (effect in entry.effects) for (delta in effect.deltas) {
+            val record = writes.getOrPut(RecordAddress(effect.scope, delta.key)) { mutableListOf() }
+            if (record.lastOrNull() !== entry) record.add(entry)
+        }
+    }
+    return writes
+}
+
+// The ACK transaction's retention point, after the source's own: each preimage of another act's source entry still in the outbox after this
+// entry in commit order was read over its write, and steps over it. An act's own segments come after its preimages were read.
+internal fun ReplicaState.stepPreimagesOver(entry: Entry) {
+    for (source in journal.filter { it.actId != entry.gestureId }.flatMap { it.sourceEntries }) {
+        val later = entry(source.localId) ?: continue
+        if (later.order > entry.order) source.preimages = source.preimages.map { it.steppedOver(entry) }
+    }
 }
 
 // §7.5 step 1: a restored server invalidates each source's proofs from another epoch. A source still in the outbox replays and earns its

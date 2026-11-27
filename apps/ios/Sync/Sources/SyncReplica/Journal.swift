@@ -41,8 +41,8 @@ public struct RecordValues: Sendable, Hashable {
 }
 
 // What a slot read before an act changed it: a field, a text or a life, as a logical value, with the sequence of the
-// confirmed row it was read over (nil where none was confirmed) and the epoch that sequence counts in. A life's
-// preimage keeps the record it read, which a revival draws.
+// row it was read over (nil where none was) and the epoch that sequence counts in. A life's preimage keeps the record it
+// read, which a revival draws.
 public struct Preimage: Sendable, Hashable {
   public var target: Target
   public var value: JSON
@@ -72,6 +72,39 @@ public struct Preimage: Sendable, Hashable {
                                "epoch": epoch.map(JSON.string) ?? .null]
     object["record"] = record?.json
     return .object(object)
+  }
+
+  // §7.3 Capture: `drawn` read over this device's own earlier write of the record, so the preimage stands on the row that
+  // write left, once the write's receipt shows it started where the preimage stood, in the preimage's epoch (one taken
+  // before the replica held an epoch takes the receipt's).
+  mutating func step(over write: AcknowledgedWrite) {
+    guard (epoch ?? write.epoch).isSameID(as: write.epoch), let row = write.rows[target.address], row.beforeRowSeq == rowSeq else { return }
+    rowSeq = row.rowSeq
+    epoch = write.epoch
+  }
+}
+
+// An acknowledged entry with a receipt, as the preimages of its records step over it: the answer's epoch, and for each
+// record the entry writes the row its receipt gives, the first of the scope's first receipt, read once for every preimage.
+// An entry with no receipt, an ordinary one, moves nothing.
+struct AcknowledgedWrite {
+  let epoch: String
+  let rows: [RecordAddress: EffectRow]
+
+  init?(_ entry: OutboxEntry) {
+    guard entry.state == .acked, let effects = entry.acceptedEffects, let answered = entry.resultEpoch else { return nil }
+    var receipts: [ScopeRef: [RecordKey: EffectRow]] = [:]
+    for effect in effects where receipts[effect.scope] == nil {
+      receipts[effect.scope] = Dictionary(effect.rows.map { ($0.key, $0) }) { first, _ in first }
+    }
+    var rows: [RecordAddress: EffectRow] = [:]
+    for effect in entry.effects() {
+      for delta in effect.deltas {
+        if let row = receipts[effect.scope]?[delta.key] { rows[RecordAddress(scope: effect.scope, key: delta.key)] = row }
+      }
+    }
+    epoch = answered
+    self.rows = rows
   }
 }
 
@@ -639,6 +672,37 @@ public struct InverseRequest: Sendable, Hashable {
   public var current: InverseResult {
     result ?? .pending(requestId: requestId, inverseActId: inverseActId, localChanged: localChanged ?? false)
   }
+
+  // Why its operations were skipped, from the codes its slots keep: those materialization skipped before sending and
+  // those its outcomes carry.
+  public var skipReason: InverseSkipReason {
+    InverseSkipReason(codes: slots.flatMap { (slot: InverseSlot) -> [String] in (slot.skipped ?? []) + (slot.outcomes ?? []).compactMap(\.code) })
+  }
+}
+
+// Why an inverse request's operations were skipped, as its settled report names it: the device's own refusals to send
+// (engine.md §7.3 Materialize) before the server's conditions (§6.4), any other code (a refusal, an unreadable answer, a
+// discard, an ended scope) as `other`, and `none` when nothing was skipped. A request skipped for several reasons is named
+// by the first of them in this order.
+public enum InverseSkipReason: String, Sendable, Hashable, CaseIterable {
+  case historyChanged = "history-changed"
+  case epochChanged = "epoch-changed"
+  case referenceUnbound = "reference-unbound"
+  case versionChanged = "version-changed"
+  case recordChanged = "record-changed"
+  case recordPresent = "record-present"
+  case scopeChanged = "scope-changed"
+  case other
+  case nothingSkipped = "none"
+
+  public init(codes: [String]) {
+    guard !codes.isEmpty else {
+      self = .nothingSkipped
+      return
+    }
+    let named = InverseSkipReason.allCases.filter { $0 != .other && $0 != .nothingSkipped }
+    self = named.first { (reason: InverseSkipReason) -> Bool in codes.contains { $0.isSameID(as: reason.rawValue) } } ?? .other
+  }
 }
 
 // MARK: - The journal
@@ -735,6 +799,24 @@ public struct Journal: Sendable, Hashable {
   }
 }
 
+// What a load read of one replica's journal: none of it; only that no inverse request is unsettled, for a commit, which
+// reads the journal only to settle the slots of the entries it ends; or every act, request and cancellation, with the
+// entries it names.
+public enum LoadedJournal: Sendable {
+  case unread
+  case settled
+  case whole(Journal)
+
+  // The journal, where the load read it whole.
+  var wholeJournal: Journal? {
+    guard case .whole(let journal) = self else { return nil }
+    return journal
+  }
+
+  // The entries the load reads with it.
+  public var namedLocalIds: Set<String> { wholeJournal?.namedLocalIds ?? [] }
+}
+
 extension SlotRecipe {
   var pendingLocalIds: [String] {
     guard case .restore(_, let operations) = self else { return [] }
@@ -750,6 +832,49 @@ extension LoadedReplica {
   public mutating func retain(_ attempt: Attempt, of localId: String) {
     guard journal.source(of: localId) != nil else { return }
     updateJournal { $0.retain(attempt, of: localId) }
+  }
+
+  // §7.3 Capture: the acknowledged entries with a receipt that write each record, in commit order, the only writes a
+  // capture's preimages can step over. An entry still unanswered is passed over before its deltas are read, so a capture
+  // over a large unsent outbox reads none of it.
+  func acknowledgedWrites() -> [RecordAddress: [AcknowledgedWrite]] {
+    var writes: [RecordAddress: [AcknowledgedWrite]] = [:]
+    for entry in loadedEntries {
+      guard let write = AcknowledgedWrite(entry) else { continue }
+      var written: Set<RecordAddress> = []
+      for effect in entry.effects() {
+        for delta in effect.deltas where written.insert(RecordAddress(scope: effect.scope, key: delta.key)).inserted {
+          writes[RecordAddress(scope: effect.scope, key: delta.key), default: []].append(write)
+        }
+      }
+    }
+    return writes
+  }
+
+  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry still
+  // in the outbox after this entry in commit order was read over its write, and steps over it. An act's own segments come
+  // after its preimages were read. Only a preimage of a record the entry's receipt names can step, and the journal is
+  // written only for the acts in which one did.
+  public mutating func stepPreimages(over entry: OutboxEntry) {
+    guard let effects = entry.acceptedEffects, !journal.acts.isEmpty else { return }
+    let written = Set(effects.flatMap { (effect: EffectReceipt) -> [RecordAddress] in effect.rows.map { RecordAddress(scope: effect.scope, key: $0.key) } })
+    guard !written.isEmpty, let write = AcknowledgedWrite(entry) else { return }
+    var stepped: [(index: Int, act: ReversibleAct)] = []
+    for (index, act) in journal.acts.enumerated() where !act.actId.isSameID(as: entry.gestureId) {
+      var next = act
+      for source in next.sourceEntries.indices {
+        guard next.sourceEntries[source].preimages.contains(where: { written.contains($0.target.address) }),
+              let later = named(next.sourceEntries[source].localId), later.commitOrder > entry.commitOrder else { continue }
+        for preimage in next.sourceEntries[source].preimages.indices where written.contains(next.sourceEntries[source].preimages[preimage].target.address) {
+          next.sourceEntries[source].preimages[preimage].step(over: write)
+        }
+      }
+      if next != act { stepped.append((index, next)) }
+    }
+    guard !stepped.isEmpty else { return }
+    updateJournal { journal in
+      for (index, act) in stepped { journal.acts[index] = act }
+    }
   }
 
   // §7.5 step 1: an epoch change drops every attempt of another epoch. A source still in the outbox replays and earns its
@@ -834,8 +959,9 @@ extension LoadedReplica {
   }
 
   // The slots whose entries ended without a result (a fold, a refusal of another entry, a Discard) settle skipped by
-  // `code`.
+  // `code`; with every request settled there is none.
   public mutating func settleEnded(code: String) {
+    guard holdsUnsettledRequest else { return }
     let ended: [(request: Int, slot: Int)] = journal.inverses.indices.flatMap { (request: Int) -> [(request: Int, slot: Int)] in
       guard journal.inverses[request].state != .settled else { return [] }
       return journal.inverses[request].slots.indices.compactMap { (slot: Int) -> (request: Int, slot: Int)? in
@@ -1078,19 +1204,24 @@ extension ViewRecord {
 extension CommitPlanner {
   // §7.3 capture: the act's undo request checked against its scopes, each segment's first local preimages read from
   // `drawn` before any segment changes it, each with the sequence of the row it was read over, the confirmed row or else
-  // the dead row the record's spent id keeps, and the epoch that sequence counts in, a life's with the record it read.
+  // the dead row the record's spent id keeps, stepped over each of the device's own acknowledged writes of the record
+  // whose receipt continues it, and the epoch that sequence counts in, a life's with the record it read.
   // An unset slot takes its target's default; with none, and for any malformed recipe, the act throws before anything
   // changes. A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least
   // one recipe.
   public func undoPlan(_ undo: ActUndo?, scopes: [ScopeRef], in replica: LoadedReplica) throws -> UndoPlan? {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
+    let acknowledged = replica.acknowledgedWrites()
+    // One view a scope, read once for every segment of the act there.
+    var views: [ScopeRef: ScopeView] = [:]
     for segment in undo.segments {
       guard scopes.indices.contains(segment.index), segments[segment.index] == nil else {
         throw CommitFailure.malformed("an undo segment names one act segment and its recipes")
       }
       let scope = scopes[segment.index]
-      let view = try ScopeView(replica, scope, .drawn, registry: registry)
+      let view = try views[scope] ?? ScopeView(replica, scope, .drawn, registry: registry)
+      views[scope] = view
       var preimages: [Preimage] = []
       for recipe in segment.recipes {
         if let fault = registry.recipeFault(recipe, in: scope) { throw CommitFailure.malformed("an undo recipe is malformed: \(fault)") }
@@ -1105,7 +1236,9 @@ extension CommitPlanner {
           }
           let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq ?? replica.spentIDs(scope)[item.target.key]?.seq
           let record: RecordValues? = item.target.slot == .life ? read.map(RecordValues.init) : nil
-          preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record))
+          var preimage = Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record)
+          for write in acknowledged[item.target.address] ?? [] { preimage.step(over: write) }
+          preimages.append(preimage)
         }
       }
       segments[segment.index] = UndoPlan.Segment(scope: scope, recipes: segment.recipes, preimages: preimages)
@@ -1115,13 +1248,17 @@ extension CommitPlanner {
   }
 
   // An opted segment runs its own scoped-effects command, or else its scope kind's one capture command, which joins
-  // the segment only when it writes a delta. None or several capture commands is a programming error, never a choice by
-  // name. The capture command, or nil.
+  // the segment only when it writes a delta. The capture command, or nil.
   public func capture(for gesture: Gesture, in scope: ScopeRef) throws -> String? {
     if let command = gesture.command {
       guard registry.command(command.name)?.scopedEffects == true else { throw CommitFailure.malformed("an opted command returns scoped effects") }
       return nil
     }
+    return try captureCommand(of: scope)
+  }
+
+  // A scope kind's one capture command. None or several is a programming error, never a choice by name.
+  func captureCommand(of scope: ScopeRef) throws -> String {
     let kind = registry.scopeKind(of: scope)
     let found = registry.commands.filter { $0.engine == .capture && $0.scope == kind }
     guard found.count == 1 else { throw CommitFailure.malformed("\(scope) has no single capture command") }
@@ -1130,15 +1267,20 @@ extension CommitPlanner {
 
   // §7.3 record: the act's journal record, one source entry per named segment that left an entry, in commit order, with
   // the value the act left in each target, which a Redo writes back. A segment that writes nothing leaves none, and an
-  // act left with none records nothing.
+  // act left with none records nothing. Each ordinary entry still queued that a journaled preimage read over takes its
+  // scope kind's capture command, so its ACK carries the receipt a restore's walk steps over; an entry already sent keeps
+  // its intent, and so does one the command would carry past a push alone.
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
+    // One view a scope, read once for every segment the act wrote there.
+    var views: [ScopeRef: ScopeView] = [:]
     for (index, segment) in plan.segments.sorted(by: { $0.key < $1.key }) {
       let localIds = receipts[index].localIds
       if localIds.isEmpty { continue }
       guard localIds.count == 1 else { throw CommitFailure.malformed("an opted segment commits one intent") }
-      let view = try ScopeView(replica, segment.scope, .drawn, registry: registry)
+      let view = try views[segment.scope] ?? ScopeView(replica, segment.scope, .drawn, registry: registry)
+      views[segment.scope] = view
       let written: [WrittenValue] = segment.preimages.compactMap { (preimage: Preimage) -> WrittenValue? in
         view.record(preimage.target.key)?.value(of: preimage.target.slot).map { WrittenValue(target: preimage.target, value: $0) }
       }
@@ -1147,5 +1289,18 @@ extension CommitPlanner {
     }
     guard !sources.isEmpty else { return }
     replica.updateJournal { $0.acts.append(ReversibleAct(actId: actId, sourceEntries: sources)) }
+    for target in sources.flatMap(\.preimages).map(\.target) {
+      for entry in replica.entries(touching: target.key, in: target.scope)
+      where entry.isQueued && entry.intent.command == nil && !entry.gestureId.isSameID(as: actId)
+        && entry.scope == target.scope && entry.intent.deltas.contains(where: { $0.key == target.key }) {
+        var captured = entry.intent
+        captured.command = Command(name: try captureCommand(of: target.scope), args: [:])
+        guard PushRequest(widestFor: captured, of: replica.meta.replica, account: replica.meta.account).body.count <= limits.pushMaxBytes else { continue }
+        replica.update(entry: entry.localId) { stored in
+          stored.intent = captured
+          stored.predictions = [Projection(scope: stored.scope)]
+        }
+      }
+    }
   }
 }

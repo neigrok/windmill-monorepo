@@ -23,7 +23,8 @@ export function offlineShell() {
           if (!item.originalFileNames?.some((file) => FRONT_PAGE_FACE.test(file))) assets.add(name);
           return;
         }
-        if (Object.keys(item.modules).some((path) => /\/src\/(?:showcase\/|products\/journal\/search\/neural\/)/.test(path))) return;
+        // The showcase is a developer surface, and search by meaning's model runtime loads on its first use, never with the shell.
+        if (Object.keys(item.modules).some((path) => /\/src\/showcase\/|\/node_modules\/(?:@huggingface\/transformers|onnxruntime-[a-z]+)\//.test(path))) return;
         assets.add(name);
         for (const dependency of [...item.imports, ...item.dynamicImports,
           ...item.viteMetadata.importedCss, ...item.viteMetadata.importedAssets]) visit(dependency);

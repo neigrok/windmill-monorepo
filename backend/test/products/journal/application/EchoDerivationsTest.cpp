@@ -31,14 +31,8 @@ struct LiveStack {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  FakeEntitlementCopy subscriptions;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage};
   FakeSegmenter segmenter;
-  EchoSweep sweep{echoes,  segmenter,    embedder,         curator,
-                  clock,   entitlements, SelectionRules{}, SweepBudget{}};
-
-  void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
+  EchoSweep sweep{echoes, segmenter, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
 };
 
 constexpr std::uint64_t kQuietMs = 8'000;
@@ -207,24 +201,25 @@ TEST(an_account_may_only_buy_so_many_derivations_in_a_day) {
   CHECK_EQ(live.drain(stack.clock.now + kQuietMs).derived, 1);
 }
 
-// The per-user AI ceiling applies to a save-triggered derivation as to a swept one. Over it, SKIPPED: nothing bought, nothing written, no stamp advanced.
-TEST(a_user_over_the_background_ai_budget_is_skipped_with_the_page_still_due) {
+// A page the AI service defers — its background budgets, its own state, or no answer — is neither derived nor failed,
+// nor taken for one already derived: nothing is bought, no stamp moves, and the page is still owed.
+TEST(a_page_the_ai_service_defers_is_counted_apart_and_left_due) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
-  stack.spend(kSweepMonthlyAiNanos);
+  stack.curator.callSucceeds = false;
+  stack.curator.failure = "background_exhausted";
   EchoDerivations live{stack.sweep, stack.clock, rules()};
 
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
   const EchoLiveReport report = live.drain(stack.clock.now + kQuietMs);
 
-  CHECK_EQ(report.skippedOverBudget, 1);
+  CHECK_EQ(report.aiDeferred, 1);
   CHECK_EQ(report.derived, 0);
   CHECK_EQ(report.failed, 0);
-  CHECK_EQ(stack.curator.calls, 0);
-  CHECK_EQ(stack.echoes.outcomes.size(), std::size_t{0});   // no stamp moved
+  CHECK_EQ(report.alreadyDerived, 0);
   CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
 
-  stack.spend(0);
+  stack.curator.callSucceeds = true;
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
   CHECK_EQ(live.drain(stack.clock.now + 2 * kQuietMs).derived, 1);
 }
@@ -234,7 +229,7 @@ TEST(a_failed_curate_leaves_the_page_still_due) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
   stack.curator.callSucceeds = false;
-  stack.curator.failure = "rate_limited";
+  stack.curator.failure = "provider_failed";
   EchoDerivations live{stack.sweep, stack.clock, rules()};
 
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
@@ -243,7 +238,7 @@ TEST(a_failed_curate_leaves_the_page_still_due) {
   CHECK_EQ(report.failed, 1);
   CHECK_EQ(report.derived, 0);
   REQUIRE_EQ(stack.echoes.outcomes.size(), std::size_t{1});
-  CHECK(stack.echoes.outcomes[0].status == CurationStatus::rateLimited);
+  CHECK(stack.echoes.outcomes[0].status == CurationStatus::transport);
   CHECK(!isSuccess(stack.echoes.outcomes[0].status));
   CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
   CHECK_EQ(stack.echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});

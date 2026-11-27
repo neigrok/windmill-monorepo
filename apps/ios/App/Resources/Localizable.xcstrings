@@ -55,6 +55,17 @@
         }
       }
     },
+    "%@ added · %@" : {
+      "comment" : "The band after a step is made: the step's name, and the group it landed in",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ added · %2$@"
+          }
+        }
+      }
+    },
     "%@ and %@" : {
       "comment" : "Joins a list's last item: 2 workouts and 1 routine",
       "localizations" : {
@@ -78,8 +89,45 @@
     "%@ changed since you started." : {
 
     },
+    "%@ checked" : {
+      "comment" : "The band after a subtask is checked: the subtask's words"
+    },
+    "%@ comes after this step." : {
+      "comment" : "A step's form: a step that cannot be required, by its name"
+    },
+    "%@ comes before this step." : {
+      "comment" : "A step's form: a step that cannot be opened, by its name"
+    },
+    "%@ deleted" : {
+      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title"
+    },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
+    },
+    "%@ done" : {
+      "comment" : "The band after a step is completed: the step's name"
+    },
+    "%@ done · %@ up next" : {
+      "comment" : "The band after a step is completed: the step's name, and the one step it brought up next",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ done · %2$@ up next"
+          }
+        }
+      }
+    },
+    "%@ done · %lld up next" : {
+      "comment" : "The band after a step is completed: the step's name, and how many steps it brought up next",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ done · %2$lld up next"
+          }
+        }
+      }
     },
     "%@ e1RM %@ kg — %@." : {
       "localizations" : {
@@ -94,8 +142,14 @@
     "%@ has a logged set now. Nothing changed." : {
 
     },
+    "%@ is back · you edited it while it was removed elsewhere" : {
+      "comment" : "The band once a step the person changed is back after another device removed it: the step's name"
+    },
     "%@ is no longer in your program. Not applied." : {
 
+    },
+    "%@ is up next" : {
+      "comment" : "The band after a step is completed on its page: the one step it brought up next"
     },
     "%@ kg" : {
 
@@ -156,6 +210,18 @@
         }
       }
     },
+    "%@ removed" : {
+      "comment" : "The band after a kind no step wears is removed: the kind's name"
+    },
+    "%@ reset" : {
+      "comment" : "The band after a step is reset: the step's name"
+    },
+    "%@ saved" : {
+      "comment" : "The band after a step's changes are saved: the step's name"
+    },
+    "%@ stays. This step becomes ordinary." : {
+      "comment" : "The attach list's None: the roadmap the step opens now, which detaching leaves as it is"
+    },
     "%@ suggested this. Your past %@ workouts stay in the log." : {
       "localizations" : {
         "en" : {
@@ -166,11 +232,44 @@
         }
       }
     },
+    "%@ synced · it now follows %@" : {
+      "comment" : "The band once a step the person made or linked lands after a step it required was deleted elsewhere: the step's name, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ synced · it now follows %2$@"
+          }
+        }
+      }
+    },
     "%@ under plan" : {
 
     },
+    "%@ was deleted on another device before it synced, so this step now follows %@." : {
+      "comment" : "A step page's footer: the one step deleted elsewhere that this step was linked from, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ was deleted on another device before it synced, so this step now follows %2$@."
+          }
+        }
+      }
+    },
     "%@ wasn’t changed. Try again." : {
 
+    },
+    "%@ were deleted on another device before it synced, so this step now follows %@." : {
+      "comment" : "A step page's footer: the steps deleted elsewhere that this step was linked from, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ were deleted on another device before it synced, so this step now follows %2$@."
+          }
+        }
+      }
     },
     "%@ · %@" : {
       "comment" : "Where the canvas stands: 29 MAY 2025 · 4 MO",
@@ -183,6 +282,26 @@
         }
       },
       "shouldTranslate" : false
+    },
+    "%@ · %lld of %lld" : {
+      "comment" : "A Board row's pill: the roadmap a step opens, and how many of its steps are done, of how many",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$lld of %3$lld"
+          }
+        }
+      }
+    },
+    "%@ · No steps" : {
+      "comment" : "A Board row's pill: the roadmap a step opens, which has no steps"
+    },
+    "%@ · Offline" : {
+      "comment" : "The bar's subtitle while the phone has no connection: the roadmap's progress"
+    },
+    "%@ · from above" : {
+      "comment" : "A guide of a roadmap above this one: that roadmap's name"
     },
     "%@ · this workout" : {
 
@@ -278,6 +397,12 @@
     },
     "%lld MO" : {
       "comment" : "How long before a passage was written, in months: 4 MO"
+    },
+    "%lld Selected" : {
+      "comment" : "The bar while several steps are selected: how many"
+    },
+    "%lld Set Aside" : {
+      "comment" : "The title menu's first row while changes are set aside: how many"
     },
     "%lld WK" : {
       "comment" : "How long before a passage was written, in weeks: 2 WK"
@@ -419,6 +544,9 @@
         }
       }
     },
+    "%lld left" : {
+      "comment" : "The guide's counter from 4,500 characters: how many more it may hold"
+    },
     "%lld minutes" : {
       "localizations" : {
         "en" : {
@@ -552,12 +680,45 @@
         }
       }
     },
+    "%lld of %lld" : {
+      "comment" : "How many of a roadmap's steps are done, of how many, under its name in the title menu\nHow many of a step's subtasks are checked, of how many, beside Subtasks",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
     "%lld of %lld bytes" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld of %2$lld bytes"
+          }
+        }
+      }
+    },
+    "%lld of %lld done" : {
+      "comment" : "How many are done, of how many: a roadmap's steps under its name, and the steps a step requires",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done"
+          }
+        }
+      }
+    },
+    "%lld of %lld done · Loops back" : {
+      "comment" : "The step page's Roadmap row: how many of the roadmap's steps are done, of how many, and that it leads back",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done · Loops back"
           }
         }
       }
@@ -663,6 +824,9 @@
     "%lld of 500 bytes" : {
 
     },
+    "%lld over" : {
+      "comment" : "The guide's counter past its 5,000 characters: how many too many"
+    },
     "%lld pages" : {
       "comment" : "The written journal pages this phone holds, in You",
       "localizations" : {
@@ -724,6 +888,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld reps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld roadmaps" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmap"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmaps"
                 }
               }
             }
@@ -835,6 +1021,121 @@
     "%lld short" : {
       "comment" : "A set that many reps short of its plan"
     },
+    "%lld steps" : {
+      "comment" : "How many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps deleted" : {
+      "comment" : "The band while a delete of several steps is held: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps locked again" : {
+      "comment" : "The band after a step is reset: how many steps it returned to Locked",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step locked again"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps locked again"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps recolored" : {
+      "comment" : "The band after several steps are moved to one kind: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step recolored"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps recolored"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps up next" : {
+      "comment" : "The band after a step is completed on its page: how many steps it brought up next",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step up next"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps up next"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld suggested changes" : {
       "localizations" : {
         "en" : {
@@ -856,6 +1157,23 @@
           }
         }
       }
+    },
+    "%lld to go in %@" : {
+      "comment" : "An Up next step's status: how many steps the roadmap it opens has to go, and its name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to go in %2$@"
+          }
+        }
+      }
+    },
+    "%lld to go in its subtree" : {
+      "comment" : "An Up next step's status: how many steps the subtree it owns has to go"
+    },
+    "%lld up next" : {
+      "comment" : "The title of Next's menu on the Graph: how many steps are Up next"
     },
     "%lld weeks" : {
       "localizations" : {
@@ -944,8 +1262,26 @@
     "90 days" : {
       "comment" : "A chart's window: its last 90 days, beside All"
     },
+    "A Copied Link" : {
+
+    },
+    "A Copied Plan" : {
+
+    },
+    "A File" : {
+
+    },
     "A connected tool" : {
 
+    },
+    "A kind that steps wear can’t be removed." : {
+
+    },
+    "A loop with %@: this never completes." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step stands in, which the roadmap it opens leads back to"
+    },
+    "A loop with %@: this never completes. Detach one side." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step stands in, which the roadmap it opens leads back to"
     },
     "A movement is missing — fix its sets, then retry." : {
 
@@ -960,6 +1296,15 @@
 
     },
     "A page a night." : {
+
+    },
+    "A roadmap has up to six kinds." : {
+
+    },
+    "A roadmap keeps one starting step" : {
+
+    },
+    "A roadmap with no steps isn’t done. Add its first." : {
 
     },
     "A routine change waits for your Apply; the rest lands at once." : {
@@ -1004,10 +1349,31 @@
     "Account" : {
       "comment" : "A term in Coach's greeting: the person's Windmill account"
     },
+    "Activity" : {
+
+    },
     "Add" : {
 
     },
+    "Add Guide" : {
+
+    },
+    "Add Kind" : {
+
+    },
+    "Add Link" : {
+
+    },
+    "Add Note" : {
+
+    },
+    "Add Subtask" : {
+
+    },
     "Add a note" : {
+
+    },
+    "Add a step whenever you’re ready." : {
 
     },
     "Add movement" : {
@@ -1027,6 +1393,40 @@
     },
     "Added" : {
       "comment" : "What a proposed change does to a movement or routine"
+    },
+    "Added %@, %@" : {
+      "comment" : "VoiceOver on an Activity row: what was added, a step's name or how many steps were added at once, and when",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Added %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "Added %lld steps" : {
+      "comment" : "The band once steps pasted into a roadmap are added: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Adding" : {
 
@@ -1052,7 +1452,42 @@
     "All" : {
       "comment" : "A chart's window: everything logged"
     },
+    "All %lld steps done" : {
+      "comment" : "What the Board says once every step of a roadmap is done",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step done"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "All %lld steps done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "All Roadmaps" : {
+
+    },
+    "All Roadmaps…" : {
+
+    },
     "All movements" : {
+
+    },
+    "All steps" : {
+
+    },
+    "All subtasks done" : {
 
     },
     "Already added" : {
@@ -1061,8 +1496,116 @@
     "Already added once — discard this copy." : {
 
     },
+    "Already done" : {
+
+    },
     "Already on Windmill?" : {
 
+    },
+    "Also removes %lld steps that open it in %@" : {
+      "comment" : "A roadmap's delete question: how many steps open it, and the one roadmap that holds them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld step that opens it in %2$@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld steps that open it in %2$@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes %lld steps that open it, in %@ and %@" : {
+      "comment" : "A roadmap's delete question: how many steps open it, and the two roadmaps that hold them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld step that opens it, in %2$@ and %3$@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld steps that open it, in %2$@ and %3$@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes %lld steps that open it, in %@, %@ and %lld more roadmaps" : {
+      "comment" : "A roadmap's delete question: how many steps open it, the first two roadmaps that hold them, and how many more roadmaps do",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also removes %1$#@steps@, in %2$@, %3$@ and %4$#@more@"
+          },
+          "substitutions" : {
+            "more" : {
+              "argNum" : 4,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg more roadmap"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg more roadmaps"
+                    }
+                  }
+                }
+              }
+            },
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step that opens it"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps that open it"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes the step that opens it in %@" : {
+      "comment" : "A roadmap's delete question: the one roadmap whose one step opens it"
+    },
+    "And %lld more." : {
+      "comment" : "Under a plan's first steps: how many more steps it brings"
     },
     "Answer in progress" : {
 
@@ -1130,6 +1673,9 @@
     "Ask about your training" : {
 
     },
+    "Attach a Roadmap" : {
+
+    },
     "Back" : {
 
     },
@@ -1164,13 +1710,28 @@
     "Between 20 and 400 kg" : {
 
     },
+    "Board" : {
+
+    },
     "Bodyweight" : {
 
     },
     "Bodyweight chart" : {
 
     },
+    "Branch · %@" : {
+      "comment" : "The Board's first row while it stays in a step's branch: the step's name"
+    },
+    "Branches" : {
+
+    },
+    "Brick" : {
+      "comment" : "A step's colour, said where no kind names it"
+    },
     "Bringing it back" : {
+
+    },
+    "Brings the bars back." : {
 
     },
     "Build" : {
@@ -1194,11 +1755,23 @@
     "Cancel sign-in" : {
 
     },
+    "Can’t be opened" : {
+
+    },
+    "Can’t be prerequisites" : {
+
+    },
+    "Can’t complete yet" : {
+      "comment" : "An Up next step's status: the roadmap it opens has no steps or cannot be found"
+    },
     "Capsize drill" : {
 
     },
     "Change" : {
       "comment" : "A button that changes the email address"
+    },
+    "Change Roadmap" : {
+
     },
     "Changed" : {
       "comment" : "What a proposed change does to a movement or routine"
@@ -1230,6 +1803,9 @@
     "Check your message or choose a different photo, then send again." : {
 
     },
+    "Choose Roadmap" : {
+
+    },
     "Choose a supported photo." : {
 
     },
@@ -1243,6 +1819,12 @@
 
     },
     "Choose your first movement" : {
+
+    },
+    "Clear" : {
+
+    },
+    "Clear Filters" : {
 
     },
     "Clear note" : {
@@ -1326,8 +1908,31 @@
     "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit." : {
 
     },
+    "Collapsed" : {
+
+    },
+    "Color" : {
+
+    },
     "Comparison" : {
 
+    },
+    "Complete" : {
+
+    },
+    "Completed" : {
+      "comment" : "A step's History: the row of its completion"
+    },
+    "Completed %@, %@" : {
+      "comment" : "VoiceOver on an Activity row: the step completed, and when",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Completed %1$@, %2$@"
+          }
+        }
+      }
     },
     "Connect a tool" : {
 
@@ -1357,6 +1962,12 @@
 
     },
     "Copied" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Copy Link" : {
 
     },
     "Copy answer" : {
@@ -1416,16 +2027,63 @@
     "Couldn't sign out. Try again." : {
 
     },
+    "Couldn’t bring back %@" : {
+      "comment" : "The band after an Undo of a delete brought nothing back: the name of the step, the roadmap or the kind, or a subtask's words or a link's title"
+    },
+    "Couldn’t bring back %lld steps" : {
+      "comment" : "The band after an Undo of a delete of several steps brought none back: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Couldn’t bring back %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Couldn’t bring back %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Couldn’t delete your account. Check your connection and try again." : {
+
+    },
+    "Couldn’t fork this roadmap. Try again." : {
+
+    },
+    "Couldn’t load this roadmap" : {
+
+    },
+    "Couldn’t open the file." : {
 
     },
     "Couldn’t read your connections." : {
 
     },
+    "Couldn’t read “%@”." : {
+      "comment" : "New Roadmap's footer when the file chosen could not be read: the file's name"
+    },
     "Couldn’t save the routine. Try again." : {
 
     },
+    "Couldn’t undo" : {
+      "comment" : "The band after an Undo that brought nothing back of an act that is not a delete"
+    },
+    "Create" : {
+
+    },
     "Create account" : {
+
+    },
+    "Create alone plants one step, named as the roadmap." : {
 
     },
     "Create movement" : {
@@ -1474,6 +2132,61 @@
     "Delete" : {
       "comment" : "A button that deletes a conversation"
     },
+    "Delete %@?" : {
+      "comment" : "The question a delete asks, with the name of the step or of the roadmap"
+    },
+    "Delete %lld Steps" : {
+      "comment" : "The button that deletes the steps chosen, and the answer of its question: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Delete %lld steps?" : {
+      "comment" : "The question a delete of several steps asks: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld step?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld steps?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Delete Roadmap" : {
+
+    },
+    "Delete Step" : {
+
+    },
     "Delete account" : {
 
     },
@@ -1504,11 +2217,40 @@
     "Deleting…" : {
 
     },
+    "Deselect All" : {
+
+    },
+    "Detach Roadmap" : {
+
+    },
     "Discard" : {
 
     },
     "Discard %@?" : {
       "comment" : "Discard 1 routine and 1 journal page?"
+    },
+    "Discard %lld changes?" : {
+      "comment" : "The question Discard All asks in Set Aside: how many changes it discards",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Discard %lld change?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Discard %lld changes?"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Discard %lld sets" : {
       "localizations" : {
@@ -1532,7 +2274,13 @@
         }
       }
     },
+    "Discard All" : {
+
+    },
     "Discard all of it?" : {
+
+    },
+    "Discard draft?" : {
 
     },
     "Discard movement changes?" : {
@@ -1556,6 +2304,18 @@
     "Done" : {
 
     },
+    "Done because every step in %@ is done." : {
+      "comment" : "The Roadmap section's footer of a step its roadmap completed: the roadmap's name"
+    },
+    "Done because every step in this subtree is done." : {
+
+    },
+    "Done when every step in %@ is done." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step opens"
+    },
+    "Done when every step in this subtree is done." : {
+
+    },
     "Done writing" : {
 
     },
@@ -1577,6 +2337,9 @@
     "EXAMPLE" : {
 
     },
+    "Earlier" : {
+      "comment" : "Activity's section of the days before yesterday"
+    },
     "Earlier records" : {
 
     },
@@ -1589,6 +2352,12 @@
     "Edit" : {
 
     },
+    "Edit Kinds" : {
+
+    },
+    "Edit Step" : {
+
+    },
     "Edit movement" : {
 
     },
@@ -1596,6 +2365,9 @@
 
     },
     "Edit sets" : {
+
+    },
+    "Editing access ended." : {
 
     },
     "Effort" : {
@@ -1623,6 +2395,9 @@
 
     },
     "Enter 0 or more, or cancel to keep %@" : {
+
+    },
+    "Enter a name for this step." : {
 
     },
     "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight." : {
@@ -1667,10 +2442,25 @@
     "Example of three rooms: Roadmap, Journal, Gym" : {
 
     },
+    "Expanded" : {
+
+    },
     "FEB" : {
       "comment" : "February in an echo's date stamp"
     },
     "Fewer reps" : {
+
+    },
+    "Filter by Kind" : {
+      "comment" : "The Board's Sort and filter menu: the kinds in use, each shown or not"
+    },
+    "Find" : {
+
+    },
+    "Find a roadmap" : {
+
+    },
+    "Find a step" : {
 
     },
     "Finish" : {
@@ -1700,6 +2490,12 @@
     "Finishing…" : {
 
     },
+    "First steps" : {
+
+    },
+    "Fit" : {
+
+    },
     "Fix set" : {
 
     },
@@ -1710,6 +2506,38 @@
 
     },
     "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good." : {
+
+    },
+    "Fork Roadmap" : {
+
+    },
+    "Forked · %lld steps planted" : {
+      "comment" : "The band once a fork's copy opens: how many steps it planted",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld step planted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld steps planted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Forking needs a connection." : {
+
+    },
+    "Forking…" : {
 
     },
     "From %@" : {
@@ -1727,11 +2555,35 @@
     "Get the update" : {
 
     },
+    "Give your roadmap a place to start." : {
+
+    },
     "Goals" : {
       "comment" : "A term in Coach's greeting: the person's goals"
     },
+    "Gold" : {
+      "comment" : "A step's colour, said where no kind names it"
+    },
     "Got it" : {
 
+    },
+    "Graph" : {
+
+    },
+    "Guide" : {
+      "comment" : "The title menu's item that opens the roadmap's guide"
+    },
+    "Guide edited" : {
+
+    },
+    "Guide removed" : {
+      "comment" : "The band after a roadmap's guide is saved blank"
+    },
+    "Guide saved" : {
+      "comment" : "The band after a roadmap's guide is saved"
+    },
+    "Guide · +%lld from above" : {
+      "comment" : "The title menu's item that opens the roadmap's guide: how many guides of the roadmaps above it apply too"
     },
     "Gym" : {
 
@@ -1796,6 +2648,12 @@
     "In this app" : {
 
     },
+    "In use" : {
+      "comment" : "A hue in a kind's Color list that steps wear with no kind named for it"
+    },
+    "In use by %@" : {
+      "comment" : "A hue in a kind's Color list that another kind wears: that kind's name"
+    },
     "Interrupted" : {
 
     },
@@ -1806,6 +2664,9 @@
 
     },
     "It lives only on this phone. Sign in to back it up and open it on the web." : {
+
+    },
+    "It may be private, or it may have moved." : {
 
     },
     "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first." : {
@@ -1868,7 +2729,44 @@
     "Kettlebell" : {
 
     },
+    "Kind" : {
+
+    },
+    "Kind edited" : {
+
+    },
+    "Kinds" : {
+
+    },
     "Knots & lines" : {
+
+    },
+    "Lands in Locked · %@ and %@ aren’t done" : {
+      "comment" : "A step's form: the two steps it requires that are not done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Lands in Locked · %1$@ and %2$@ aren’t done"
+          }
+        }
+      }
+    },
+    "Lands in Locked · %@ and %lld more aren’t done" : {
+      "comment" : "A step's form: the first step it requires that is not done, and how many more are not",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Lands in Locked · %1$@ and %2$lld more aren’t done"
+          }
+        }
+      }
+    },
+    "Lands in Locked · %@ isn’t done" : {
+      "comment" : "A step's form: the one step it requires that is not done"
+    },
+    "Lands in Up next" : {
 
     },
     "Last done" : {
@@ -1889,7 +2787,16 @@
     "Light" : {
       "comment" : "An appearance the app can take: the light look"
     },
+    "Lines kept as notes" : {
+
+    },
+    "Link edited" : {
+
+    },
     "Linked to %@" : {
+
+    },
+    "Links" : {
 
     },
     "Load" : {
@@ -1900,6 +2807,12 @@
     },
     "Load, 0 or more." : {
 
+    },
+    "Locked" : {
+      "comment" : "The Board's group of steps that still need another step"
+    },
+    "Locked · %lld to go" : {
+      "comment" : "A Locked step on another step's page: how many steps stand before it"
     },
     "Log %@" : {
       "comment" : "The workout control's action, spoken: Log 100 × 5"
@@ -2029,6 +2942,9 @@
         }
       }
     },
+    "Loops back" : {
+      "comment" : "The roadmap a step opens leads back to the roadmap the step stands in"
+    },
     "MAR" : {
       "comment" : "March in an echo's date stamp"
     },
@@ -2040,6 +2956,17 @@
     },
     "Made a movement" : {
 
+    },
+    "Made on this phone on %@. %@" : {
+      "comment" : "A step page's footer: the day this phone made the step, then what was deleted elsewhere and what it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Made on this phone on %1$@. %2$@"
+          }
+        }
+      }
     },
     "Map what you're learning" : {
 
@@ -2104,8 +3031,87 @@
     "Name it to save it." : {
 
     },
+    "Name this step" : {
+
+    },
+    "Name your roadmap" : {
+
+    },
+    "Needs %@ +%lld · %lld to go" : {
+      "comment" : "A Locked step's reason: the first step it still needs, how many more it needs, and how many steps stand before it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld · %3$lld to go"
+          }
+        }
+      }
+    },
+    "Needs %@ +%lld, then every step in %@." : {
+      "comment" : "The Roadmap section's footer of a Locked step: the first step it still needs, how many more, and the roadmap it opens",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld, then every step in %3$@."
+          }
+        }
+      }
+    },
+    "Needs %@ +%lld, then every step in this subtree." : {
+      "comment" : "The Subtree section's footer of a Locked step: the first step it still needs, and how many more",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld, then every step in this subtree."
+          }
+        }
+      }
+    },
+    "Needs %@ · %lld to go" : {
+      "comment" : "A Locked step's reason: the step it still needs, and how many steps stand before it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ · %2$lld to go"
+          }
+        }
+      }
+    },
+    "Needs %@, then every step in %@." : {
+      "comment" : "The Roadmap section's footer of a Locked step: the step it still needs, and the roadmap it opens",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@, then every step in %2$@."
+          }
+        }
+      }
+    },
+    "Needs %@, then every step in this subtree." : {
+      "comment" : "The Subtree section's footer of a Locked step: the step it still needs"
+    },
+    "Needs a connection" : {
+
+    },
     "Needs you" : {
 
+    },
+    "New Link" : {
+
+    },
+    "New Roadmap" : {
+
+    },
+    "New Step" : {
+
+    },
+    "New Step “%@”" : {
+      "comment" : "Find matched no step: a new step named as the words looked for"
     },
     "New best" : {
 
@@ -2119,10 +3125,25 @@
     "New here? This also creates your account." : {
 
     },
+    "New kind" : {
+
+    },
+    "New link" : {
+
+    },
     "New movement" : {
 
     },
     "New routine" : {
+
+    },
+    "New step" : {
+
+    },
+    "New subtask" : {
+
+    },
+    "Newest First" : {
 
     },
     "Next" : {
@@ -2132,6 +3153,9 @@
 
     },
     "No account at this email" : {
+
+    },
+    "No activity yet" : {
 
     },
     "No change" : {
@@ -2174,10 +3198,19 @@
     "No finished workouts yet" : {
 
     },
+    "No guide yet" : {
+
+    },
     "No movement by that name." : {
 
     },
     "No points" : {
+
+    },
+    "No roadmap you can read is at that address." : {
+
+    },
+    "No roadmaps yet" : {
 
     },
     "No routines yet" : {
@@ -2185,6 +3218,21 @@
     },
     "No sets in this workout." : {
 
+    },
+    "No steps" : {
+      "comment" : "The roadmap a step opens has no steps"
+    },
+    "No steps match" : {
+
+    },
+    "No steps match “%@”" : {
+      "comment" : "Find matched no step: the words looked for"
+    },
+    "No steps yet" : {
+
+    },
+    "No text to paste" : {
+      "comment" : "The band when Paste Steps finds no text on the clipboard"
     },
     "No tool can apply a proposal or edit a logged set." : {
 
@@ -2198,6 +3246,9 @@
     "No workouts yet" : {
 
     },
+    "None" : {
+      "comment" : "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"
+    },
     "Not applied" : {
 
     },
@@ -2209,6 +3260,9 @@
     },
     "Not finished" : {
 
+    },
+    "Not found" : {
+      "comment" : "A roadmap a step opens that cannot be found"
     },
     "Not on your log yet — retry to add it." : {
 
@@ -2227,6 +3281,9 @@
     },
     "Note" : {
       "comment" : "A note: one Coach keeps, or one written on a set"
+    },
+    "Note edited" : {
+
     },
     "Notes" : {
       "comment" : "The notes Coach keeps: a term in Coach's greeting, a settings row and its screen's title"
@@ -2251,6 +3308,12 @@
     },
     "Older lines that echo what you wrote today. Only you see them; they cost nothing." : {
 
+    },
+    "Oldest First" : {
+
+    },
+    "Olive" : {
+      "comment" : "A step's colour, said where no kind names it"
     },
     "On the web" : {
 
@@ -2285,11 +3348,23 @@
     "Only on this phone · Keep it" : {
 
     },
+    "Only you" : {
+
+    },
     "Only you. No prompts, no fields, nothing to fill in — write a line or a page." : {
 
     },
     "Open" : {
       "comment" : "A target of no sets: an open plan"
+    },
+    "Open Roadmap" : {
+
+    },
+    "Open Subtree" : {
+
+    },
+    "Open in Graph" : {
+
     },
     "Open plan" : {
 
@@ -2305,6 +3380,9 @@
     },
     "Opening %@ as soon as it’s ready." : {
       "comment" : "Bringing it back: Opening Journal as soon as it’s ready."
+    },
+    "Opens" : {
+
     },
     "Opens Coach to review this workout" : {
 
@@ -2351,7 +3429,19 @@
     "Page %lld of 4" : {
       "comment" : "The introduction's page control: Page 2 of 4"
     },
+    "Paste Steps" : {
+
+    },
+    "Paste not allowed" : {
+      "comment" : "The band when the system was not allowed to hand Paste Steps the copied text"
+    },
     "Paste the full sign-in link or its token." : {
+
+    },
+    "Pasted link" : {
+
+    },
+    "Pasted plan" : {
 
     },
     "Performed" : {
@@ -2375,8 +3465,14 @@
     "Plan" : {
       "comment" : "What the finish receipt compares a set against: the routine's plan"
     },
+    "Plan a goal as steps that unlock each other." : {
+
+    },
     "Plan changes" : {
 
+    },
+    "Plum" : {
+      "comment" : "A step's colour, said where no kind names it"
     },
     "Points of sail" : {
 
@@ -2419,6 +3515,9 @@
 
     },
     "Read your movement history" : {
+
+    },
+    "Recolor" : {
 
     },
     "Reconnecting…" : {
@@ -2472,6 +3571,108 @@
     "Removed" : {
       "comment" : "What a proposed change does to a movement or routine"
     },
+    "Removes %lld steps" : {
+      "comment" : "A delete of several steps: how many it removes",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Removes %lld steps · %lld branches resplice" : {
+      "comment" : "A delete of several steps: how many it removes, and how many steps that follow them are linked past them",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes %1$#@steps@ · %2$#@branches@"
+          },
+          "substitutions" : {
+            "branches" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg branch resplices"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg branches resplice"
+                    }
+                  }
+                }
+              }
+            },
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Removes this step" : {
+
+    },
+    "Removes this step · %lld branches resplice" : {
+      "comment" : "A step's delete question: how many steps that follow the step are linked past it",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes this step · %lld branch resplices"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes this step · %lld branches resplice"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Removing…" : {
 
     },
@@ -2487,11 +3688,40 @@
     "Reps: %@" : {
 
     },
+    "Requires" : {
+
+    },
     "Resend code" : {
 
     },
     "Resend code in 0:%@" : {
 
+    },
+    "Reset" : {
+
+    },
+    "Reset returns %lld steps to Locked" : {
+      "comment" : "A Done step's status line: how many steps Reset would lock again",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reset returns %lld step to Locked"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reset returns %lld steps to Locked"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Rest" : {
       "comment" : "The rest between sets"
@@ -2506,6 +3736,77 @@
 
     },
     "Roadmap" : {
+
+    },
+    "Roadmap Order" : {
+
+    },
+    "Roadmap attached" : {
+
+    },
+    "Roadmap detached" : {
+
+    },
+    "Roadmap detached · your mark is back" : {
+
+    },
+    "Roadmap planted · %lld steps" : {
+      "comment" : "The band once a roadmap is planted from a plan: how many steps it holds",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Roadmap planted · %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Roadmap planted · %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Roadmap planted · %lld steps · %lld already done" : {
+      "comment" : "The band once a roadmap is planted from a plan: how many steps it holds, and how many of them the plan brought done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Roadmap planted · %1$#@steps@ · %2$lld already done"
+          },
+          "substitutions" : {
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Roadmap renamed" : {
 
     },
     "Room" : {
@@ -2554,6 +3855,18 @@
 
     },
     "Search movements" : {
+
+    },
+    "See what’s up next" : {
+
+    },
+    "Select" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Select Steps" : {
 
     },
     "Selected" : {
@@ -2682,6 +3995,9 @@
         }
       }
     },
+    "Set Aside" : {
+
+    },
     "Set note" : {
 
     },
@@ -2694,11 +4010,17 @@
     "Settings" : {
 
     },
+    "Share" : {
+
+    },
     "Share this workout" : {
 
     },
     "Share with Coach" : {
 
+    },
+    "Shared roadmap · %@" : {
+      "comment" : "A shared roadmap's cover: under its name, how far its owner is"
     },
     "Sharing needs a connection. The link is still live." : {
 
@@ -2709,7 +4031,19 @@
     "Sharing needs your account. Sign in first." : {
 
     },
+    "Show" : {
+
+    },
     "Show less" : {
+
+    },
+    "Showing %@" : {
+      "comment" : "The Board's first row while a kind filter narrows it: the kinds shown"
+    },
+    "Sign In" : {
+
+    },
+    "Sign In to Fork" : {
 
     },
     "Sign in" : {
@@ -2731,6 +4065,12 @@
 
     },
     "Sign in to continue." : {
+
+    },
+    "Sign in to fork this roadmap." : {
+
+    },
+    "Sign in to open this roadmap." : {
 
     },
     "Sign in to review this proposal." : {
@@ -2784,7 +4124,22 @@
     "Skip" : {
 
     },
+    "Sky" : {
+      "comment" : "A step's colour, said where no kind names it"
+    },
+    "Someone else’s roadmap? Fork it first — the copy is yours." : {
+
+    },
+    "Someone else’s · you can read it" : {
+
+    },
     "Something changed while you chose. Sign out again." : {
+
+    },
+    "Sort" : {
+      "comment" : "The Board's Sort and filter menu: the order of Up next and Locked"
+    },
+    "Sort and filter" : {
 
     },
     "Squat" : {
@@ -2799,6 +4154,9 @@
     "Start anywhere." : {
 
     },
+    "Start from" : {
+
+    },
     "Start workout" : {
 
     },
@@ -2811,6 +4169,15 @@
     "Step" : {
       "comment" : "A movement's load step"
     },
+    "Step edited" : {
+
+    },
+    "Steps" : {
+
+    },
+    "Steps you add and complete show here." : {
+
+    },
     "Still syncing" : {
 
     },
@@ -2821,6 +4188,15 @@
 
     },
     "Stopped." : {
+
+    },
+    "Subtask edited" : {
+
+    },
+    "Subtasks" : {
+
+    },
+    "Subtree" : {
 
     },
     "Swap %@" : {
@@ -2843,6 +4219,9 @@
     },
     "Targets" : {
 
+    },
+    "Terracotta" : {
+      "comment" : "A step's colour, said where no kind names it"
     },
     "That code didn't work. Check the digits, or send a fresh one." : {
 
@@ -2883,6 +4262,9 @@
     "That weigh-in could not be saved. Try again." : {
 
     },
+    "The Board lists every step." : {
+
+    },
     "The account changed while editing. Open the routine again." : {
 
     },
@@ -2899,6 +4281,12 @@
 
     },
     "The catalog didn’t load. It comes back when you have signal." : {
+
+    },
+    "The combined note is too long." : {
+
+    },
+    "The copy on this iPhone couldn’t be read." : {
 
     },
     "The first set you log lands here." : {
@@ -2923,6 +4311,12 @@
 
     },
     "The rack could not be changed. Try again." : {
+
+    },
+    "The roadmap reached its limit." : {
+
+    },
+    "The roadmap was deleted elsewhere." : {
 
     },
     "The routine" : {
@@ -2955,13 +4349,25 @@
     "There is room for %lld. Remove one before adding another." : {
 
     },
+    "These come after this step." : {
+
+    },
+    "These come before this step." : {
+
+    },
     "These routines couldn’t be saved. Your response is kept; try again." : {
+
+    },
+    "These steps can’t be added." : {
 
     },
     "They are deleted from this phone. You can’t undo this." : {
 
     },
     "They live only on this phone. Sign in to back them up and open them on the web." : {
+
+    },
+    "They’re removed from this iPhone." : {
 
     },
     "This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too." : {
@@ -3065,6 +4471,27 @@
     "This response has expired. Your draft is still on this phone." : {
 
     },
+    "This roadmap" : {
+
+    },
+    "This roadmap can’t be found." : {
+
+    },
+    "This roadmap can’t be found. Choose another, or detach it." : {
+
+    },
+    "This roadmap can’t be opened" : {
+
+    },
+    "This roadmap changed elsewhere." : {
+
+    },
+    "This roadmap is at its limit." : {
+
+    },
+    "This roadmap isn’t on this iPhone." : {
+
+    },
     "This routine could not be deleted. Try again." : {
 
     },
@@ -3116,6 +4543,9 @@
     "Times" : {
       "comment" : "When a workout started and finished"
     },
+    "Title" : {
+
+    },
     "To keep a copy, export it first at windmill.works." : {
 
     },
@@ -3147,6 +4577,9 @@
     "Trained every week of %@" : {
 
     },
+    "Try Again" : {
+
+    },
     "Try again" : {
 
     },
@@ -3164,6 +4597,35 @@
     },
     "Type your email to confirm" : {
 
+    },
+    "URL" : {
+
+    },
+    "Undo" : {
+
+    },
+    "Unlocks %@" : {
+      "comment" : "An Up next step's reason: the step that finishing it unlocks"
+    },
+    "Unlocks %@ +%lld" : {
+      "comment" : "An Up next step's reason: the first step that finishing it unlocks, and how many more",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unlocks %1$@ +%2$lld"
+          }
+        }
+      }
+    },
+    "Untitled roadmap" : {
+
+    },
+    "Untitled step" : {
+
+    },
+    "Up next" : {
+      "comment" : "The Board's group of steps that can be done now"
     },
     "Update" : {
 
@@ -3205,6 +4667,12 @@
 
     },
     "Varied sets" : {
+
+    },
+    "View" : {
+
+    },
+    "View Branch" : {
 
     },
     "View chat" : {
@@ -3271,6 +4739,15 @@
     "What I am training for" : {
 
     },
+    "What are you working toward?" : {
+
+    },
+    "What belongs here?" : {
+
+    },
+    "What does this step cover?" : {
+
+    },
     "Where to start?" : {
 
     },
@@ -3289,6 +4766,9 @@
     },
     "Window" : {
       "comment" : "The chart's window picker, read by VoiceOver: the stretch of time the chart shows"
+    },
+    "Won’t complete by itself" : {
+      "comment" : "An Up next step's status: the roadmap it opens leads back to this one"
     },
     "Workout" : {
 
@@ -3395,6 +4875,9 @@
     "You can’t undo this." : {
 
     },
+    "You have no other roadmaps yet." : {
+
+    },
     "You have used all of your AI allowance." : {
 
     },
@@ -3413,6 +4896,35 @@
     "Your AI allowance has no room for this request." : {
 
     },
+    "Your Done mark is set aside while it opens a roadmap, so %lld steps lock again." : {
+      "comment" : "The Roadmap section's footer of a step marked Done by hand: how many steps lock again while it opens a roadmap",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your Done mark is set aside while it opens a roadmap, so %lld step locks again."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your Done mark is set aside while it opens a roadmap, so %lld steps lock again."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Your Done mark is set aside while it opens a roadmap." : {
+
+    },
+    "Your Roadmaps" : {
+
+    },
     "Your Windmill email" : {
 
     },
@@ -3423,6 +4935,9 @@
 
     },
     "Your account is deleted" : {
+
+    },
+    "Your agents and people you share this roadmap with can read the guide." : {
 
     },
     "Your choice couldn’t be saved. Try again." : {
@@ -3458,6 +4973,9 @@
     "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began." : {
 
     },
+    "Your first step" : {
+
+    },
     "Your full training history needs a connection to finish syncing." : {
 
     },
@@ -3471,6 +4989,9 @@
 
     },
     "Your journal and training, no account needed." : {
+
+    },
+    "Your links" : {
 
     },
     "Your log is still arriving on this phone. Ask again in a moment." : {
@@ -3492,6 +5013,9 @@
 
     },
     "Your pages and log stay in your account and leave this phone." : {
+
+    },
+    "Your roadmap, journal and training, no account needed." : {
 
     },
     "Your routines are saved. Check the response to restore their links." : {
@@ -3748,6 +5272,45 @@
     "rest %@" : {
       "comment" : "A planned rest, read aloud: rest 2 minutes"
     },
+    "roadmap.board.done" : {
+      "comment" : "The Board's group of completed steps",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "roadmap.graph.next" : {
+      "comment" : "The Graph's bar, before the name of the first Up next step: the step to take next",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Next"
+          }
+        }
+      }
+    },
+    "roadmap.history.added" : {
+      "comment" : "A step's History: the row of its creation",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Added"
+          }
+        }
+      }
+    },
+    "roadmaps" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
     "saved" : {
 
     },
@@ -3787,9 +5350,6 @@
     "training" : {
       "comment" : "What the account already has, in the sign-in question"
     },
-    "training and journal pages" : {
-      "comment" : "What the account already has, in the sign-in question"
-    },
     "two short" : {
       "comment" : "A set two reps short of its plan"
     },
@@ -3804,6 +5364,9 @@
     },
     "yesterday" : {
       "comment" : "A day inside a sentence"
+    },
+    "“%@” is too large to read." : {
+      "comment" : "New Roadmap's footer when the file chosen is past the size the phone reads: the file's name"
     },
     "•" : {
       "shouldTranslate" : false

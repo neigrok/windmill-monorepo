@@ -1,6 +1,9 @@
 import Foundation
 import Sentry
+import SyncCore
 import SyncEngine
+import SyncReplica
+import SyncSchema
 import Synchronization
 
 nonisolated struct TelemetryMetadata: Sendable {
@@ -41,41 +44,122 @@ nonisolated enum TelemetryPrivacy {
     "gym_workout_adjusted", "gym_exercise_updated", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "coach_turn", "coach_ability", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
     "gym_workout_picker", "gym_rest_target_reached", "gym_workout_plan_changed", "gym_receipt_plan_saved", "gym_workout_load_typed",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
-    "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete"
+    "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
+    "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused",
+    "roadmap_board_step_open", "roadmap_board_step_action", "roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion",
+    "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select", "roadmap_whats_next", "roadmap_graph_fit",
+    "roadmap_board_workspace", "roadmap_board_menu", "roadmap_board_sort", "roadmap_board_filter", "roadmap_board_clear",
+    "roadmap_board_branch", "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_activity",
+    "roadmap_first_read", "roadmap_guide", "roadmap_link_opened", "roadmap_cover", "fork_attempt", "fork_claim",
+    "roadmap_tree_open", "roadmap_tree_back", "roadmap_subtree_open", "roadmap_subtree_back", "roadmap_tree_attach",
+    "roadmap_landing", "roadmap_write_cannot_land", "roadmap_kept"
   ]
   static let labels: [String: Set<String>] = [
-    "room": ["journal", "gym"],
+    "room": ["journal", "gym", "roadmap"],
     "page": ["windmill", "roadmap", "journal", "gym"],
     "presentation": ["first_launch", "replay"],
-    "screen": ["routine", "routine_editor", "edit_sets", "routine_movement_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
+    "screen": ["routine", "routine_editor", "edit_sets", "routine_movement_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending", "room_sign_in"],
     "field": ["weight", "reps"],
-    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land"],
-    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled"],
-    "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
+    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
+               "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo",
+               "openInGraph", "viewBranch", "clear", "copyLink"],
+    "outcome": ["signed_out", "unauthenticated", "busy", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left", "cleared", "own", "readable", "unreadable", "copied"],
+    "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other", "last_root", "closed", "forked", "copy_late", "replaced", "refused", "device", "empty", "denied", "roadmapDeleted", "capFilled", "accessEnded", "noteTooLong"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
     "seat": ["anon", "bound"],
-    "target": ["workout", "routine"],
-    "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share"],
-    "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"],
-    "surface": ["activity", "control", "shortcut"],
+    "target": ["workout", "routine", "none", "roadmap", "step"],
+    "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share", "true", "false"],
+    "code": Set(["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"])
+      // A notice's refusal code: the engine's, and each product's its registry declares.
+      .union(RefusalCode.engine.map(\.text)).union(SyncSchema.registry.products.flatMap(\.codes).map(\.text)),
+    "surface": ["activity", "control", "shortcut", "document", "board", "history"],
     "intent": ["start_workout", "open_workout"],
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form", "graph", "find", "tool", "bulk", "activity", "link", "import", "file", "paste", "band"],
+    // The Roadmap room, in the web's vocabulary: the act a Board event tells of, the step of a delete, of the roadmaps'
+    // switcher, of a new roadmap or of the step form, the view a step's delete was made on, the group a step stands in
+    // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
+    // refusal or a failure names, and the refusal's kind. A step's page is the web's document, and its acts are the three
+    // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the five below.
+    // Of the Graph: the view the switch chose or a roadmap opened on, with the roadmap's size as a bucket where the
+    // Graph comes up, *Next*'s menu opened and a step picked from it with the steps Up next as a bucket, Fit shown and
+    // left, and under a missed budget which one and the roadmap's size as a bucket.
+    // Of a step's workspace: the act, among the actions above in the web's words, and the act its Undo took back.
+    // Of the Board's query, its selection and the Kinds sheet: the menu opened, the order chosen, what a Clear cleared and
+    // where, the way a selection ended, the edit a kind's change made, and the kinds shown as a bucket under `count`.
+    // Of Activity and a step's History: what their read came to as they opened, rows or none, and a fold opened; of the
+    // room's first read, its spinner shown and how its wait ended. Of the Guide: whether guides from above apply as it
+    // opens, how a draft began, a saved guide's length as a bucket, a draft gone past its limit, a save that wrote over a
+    // guide written elsewhere, and why a save was not written: refused by the domain, or failed on the device.
+    // Of a plan: New Roadmap's door, a copied plan or a file, as it was read back, cleared or could not be read, and the
+    // roadmap made with its steps as a bucket under `count`; Paste Steps read back, added with its steps as a bucket,
+    // refused with the domain's refusal, cancelled, undone, or reading nothing for an empty clipboard or a paste not
+    // allowed, and Settings opened from that band. Of a step that opens a roadmap: attached, changed or detached, and the
+    // attach list opened, a link pasted into it and a roadmap forked first.
+    "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete", "recolor", "removeKind", "guide", "graft",
+            "attach", "change", "detach"],
+    "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close",
+             "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "edit", "save", "tooLong", "conflict",
+             "read", "clear", "unread", "settings", "refused", "paste", "fork", "attach", "change", "detach", "copy", "discardAll"],
+    "menu": ["sortFilter"],
+    "sort": ["roadmap", "newest", "oldest"],
+    "what": ["kinds"],
+    "from": ["row", "empty"],
+    "via": ["done", "act", "edit", "add"],
+    "read": ["loaded", "empty", "missing", "offline", "seeds", "failed"],
+    "above": ["none", "some"],
+    "length": ["0", "1-500", "501-2000", "2001-4500", "4501-5000"],
+    // A roadmap's link and a shared roadmap's cover: the claimed form the address came in, whether the roadmap it named was
+    // the person's own, and Fork's one way on the iPhone, the web's instant one.
+    "address": ["share", "app"],
+    "mine": ["true", "false"],
+    "mode": ["instant"],
+    "legend": ["add", "rename", "describe", "recolor", "remove"],
+    "count": ["0", "1", "2-5", "6-20", "21+"],
+    "view": ["board", "graph"],
+    "column": ["locked", "upNext", "done"],
+    "openers": ["none", "some"],
+    "description": ["true", "false"],
+    "kind": ["true", "false"],
+    "prerequisites": ["true", "false"],
+    "opens": ["true", "false"],
+    "links": ["true", "false"],
+    "roadmap": ["true", "false"],
+    // Of a step that opens a roadmap: who went into a subtree, and whether a Done mark was set aside or came back.
+    "role": ["owner", "reader"],
+    "mark": ["kept", "none"],
+    "budget": ["first_frame", "frames"],
+    // What the room tells once of a change that met one made elsewhere (§6): the rule that told it, a step that now
+    // follows something else or one brought back, and where it was told, the band or the step's page. The reason a change
+    // set aside could not land is under `reason` above, a Copy that reached the pasteboard under `outcome`, and the code
+    // of a notice no rule lists under `code`.
+    "rule": ["follows", "cameBack"],
+    "place": ["band", "step"],
+    "steps": ["1-100", "101-1000", "1001-5000", "5001-10000"],
+    "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode", "workspace", "note",
+              "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind", "guide", "ImportSubgraph", "pointer", "clearLanding", "dismissNotice"],
+    "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
-    "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "refusal", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    // A file New Roadmap could not read: its error's domain, and its code as a bucket.
+    "error_domain": ["cocoa", "posix", "other"],
+    "error_code": ["missing", "permission", "unreadable", "cancelled", "other"],
+    // Why an Undo of an act skipped operations when it settled (`sync_inverse`): the engine's closed list, never a code
+    // beyond it.
+    "skip_reason": Set(InverseSkipReason.allCases.map(\.rawValue)),
+    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal", "/v1/trees"],
+    "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "refusal", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted", "fallback", "unseated", "budget", "marks"],
+    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "roadmap_progress", "roadmap_fork", "roadmap_subscribe", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts", "roadmap_plant", "roadmap_file", "roadmap_landing", "roadmap_kept"],
   ]
 
-  // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests and wait (`sync_inverse`):
-  // bounded numbers, never a word.
-  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes", "applied", "skipped", "waiting", "age_ms"]
+  // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests, wait and the targets a
+  // sign-in's Add gave up (`sync_inverse`): bounded numbers, never a word.
+  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes", "applied", "skipped", "waiting", "age_ms", "given_up"]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {
     var result: [String: EventValue] = [:]

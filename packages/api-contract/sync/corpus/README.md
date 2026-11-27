@@ -420,8 +420,8 @@ server state's `product`: a command's replay is read from the records.
 roadmap with a place; *the subtrees under* a roadmap are those whose places lead up to it. A step is *present*
 while its `node` is alive.
 
-**A root's visibility** is the owner's client `lww` field `meta.visibility`, so the newest gesture's choice
-stands. Its change writes reach (check 4 below). Discovery declares `self/roadmap` and every alive subtree under
+**A root's visibility** is the owner's client `lww` field `meta.visibility`, `private` or `public`, so the newest
+gesture's choice stands; any other value, `unlisted` among them, is refused `invalid` (engine.md §6.1 step 2). Its change writes reach (check 4 below). Discovery declares `self/roadmap` and every alive subtree under
 `T` for an intent of `tree/<T>` whose delta writes `meta.visibility`, or whose `roadmap.restoreTree` restores it.
 
 **Commands:**
@@ -620,8 +620,8 @@ cannot hold it beside a nonempty stem.
 
 `input: {registry}` · `expect: {admitted}`: whether an implementation loads `registry`, a whole registry
 document, or refuses it as it loads (engine.md §2.4). Each refused document breaks one rule beside an
-admitted one. It covers headline placement and uniqueness, ID-definition exclusivity, Unicode ID
-domain grammar, identity classes, and mint and fallback bounds.
+admitted one. It covers headline placement and uniqueness, which types may be revivable, ID-definition
+exclusivity, Unicode ID domain grammar, identity classes, and mint and fallback bounds.
 
 ### `registry/ids.json` — all
 
@@ -838,7 +838,7 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 | `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life turns dead) |
 | `serial.json`, `caps.json`, `lifecycle.json`, `text.json` | steps 11, 12, 15 and §6.11 through admission |
 | `server-stamps.json` | §10.3: one tick per pass of step 9, after observing the registers the server deltas write, as stored and as a same-intent client delta writes them |
-| `restore.json` | K-3 (engine.md §6.4): `probe.restore`, `probe.restoreTree` and `probe.restoreOverlay` hold or skip each operation by its own condition (a field's version, a text's revision, an absent field of one birth, a created record's footprint and row sequence, a wholly absent id, the epoch) and write what holds under a fresh server stamp, with `{inverse: {outcomes}}` in the scoped detail's `command`; malformed operations are `invalid`; `probe.unbranch` kills the board a branch created, with its tree, and takes back the parent title while its evidence holds, skips whole when the created tree moved, and is `invalid` without proof of the board and tree; an inverse command whose detail reports no outcome is a technical contract fault that commits nothing |
+| `restore.json` | K-3 (engine.md §6.4): `probe.restore`, `probe.restoreTree` and `probe.restoreOverlay` hold or skip each operation by its own condition (a field's version, a text's revision, an absent field of one birth, a created record's footprint and row sequence, a wholly absent id, the epoch) and write what holds under a fresh server stamp, a keyed record's revival with the values it carries where the stored record is dead (a record found alive keeps its own), with `{inverse: {outcomes}}` in the scoped detail's `command`; malformed operations are `invalid`; `probe.unbranch` kills the board a branch created, with its tree, and takes back the parent title while its evidence holds, skips whole when the created tree moved, and is `invalid` without proof of the board and tree; an inverse command whose detail reports no outcome is a technical contract fault that commits nothing |
 | `references.json` | E-8 through admission: `probe.sprout` creates its child with its `parent`, answers the subtree a step owns, admits a step in an absent tree, keeps the same step id in another tree apart, and refuses a taken proposed child; malformed typed leaves (a number, outside the tag pattern, empty, no board id) in arguments and in a nested `parent` are `invalid` with the state unchanged; a null `parent` names nothing; `probe.adopt` creates, answers a labelled tag of its own tree only, and refuses a taken id |
 
 The parent rule is checked against the joined records of the intent, so a lap under a run the same
@@ -1190,7 +1190,7 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 | `readInverseResult` | `requestId` | §7.3 Undo of an act | an `InverseResult` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
 | `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1); a malformed authenticated conflict throws | `{throws: true}` for a malformed conflict; `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
-| `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
+| `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` and forgets `serverSchema`; a 200 served as the account records its `schema` in `serverSchema` (§9.2) | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes?` | without `scopes`, reconciles and requests the replica’s resolved set; otherwise requests the given set. Uses stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
 | `pullResponse` | `response`, `chunk?`, `settle?`, `dieAfter?` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `partial` (a page `dieAfter` cut short), `unsettled` (a page applied whose settling `dieAfter` cut short), `outside` (a page for a scope outside the subscription set, which applies nothing and pulls nothing again: a known scope, or one the last `reconcile` left out), `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1); `null` when the replica the last `pull` was made for is no longer the active one, and nothing applies (§7.12) |
@@ -1220,7 +1220,7 @@ is answered for the caller to resume.
 | `{op: 'update', t, id, f?, x?}` | minted and derived types |
 | `{op: 'delete', t, id}` | minted and derived types; for a keyed type, a put that removes |
 | `{op: 'revive', t, id, f?}` | minted and derived types |
-| `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true. A put that leaves a `wholePut` record present names every client-written field (else it throws) and writes each, changed or not, with a life `[alive, stamp]` |
+| `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true. A put that makes the record present diffs against no record: it writes every field it names, changed or not, though its dead row in `drawn` still shows the value. A put that leaves a `wholePut` record present names every client-written field (else it throws) and writes each, changed or not, with a life `[alive, stamp]` |
 | `{op: 'write', t, id, f?, x?}` | keyed types without life, and singletons |
 | `{op: 'move', t, id, anchor}` | minted and derived types, the only ones with an order field; an update of only `anchor.field` |
 
@@ -1340,7 +1340,8 @@ write-map stamps.
 
 ### commit/*.json
 
-- `deltas.json`: deltas and stamps.
+- `deltas.json`: deltas and stamps; one vector runs a put that makes a keyed record present (Changes) through one sync
+  with the reference server's answers.
 - `ids.json`: minted, seeded and derived ids. A create without `id` mints one by its type's `mint`: the
   prefix, then `length` characters `alphabet[draw]` from the `draws` queue; a derived create without
   `id` and `label` mints the same way. A minted id already taken (in `drawn`, or spent) is drawn again.
@@ -1384,7 +1385,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   under its own scopedEffects command or its scope kind's capture command when it writes a delta; the
   act's `ReversibleAct` holds one source entry per named segment that left an entry, with the first
   local preimages read before any segment changed a projection, each with the confirmed row sequence and
-  epoch it was read at (an unset slot takes the target's `defaultValue`, and with none the act throws), a
+  epoch it was read at, stepped over the receipt rows of the device's own earlier writes of the record that
+  continue it (an unset slot takes the target's `defaultValue`, and with none the act throws), a
   life's with the record it read, and the value the act left in each target. A malformed recipe throws before anything changes. Each
   source's ACK records `{epoch, n, outcome, acceptedEffects?}` in the result's transaction, one attempt an
   epoch; a death before the ACK records nothing and the resend's replayed result is retained; settling
@@ -1411,26 +1413,49 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   the created tree grew; explicit slots replace the stored recipes whole; a Redo writes back the act's own
   value, never a later local edit the server refused; a held cancellation's Redo writes back against the
   accepted versions it found and creates the record again with the act's own creation values, waits for a
-  pending entry's accepted version, binds an ordinary pending edit's own write, and restores nothing for a
-  write a later local edit masked; a cancelled product command has no generic Redo, and takes the
+  pending entry's accepted version, binds the own write of an ordinary edit sent and not yet answered, or the
+  version the receipt of one still queued when the held act read over it accepted, and restores nothing for a
+  write a later local edit masked; a Redo asked signed out of a held put that made a
+  record present draws it and waits for an epoch, creating it once sign-in adds the work to the account's
+  replica, or once a fresh replica's first pull gives it one; a cancelled product command has no generic Redo, and takes the
   product's slots when given; a result whose inverse outcomes are malformed settles its slot skipped and
   later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
   segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
   while an act whose Undo names no recipe at all throws; an Undo of a delete whose death the replica already
-  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo of
+  pulled, and a Redo of a created record's Undo, draw the record back at once with the fields it had; an Undo of a
+  keyed record's synced removal, and of a Redo of it, bring the record back with the fields its death dropped, its
+  restore carrying them to a server whose hello advertised schema 14, on the server as on the device, while to a server
+  that advertised 13 the restore carries the life alone; an Undo of
   a revival of a tag the replica knew only by its spent id walks from the dead row the spent id keeps and applies,
   while one whose spent id keeps no seq, or whose tag another device wrote before the revival reached the server,
   skips; an Undo requested, and a held act's cancellation, in the tree of a child board the server redirects
   follow it into the redirected tree; a mark's `opens` restored, written back or redone after the server
   redirects the board it names takes the redirected id, and a cancelled lap's Redo takes the run the server
-  joined.
+  joined; an Undo of a removal brings back a tag whose birth, by an act that keeps no journal, was pulled
+  before the removal, acknowledged but unpulled, still unsent when it was removed, or still unsent when the
+  Undo was asked, the removal's preimage stepping over the birth's receipt row, while another device's write
+  between the two skips it; a birth or a rename written as an ordinary entry still unsent when the record was
+  removed goes up as its own intent with its scope kind's capture command, so the Undo brings the record back as
+  that entry left it, signed in or signed out, while one already sent, one answered before the removal and not
+  yet pulled, or one the command would carry past a push alone keeps its intent, and its answer, which carries no
+  receipt, skips the Undo; such an entry left with only its capture command when a held birth it depends on is
+  undone, or a birth it depends on is refused, ends as an ordinary entry would, sending nothing; a preimage never
+  steps over an earlier segment
+  of its own act, and steps over two acknowledged own writes, a birth and a rename, in commit order; and an Undo asked signed out of a removal whose record was born there brings it back once
+  sign-in adds the work and sends it; an act made signed out gives up at sign-in each target the account's dormant replica
+  holds a write of, an unsent one, one acknowledged after sign-out and not yet pulled, or a receipt its journal keeps, so
+  its Undo restores nothing there, while a target of another record, or one no dormant write touches, stays and restores;
+  an Undo waiting signed out withdraws its operation on such a target and counts it skipped, while a waiting Redo keeps
+  its operation, which the version it expects guards on the server; and a preimage does not
+  step over an own write whose receipt starts at a row another device wrote, one answered in another epoch, a command's
+  receipt row of a record it did not predict, or a write committed after the act that went up first.
 
 ### refusal/*.json
 
 `fold.json`, `restamp.json` (clock-skew) and `base-unknown.json` use responses from the reference
 server.
 `transport.json` covers one-intent 400 and 413, a halving 413, the 401 and 409 offset samples, a 409
-`account-mismatch`, a 200, 409 or hello served as another principal, hello, re-identify, an epoch
+`account-mismatch`, a 200, 409 or hello served as another principal, hello and the schema it records or forgets, re-identify, an epoch
 change, and process deaths between two result batches: the results recorded stand, the rest stay
 `sent` with `ackThrough` unmoved, and their resend is answered from the stored results. A replica that
 has never heard the server's epoch takes it with the first result, so after such a death a pull from a

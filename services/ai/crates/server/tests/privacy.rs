@@ -390,6 +390,8 @@ fn content_stays_out_of_logs_sentry_database_and_provider_identity() {
     assert!(logs.contains("call.text"));
     assert!(logs.contains("call.transcription"));
     assert!(logs.contains("invalid_request"));
+    assert!(logs.contains(r#""refusal":"schema_too_complex""#));
+    assert!(logs.contains(r#""refusal":"prompt_too_long""#));
     for private in [
         MARKER,
         PRINCIPAL,
@@ -491,11 +493,20 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
             "/v1/messages/count_tokens",
             post({
                 let seen = seen.clone();
+                let mode = mode.clone();
                 move |Json(value): Json<Value>| {
                     let seen = seen.clone();
+                    let mode = mode.clone();
                     async move {
                         seen.lock().unwrap().push(value);
-                        Json(json!({"input_tokens":10}))
+                        match mode.load(Ordering::SeqCst) {
+                            4 => (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"type":"error","error":{"type":"invalid_request_error","message":format!("prompt is too long: {MARKER}")}})),
+                            )
+                                .into_response(),
+                            _ => Json(json!({"input_tokens":10})).into_response(),
+                        }
                     }
                 }
             }),
@@ -513,6 +524,11 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
                         match mode.load(Ordering::SeqCst) {
                             1 => (StatusCode::UNAUTHORIZED, MARKER).into_response(),
                             2 => ([(header::CONTENT_TYPE, "text/event-stream")], answer(true))
+                                .into_response(),
+                            3 => (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"type":"error","error":{"type":"invalid_request_error","message":format!("Schema is too complex for compilation: {MARKER}")}})),
+                            )
                                 .into_response(),
                             _ => ([(header::CONTENT_TYPE, "text/event-stream")], answer(false))
                                 .into_response(),
@@ -813,6 +829,15 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
     )
     .await;
     assert!(assumed.1.contains("provider_failed"));
+    for (refusal, path) in [
+        (3, "/v1/calls/schema_call_12345678901234567/text"),
+        (4, "/v1/calls/counted_call_1234567890123456/text"),
+    ] {
+        mode.store(refusal, Ordering::SeqCst);
+        let rejected = call(&router, "PUT", path, PRINCIPAL, request.clone()).await;
+        assert!(rejected.1.contains("provider_rejected"));
+        assert!(!rejected.1.contains(MARKER));
+    }
     let mut malformed = request;
     malformed["unknown"] = json!(MARKER);
     let refused = call(

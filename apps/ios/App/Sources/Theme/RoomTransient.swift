@@ -13,6 +13,9 @@ struct RoomTransient: View {
   var actionIdentifier: String?
   var action: (() -> Void)?
   var dismiss: (() -> Void)?
+  // The band's type, and the weight of its action word where a room draws it heavier than the message.
+  var type = Font.footnote
+  var actionWeight: Font.Weight?
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.bandScrolls) private var scrolls
@@ -30,13 +33,13 @@ struct RoomTransient: View {
           Group {
             if let actionSymbol {
               Image(systemName: actionSymbol).foregroundStyle(room.inkDim).accessibilityLabel(actionTitle ?? String(localized: "Dismiss"))
-            } else { Text(actionTitle ?? String(localized: "Dismiss")).foregroundStyle(room.accent) }
+            } else { Text(actionTitle ?? String(localized: "Dismiss")).fontWeight(actionWeight).foregroundStyle(room.accent) }
           }.frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
           .accessibilityIdentifier(actionIdentifier ?? "transient-action")
       }
-    }.font(.footnote)
+    }.font(type)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       .frame(minHeight: RoomSpace.minimumTarget)
       .roomGlass(in: .card, floating: true)

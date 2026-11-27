@@ -17,19 +17,27 @@ const PRODUCTS = path.join(WEB, 'src', 'products');
 const FIXTURES = path.join(WEB, 'test', 'fixtures', 'domain-layering');
 
 const NAME = '[\\w-]+';
+// A domain file `depth` folders below its product's `domain/` reaches the kit, the shared core, the schema and its own
+// product's caps (`packages/api-contract/<product>/limits.json`, data and nothing else) through as many more `../`, and its
+// own domain through at most that many, never above it.
 const IMPORTS = {
-  kit: [
+  kit: () => [
     new RegExp(`^(?:\\.\\./){4}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
     /^\.\.\/sync\/core\/(?:encoding|content)\.js$/,
     new RegExp(`^\\./${NAME}\\.js$`),
   ],
-  domain: [
-    new RegExp(`^\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
-    new RegExp(`^(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
-    /^\.\.\/\.\.\/\.\.\/platform\/sync\/core\/(?:encoding|content)\.js$/,
-    /^\.\.\/\.\.\/\.\.\/platform\/sync\/schema\.js$/,
-    new RegExp(`^\\./${NAME}\\.js$`),
-  ],
+  domain: (depth, product) => {
+    const up = `(?:\\.\\./){${depth}}`;
+    const own = depth === 0 ? '\\./' : `(?:\\./|(?:\\.\\./){1,${depth}})`;
+    return [
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
+      new RegExp(`^${up}(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/sync/core/(?:encoding|content)\\.js$`),
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/sync/schema\\.js$`),
+      new RegExp(`^${up}(?:\\.\\./){5}packages/api-contract/${product}/limits\\.json$`),
+      new RegExp(`^${own}(?:${NAME}/)*${NAME}\\.js$`),
+    ];
+  },
 };
 const TOKENS = new Set(['Date', 'crypto', 'performance', 'setTimeout', 'setInterval', 'queueMicrotask',
   'requestAnimationFrame', 'Promise', 'fetch', 'indexedDB', 'window', 'document', 'globalThis', 'navigator',
@@ -51,7 +59,7 @@ function walk(node, visit, parent = null) {
 }
 
 // `directory` is where the file lives, for the existence check; fixtures pass null and pose as `name`.
-function findings({ layer, name, text, directory }) {
+function findings({ layer, name, text, directory, product = null }) {
   const found = [];
   const report = (line, message, token = null) => found.push({ line, message, token });
   const rounds = layer === 'kit' && name === 'values.js';
@@ -66,7 +74,7 @@ function findings({ layer, name, text, directory }) {
   }
 
   const checkImport = (specifier, line) => {
-    if (!IMPORTS[layer].some((shape) => shape.test(specifier))) return report(line, `import '${specifier}' is not a ${layer} import`);
+    if (!IMPORTS[layer](name.split('/').length - 1, product).some((shape) => shape.test(specifier))) return report(line, `import '${specifier}' is not a ${layer} import`);
     if (directory && !fs.existsSync(path.resolve(directory, specifier))) report(line, `import '${specifier}' does not exist`);
   };
   const checkName = (identifier) => {
@@ -141,15 +149,19 @@ function sourceFiles(directory) {
   });
 }
 
-const scan = (layer, file) => findings({ layer, name: path.basename(file), text: fs.readFileSync(file, 'utf8'), directory: path.dirname(file) });
+// A domain file is named by its path below its product's `domain/`, so its depth sets what its imports may reach, and its
+// product which caps it may read.
+const scan = (layer, file, root = path.dirname(file)) => findings({ layer, name: path.relative(root, file).split(path.sep).join('/'),
+  text: fs.readFileSync(file, 'utf8'), directory: path.dirname(file), product: layer === 'domain' ? path.basename(path.dirname(root)) : null });
 
-// A fixture's header: `// layer: kit|domain`, `// file: <the basename it poses as>`, `// expect: <finding>`…
+// A fixture's header: `// layer: kit|domain`, `// file: <the basename it poses as>`, `// product: <the product a domain
+// fixture poses in>`, `// expect: <finding>`…
 function fixture(file) {
   const text = fs.readFileSync(file, 'utf8');
   const header = (key) => text.split('\n').filter((line) => line.startsWith(`// ${key}:`)).map((line) => line.slice(key.length + 4).trim());
   const [layer] = header('layer');
   assert.ok(layer === 'kit' || layer === 'domain', `${path.basename(file)} names no layer`);
-  return { layer, name: header('file')[0] ?? path.basename(file), text, expected: header('expect') };
+  return { layer, name: header('file')[0] ?? path.basename(file), product: header('product')[0] ?? null, text, expected: header('expect') };
 }
 
 const fixtures = fs.readdirSync(FIXTURES).filter((name) => name.endsWith('.js')).sort();
@@ -157,8 +169,8 @@ assert.ok(fixtures.length > 0, 'no fixture under test/fixtures/domain-layering')
 
 for (const name of fixtures) {
   test(`fixture ${name}`, () => {
-    const { layer, name: posedAs, text, expected } = fixture(path.join(FIXTURES, name));
-    assert.deepEqual(findings({ layer, name: posedAs, text, directory: null }), expected);
+    const { layer, name: posedAs, product, text, expected } = fixture(path.join(FIXTURES, name));
+    assert.deepEqual(findings({ layer, name: posedAs, product, text, directory: null }), expected);
   });
 }
 
@@ -177,9 +189,9 @@ test('the exemption list is exactly runner.js, for awaiting the engine', () => {
 test('every kit and domain file has no finding', (t) => {
   const kitFiles = sourceFiles(KIT);
   const domainFiles = (fs.existsSync(PRODUCTS) ? fs.readdirSync(PRODUCTS) : [])
-    .flatMap((product) => sourceFiles(path.join(PRODUCTS, product, 'domain')));
+    .flatMap((product) => sourceFiles(path.join(PRODUCTS, product, 'domain')).map((file) => [file, path.join(PRODUCTS, product, 'domain')]));
   assert.ok(kitFiles.length > 0, 'no kit file was scanned');
-  const faulted = [...kitFiles.map((file) => [file, scan('kit', file)]), ...domainFiles.map((file) => [file, scan('domain', file)])]
+  const faulted = [...kitFiles.map((file) => [file, scan('kit', file)]), ...domainFiles.map(([file, root]) => [file, scan('domain', file, root)])]
     .filter(([, found]) => found.length > 0)
     .map(([file, found]) => `${path.relative(WEB, file)}: ${found.join('; ')}`);
   assert.deepEqual(faulted, []);

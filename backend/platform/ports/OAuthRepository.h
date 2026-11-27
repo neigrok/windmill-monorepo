@@ -65,10 +65,12 @@ struct OAuthRepository {
   // Clients registered since `sinceMs` that never completed an authorization.
   virtual int unattachedClientsSince(UnixMs sinceMs) = 0;
 
+  // The code is bound to the live session `sessionDigest` keys, the one its consent was given through.
   virtual bool insertCode(const std::string& codeDigest, const StoredCode& code,
                           const std::string& sessionDigest, UnixMs now) = 0;
-  // Atomic: returns the grant only to the caller that removed the row, so a code works once.
-  virtual std::optional<StoredCode> takeCode(const std::string& codeDigest) = 0;
+  // Atomic: returns the grant only to the caller that removed the row, so a code works once, and only while the session it
+  // is bound to is live at `now`. A code whose session has ended is spent for nothing.
+  virtual std::optional<StoredCode> takeCode(const std::string& codeDigest, UnixMs now) = 0;
 
   // The token and optional initial consent commit only while this account generation is live.
   virtual bool insertToken(const std::string& accessDigest, const std::string& refreshDigest,

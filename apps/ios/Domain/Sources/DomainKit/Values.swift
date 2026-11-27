@@ -147,10 +147,13 @@ public struct TextSpec: ValueSpec {
   // The text as this spec stores it: composed, then trimmed.
   public func normalised(_ s: String) -> String {
     let composed = nfc ? DomainKitNFC.nfc(s) : s
-    guard trim else { return composed }
-    let scalars = composed.unicodeScalars
-    guard let first = scalars.firstIndex(where: { !TextSpec.isWhitespace($0) }),
-          let last = scalars.lastIndex(where: { !TextSpec.isWhitespace($0) }) else { return "" }
+    return trim ? Self.trimmed(composed) : composed
+  }
+
+  // The text without the kit's whitespace at either end, as a surface takes a typed name before the domain reads it.
+  public static func trimmed(_ s: String) -> String {
+    let scalars = s.unicodeScalars
+    guard let first = scalars.firstIndex(where: { !isWhitespace($0) }), let last = scalars.lastIndex(where: { !isWhitespace($0) }) else { return "" }
     return String(scalars[first...last])
   }
 

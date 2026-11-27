@@ -36,7 +36,8 @@ Json::Value toJson(const EchoSweepReport& report) {
   body["pagesOverBudget"] = report.pagesOverBudget;
   body["pagesRefused"] = report.pagesRefused;
   body["unitsDiscarded"] = report.unitsDiscarded;
-  body["usersOverAiBudget"] = report.usersOverAiBudget;
+  body["accountsStopped"] = report.accountsStopped;
+  body["passStoppedBy"] = report.passStoppedBy;
   return body;
 }
 
@@ -224,7 +225,7 @@ EchoApi::EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSwe
       adminToken_(std::move(adminToken)) {}
 
 void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<User> caller = callerUserOf(req, *auth_);
+  std::optional<User> caller = SentCaller::of(req, *auth_).user;
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to read your echoes"));
     return;
@@ -293,7 +294,7 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
 void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                       const std::string& triggerDay, const std::string& matchDay) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
     return;
@@ -317,7 +318,7 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& triggerDay) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
     return;
@@ -338,7 +339,7 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                            const std::string& triggerDay) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to retire an offer"));
     return;
@@ -359,7 +360,7 @@ void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& triggerDay, const std::string& matchDay) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to mark an echo useful"));
     return;
@@ -381,7 +382,7 @@ void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& triggerDay, const std::string& matchDay) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in"));
     return;
@@ -447,7 +448,7 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
   // And a signed-in owner on top of it: this hands back whole passages, and only the caller's own.
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in as the owner of the page"));
     return;

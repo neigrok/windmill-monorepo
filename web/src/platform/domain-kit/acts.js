@@ -1,10 +1,11 @@
 // @ts-check
+import { decision } from './actions.js';
 import { Id } from './entities.js';
 import { Reader, Views } from './reading.js';
 import { precondition } from './values.js';
 
 /** @typedef {{ scope: string, stamp: string | null, localIds: string[], ids: (import('./entities.js').RecordID | null)[] }} ActSegmentReceipt */
-/** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null }} ActReceipt */
+/** @typedef {{ gestureId: string, segments: ActSegmentReceipt[], retired: string[], superseded: string[], releaseAt: number | null, undo: import('./runner.js').UndoHandle }} ActReceipt */
 /** @typedef {{ scopes: string[], hold: boolean, gestureId?: string, undo?: { version: 1, segments: { index: number, recipes: import('./values.js').Json[] }[] } }} ActRequest */
 /**
  * The engine's act context (engine §7.1 Ordered local acts). In a composed act, `stage` commits one part's segment to the
@@ -67,6 +68,25 @@ export class ActIDSource {
   /** @template E @param {import('./entities.js').EntityType<E>} type @param {string | null} [scope] */
   mint(type, scope = type.scope) { return new Id(this.#context.mintID(type.type, type.boundScope(scope)), type); }
   opaqueID() { return this.#context.opaqueID(); }
+}
+// A one-scope action (§9.1) as an act: it loads and mints in its own scope through the act's reader, and its plan is the
+// act's one segment. So the runner runs a reversible action, and a composed act (§9.7) takes actions as its parts.
+/**
+ * @template L, T, R
+ * @param {import('./actions.js').Decider<L, T, R>} action
+ * @returns {ActAction<L, T, R>}
+ */
+export function scopedAct(action) {
+  const scope = action.scope;
+  return {
+    refusals: action.refusals,
+    load: (read) => read.inScope(scope, (reader) => action.load(reader)),
+    decide: (loaded, ids) => {
+      const decided = decision(action, loaded, /** @type {any} */ ({ mint: (/** @type {any} */ type) => ids.mint(type, scope), opaqueID: () => ids.opaqueID() }));
+      if (decided.kind !== 'write') return decided;
+      return ActDecision.write(new ActPlan([new ScopedPlan(scope, decided.plan)]), decided.result);
+    },
+  };
 }
 // A segment the kit refuses before the engine writes it (a gone record), naming the composed act's part it belongs to.
 export class ActPrediction extends Error {

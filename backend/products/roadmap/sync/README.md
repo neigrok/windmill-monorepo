@@ -32,7 +32,7 @@ Postgres. `roadmap/client.json` belongs to the client role.
   whose seq did not continue above its old head, keeps its deed and the intent lands; the lost deed is reported as
   `roadmap.activity.record` `seq-taken`.
 
-`platform/infra/SyncProducts` composes roadmap beside gym and journal at schema 13 / minimum 11. `windmill_server`
+`platform/infra/SyncProducts` composes roadmap beside gym and journal at schema 15 / minimum 15. `windmill_server`
 serves roadmap's scopes only where `ROADMAP_ENGINE_ENABLED` is `true` or `1`; otherwise the catalog withholds the
 product (`SyncCatalog::withhold`): hello says it holds nothing, `self/roadmap` pulls empty, its trees and overlays are
 not found, and an intent is refused `forbidden` in `self/roadmap` and `not-found` elsewhere. Production reads it only from

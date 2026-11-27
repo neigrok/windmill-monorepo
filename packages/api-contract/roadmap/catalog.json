@@ -1,0 +1,1368 @@
+{
+  "catalog": "roadmap/1",
+  "abilities": [
+    {
+      "name": "get_tree",
+      "description": "A page of one roadmap. The first page opens with `tree`: its title, its kinds, its guide and how many steps it has. Then come its steps, each after the steps it follows; a step on a loop, or after one, comes last. A step whose state is unknown waits on a roadmap this device has not finished bringing. An answer goes on at `nextCursor`, and a step too long for one page comes in parts, `part` of `parts`, whose texts and lists join in order.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "subtasks",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "tree": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "hue": {
+                      "type": "string",
+                      "enum": [
+                        "terracotta",
+                        "olive",
+                        "gold",
+                        "brick",
+                        "sky",
+                        "plum"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "hue",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "guide": {
+                "type": "string"
+              },
+              "stepCount": {
+                "type": "integer"
+              },
+              "part": {
+                "type": "integer"
+              },
+              "parts": {
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read the roadmap",
+      "ui": "Board, Graph"
+    },
+    {
+      "name": "get_nodes",
+      "description": "Steps of one roadmap by exact id, in the order asked. An id asked twice, or one the roadmap does not hold, refuses the call. A step deleted where it can still be brought back with Undo is not there. An answer goes on at `nextCursor`, and a step too long for one page comes in parts, `part` of `parts`.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "subtasks",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeIds"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read some steps",
+      "ui": "step page"
+    },
+    {
+      "name": "find_nodes",
+      "description": "Steps of one roadmap that match every filter sent: a kind, a state, a text; with a text, the best match first. A kind the roadmap does not have matches nothing. `state: \"available\"` is the frontier, the steps that can be worked on now. A step whose state is unknown, because it waits on a roadmap this device has not finished bringing, matches no state. An answer goes on at `nextCursor`.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind's id, as the roadmap's kinds name it."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "locked",
+              "available",
+              "complete"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to find in a step's id, label or description. ASCII letters match in either case; other letters match only as written."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "subtasks",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "searched the roadmap",
+      "ui": "Board search"
+    },
+    {
+      "name": "get_progress",
+      "description": "The steps of one roadmap marked complete, each `{id, at}`: `at` is the date this device holds of the completion, or null where it holds none, as for a step done before dates were kept. An answer goes on at `nextCursor`.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read the progress",
+      "ui": "Board, Done"
+    },
+    {
+      "name": "get_diagnostics",
+      "description": "What is wrong with one roadmap's graph: `cycles`, `dangling` links to steps that are missing, `selfEdges`, and `smells`; and, on a roadmap of the person's own, `treeLoops`, steps whose roadmaps lead back to this one, and `danglingPointers`, steps that open a roadmap that is gone. Each list holds its first 50, and `…Omitted` counts the rest. Loops among the roadmaps steps open are found among the roadmaps this device holds. An answer goes on at `nextCursor`.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "cycles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "count",
+                "nodes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "cyclesOmitted": {
+            "type": "integer"
+          },
+          "dangling": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "danglingOmitted": {
+            "type": "integer"
+          },
+          "selfEdges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "selfEdgesOmitted": {
+            "type": "integer"
+          },
+          "smells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "empty-legend",
+                    "unclaimed-hue",
+                    "label-too-long",
+                    "empty-icon",
+                    "high-in-degree"
+                  ]
+                },
+                "hue": {
+                  "type": "string",
+                  "enum": [
+                    "terracotta",
+                    "olive",
+                    "gold",
+                    "brick",
+                    "sky",
+                    "plum"
+                  ]
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "treeLoops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "treeId": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "treeId",
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "pathOmitted": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node",
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "treeLoopsOmitted": {
+            "type": "integer"
+          },
+          "danglingPointers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "treeId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "treeId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "danglingPointersOmitted": {
+            "type": "integer"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycles",
+          "dangling",
+          "selfEdges",
+          "smells"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "checked the roadmap for problems",
+      "ui": "none"
+    },
+    {
+      "name": "list_trees",
+      "description": "One row for each roadmap the person owns, newest first: `{id, title, counts, frontier, lastCompletedAt}`, with `counts` its steps by state, `frontier` the titles of its available steps, and `lastCompletedAt` the date of its newest completion, or null. A roadmap this device has not finished bringing has its `counts` and `frontier` null. An answer goes on at `nextCursor`.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page. Send every other input as the first page's call did, `fields` among them."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "trees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "counts": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "done": {
+                      "type": "integer"
+                    },
+                    "available": {
+                      "type": "integer"
+                    },
+                    "locked": {
+                      "type": "integer"
+                    },
+                    "unknown": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "done",
+                    "available",
+                    "locked",
+                    "unknown"
+                  ],
+                  "additionalProperties": false
+                },
+                "frontier": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lastCompletedAt": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trees"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read your roadmaps",
+      "ui": "roadmap switcher"
+    },
+    {
+      "name": "set_progress",
+      "description": "Mark one step done (`complete`) or not done (`none`). A step that opens a roadmap is complete when that roadmap is, and takes no mark.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "marked a step",
+      "ui": "step, Complete and Reset"
+    },
+    {
+      "name": "update_node",
+      "description": "Change one step: its title, its description, its web links, or its checklist, naming at least one. A description or web links sent replace the step's whole value, so to add one web link send every link the step is to carry; what is left out stays. `subtasks` are new items added to the end of the step's checklist, the person's own; an item there is never edited, checked or removed.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Every web link the step is to carry, in order; a label left out is empty."
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "New items for the end of the step's checklist, in order, each its label."
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "changed a step",
+      "ui": "step, Rename, Description, Links and Subtasks"
+    },
+    {
+      "name": "create_node",
+      "description": "Add one step to a roadmap, after the prerequisites named, and answer its new id.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind's id, as the roadmap's kinds name it. Left out, the step takes terracotta, as the room's New step gives it."
+          },
+          "description": {
+            "type": "string"
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ids of the steps that come before it; none for a first step."
+          }
+        },
+        "required": [
+          "treeId",
+          "label",
+          "prerequisites"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "added a step",
+      "ui": "New step"
+    },
+    {
+      "name": "connect",
+      "description": "Add one link between two steps of a roadmap: the step `nodeId` comes to wait on `prerequisiteId`. A link that would close a loop is refused.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string",
+            "description": "The step that waits."
+          },
+          "prerequisiteId": {
+            "type": "string",
+            "description": "The step it waits on."
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId",
+          "prerequisiteId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "linked two steps",
+      "ui": "Graph, a link drawn between two steps"
+    },
+    {
+      "name": "propose_roadmap_change",
+      "description": "Propose one to 100 changes to one roadmap. Nothing is written until the person reviews the proposal and applies it, and a newer proposal replaces the one waiting on this roadmap. Changes apply in order. A field that names a step or a kind takes its id, or the `ref` an earlier change gave a new one. Each op takes exactly these fields:\nadd_step: required ref, label; optional description, kind, prerequisites, links. Without kind the step takes terracotta.\nremove_step: required nodeId; optional none. The steps after it follow its own prerequisites.\nrename: required nodeId, label; optional none.\ndescribe: required nodeId; optional description, links. Send at least one; each replaces the step's whole value, so to add one web link send every link it is to carry.\nset_kind: required nodeId, kind; optional none.\nconnect: required nodeId, prerequisiteId; optional none. The step nodeId comes to wait on prerequisiteId.\ndisconnect: required nodeId, prerequisiteId; optional none. The step nodeId stops waiting on prerequisiteId.\nmerge: required nodeId, removeId; optional label, description. removeId folds into nodeId, which keeps its mark and web links: the prerequisite links into and out of removeId move to nodeId, and removeId's web links go with it.\nsplit: required nodeId, parts; optional none. Two or more parts, each with a ref and a label and, if wanted, a description, a kind and links. Each part follows the old step's prerequisites, precedes what it unlocked, and takes its mark and, unless it names one, its kind.\nset_progress: required nodeId, status; optional none.\nadd_kind: required ref, label, hue; optional description. A hue another kind wears is refused.\nrename_kind: required kind, label; optional none.\nrecolor_kind: required kind, hue; optional none. The steps that wear its hue take the new one. A hue another kind wears is refused, so two kinds cannot swap hues.\nThe answer names each step the proposal removes, with what it holds.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "add_step",
+                    "remove_step",
+                    "rename",
+                    "describe",
+                    "set_kind",
+                    "connect",
+                    "disconnect",
+                    "merge",
+                    "split",
+                    "set_progress",
+                    "add_kind",
+                    "rename_kind",
+                    "recolor_kind"
+                  ]
+                },
+                "nodeId": {
+                  "type": "string",
+                  "description": "A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "ref": {
+                  "type": "string",
+                  "pattern": "^new:[a-z0-9][a-z0-9-]{0,31}$",
+                  "description": "The name a new step or kind goes by in this proposal: new: and up to 32 lowercase letters, digits and hyphens."
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "A kind's id, or the `ref` an earlier add_kind gave a new kind."
+                },
+                "hue": {
+                  "type": "string",
+                  "enum": [
+                    "terracotta",
+                    "olive",
+                    "gold",
+                    "brick",
+                    "sky",
+                    "plum"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A step's id, or the `ref` an earlier change gave a new step."
+                  }
+                },
+                "prerequisiteId": {
+                  "type": "string",
+                  "description": "The step `nodeId` waits on. A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "removeId": {
+                  "type": "string",
+                  "description": "The step a merge folds into `nodeId` and removes. A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "none"
+                  ]
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "pattern": "^new:[a-z0-9][a-z0-9-]{0,31}$"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "links": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The steps a split makes, two or more."
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "treeId",
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "removes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nodeId": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "descriptionChars": {
+                  "type": "integer"
+                },
+                "links": {
+                  "type": "integer"
+                },
+                "done": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "nodeId",
+                "label",
+                "descriptionChars",
+                "links",
+                "done"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "proposalId",
+          "removes"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "proposes",
+      "seats": "any",
+      "strict": false,
+      "phrase": "wrote a proposal for your roadmap",
+      "ui": "none"
+    }
+  ]
+}

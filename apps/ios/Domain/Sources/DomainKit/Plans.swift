@@ -10,6 +10,7 @@ public struct Plan: Sendable {
   var deviceWrites: [DeviceWrite] = []
   var supersededGestures: [String] = []
   var undoRecipes: [UndoRecipe] = []
+  var undoChecks: [any UndoCheck] = []
   var undoEvidence = false
 
   public init() {}
@@ -18,6 +19,12 @@ public struct Plan: Sendable {
   public mutating func undoBy(_ recipes: UndoRecipe...) {
     precondition(!recipes.isEmpty, "undoBy takes Undo recipes")
     undoRecipes += recipes
+  }
+
+  // §9.6: what the act's Undo must find standing where it is asked, as a rule its act kept that the Undo could break: the
+  // runner hands it out with the act's Undo, which is asked with it.
+  public mutating func undoCheckedBy(_ check: any UndoCheck) {
+    undoChecks.append(check)
   }
 
   // §9.6: names the plan's segment for its act's Undo with no recipe of its own. The engine journals the segment's
@@ -274,6 +281,13 @@ public struct ProductSlot: Sendable {
     self.scope = scope
     self.plan = plan
   }
+}
+
+// What an act's Undo must find standing where it is asked, read in one scope: `check` throws the `Violation` the Undo
+// would break, as a decide does, and the Undo then writes nothing. A plan names it beside its recipes.
+public protocol UndoCheck: Sendable {
+  var scope: ScopeRef { get }
+  func check(_ read: Reader) throws
 }
 
 // §8.3 a plan translation refuses: a programming fault that fails the run and any test reaching it. `rule` is §8.3's

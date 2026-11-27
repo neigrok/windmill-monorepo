@@ -51,6 +51,12 @@ fun TypeDef.restores(slot: Slot): Boolean = when (slot.kind) {
     Slot.Kind.text -> fields[slot.name]?.let { it.kind == "text" && it.writer == "client" } == true
 }
 
+// The composed version that declares a keyed revival's values (§2.4): a client sends them only to a server that advertised it.
+const val REVIVAL_VALUES_SCHEMA = 14L
+
+// A keyed record's life brought back alive: its death kept no field (G1), so its restore carries the record's values.
+fun TypeDef.revivesKeyed(slot: Slot, before: Json): Boolean = identity == "keyed" && slot.kind == Slot.Kind.life && before == Json.of("alive")
+
 // A record an Undo deletes again or a Redo creates again: it has life, governs no tree and is not saved whole.
 val TypeDef.recreatable: Boolean get() = life && !governs && !wholePut
 
@@ -167,13 +173,29 @@ data class EvidenceSelection(val ownedFields: List<RecordSlot>, val unchangedCre
     }
 }
 
-// A record a Redo creates again: its client fields and texts.
+// A record a Redo creates again, or a keyed record a restore brings back alive: its client fields and texts.
 data class CreationValues(val fields: Map<String, Json> = emptyMap(), val texts: Map<String, String> = emptyMap()) {
     constructor(json: Json) : this(json["f"]?.obj().orEmpty(), json["x"]?.obj().orEmpty().mapValues { it.value.str() })
     val json: Json get() = Json.objectOf().with("f" to fields.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.toList()) },
         "x" to texts.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.map { (name, text) -> name to Json.of(text) }) })
+    val isEmpty: Boolean get() = fields.isEmpty() && texts.isEmpty()
+
+    // `delta` with these values written under the server stamp, each text onto an empty head.
+    fun writtenInto(delta: Json): Json {
+        var written = delta
+        for ((name, value) in fields) written = written.with("f" to (written["f"] ?: Json.objectOf()).with(name to Json.array(value, Json.Null)))
+        for ((name, text) in texts) written = written.with("x" to (written["x"] ?: Json.objectOf()).with(name to
+            Json.objectOf("text" to Json.of(text), "base" to Json.objectOf("rev" to Json.of(0)))))
+        return written
+    }
 
     companion object {
+        // What a keyed record's revival brings back from the record its life's preimage read (`{born?, f?, x?}`): its client fields and texts.
+        fun revival(type: TypeDef, record: Json): CreationValues = CreationValues(
+            record["f"]?.obj().orEmpty().filterKeys { type.fields[it]?.let { field -> field.writer == "client" && field.kind in listOf("lww", "fww", "const", "time") } == true }
+                .mapValues { it.value.arr()[0] },
+            record["x"]?.obj().orEmpty().filterKeys { type.fields[it]?.let { field -> field.writer == "client" && field.kind == "text" } == true }.mapValues { it.value.str() })
+
         // Client lww, fww, const or time fields and client texts of `type`, each on its domain.
         fun read(registry: Registry, type: TypeDef, json: Json): CreationValues {
             json.expectKeys(emptyList(), listOf("f", "x"))
@@ -223,9 +245,10 @@ sealed interface RestoreOperation {
     val key: RecordKey
     val json: Json
 
-    data class Field(override val key: RecordKey, val slot: Slot, val expected: Expectation, val before: Json) : RestoreOperation {
+    // `values`: on a keyed record's life brought back alive, the record's values, which its death did not keep (G1).
+    data class Field(override val key: RecordKey, val slot: Slot, val expected: Expectation, val before: Json, val values: CreationValues? = null) : RestoreOperation {
         override val json: Json get() = Json.objectOf("kind" to Json.of("field"), "t" to Json.of(key.type), "id" to key.id.json, "slot" to slot.json,
-            "expected" to expected.json, "before" to before)
+            "expected" to expected.json, "before" to before).with("values" to values?.json)
     }
     data class CreatedRecord(override val key: RecordKey, val rowSeq: Long, val footprint: List<EffectSlot>) : RestoreOperation {
         override val json: Json get() = Json.objectOf("kind" to Json.of("createdRecord"), "t" to Json.of(key.type), "id" to key.id.json,
@@ -270,7 +293,9 @@ data class RestoreArguments(val expectedEpoch: String, val operations: List<Rest
                         return@mapIndexed InverseOutcome(index, "record-dead")
                     val delta = record.delta(type)
                     record.delta = when (op.slot.kind) {
-                        Slot.Kind.life -> delta.with("life" to Json.array(op.before, Json.Null))
+                        // A record found alive keeps its own fields; only a dead keyed row lacks them (G1).
+                        Slot.Kind.life -> (op.values?.takeIf { row!!.lattice.life?.isAlive != true } ?: CreationValues())
+                            .writtenInto(delta.with("life" to Json.array(op.before, Json.Null)))
                         Slot.Kind.field -> delta.with("f" to (delta["f"] ?: Json.objectOf()).with(op.slot.name!! to Json.array(op.before, Json.Null)))
                         else -> delta.with("x" to (delta["x"] ?: Json.objectOf()).with(op.slot.name!! to Json.objectOf("text" to op.before,
                             "replace" to Json.of(true), "archiveNonempty" to Json.of(false), "archive" to Json.objectOf())))
@@ -282,11 +307,8 @@ data class RestoreArguments(val expectedEpoch: String, val operations: List<Rest
                 }
                 is RestoreOperation.CreateRecord -> {
                     if (row != null || record.delta != null || spent(op.key)) return@mapIndexed InverseOutcome(index, "record-present")
-                    record.delta = Json.objectOf("t" to Json.of(op.key.type), "id" to op.key.id.json, "life" to Json.array(Json.of("alive"), Json.Null)).with(
-                        "born" to Json.Null.takeIf { type.hasBorn },
-                        "f" to op.values.fields.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.map { (name, value) -> name to Json.array(value, Json.Null) }) },
-                        "x" to op.values.texts.takeIf { it.isNotEmpty() }?.let { Json.Obj(it.map { (name, text) ->
-                            name to Json.objectOf("text" to Json.of(text), "base" to Json.objectOf("rev" to Json.of(0))) }) })
+                    record.delta = op.values.writtenInto(Json.objectOf("t" to Json.of(op.key.type), "id" to op.key.id.json,
+                        "life" to Json.array(Json.of("alive"), Json.Null)).with("born" to Json.Null.takeIf { type.hasBorn }))
                 }
             }
             InverseOutcome(index)
@@ -305,15 +327,17 @@ data class RestoreArguments(val expectedEpoch: String, val operations: List<Rest
                 require(type != null && type.name in command.predicts && registry.isId(key.id.json, type))
                 when (op.member("kind").str()) {
                     "field" -> {
-                        op.expectKeys(listOf("kind", "t", "id", "slot", "expected", "before"))
+                        op.expectKeys(listOf("kind", "t", "id", "slot", "expected", "before"), listOf("values"))
                         val slot = Slot.read(op.member("slot"))
                         require(type.restores(slot) && registry.admitsLogical(type, slot, op.member("before")) && written.add(key to slot))
+                        require(op["values"] == null || type.revivesKeyed(slot, op.member("before")))
                         val expected = op.member("expected")
                         RestoreOperation.Field(key, slot, if (expected["kind"] == Json.of("absent")) {
                             expected.expectKeys(listOf("kind", "born"))
                             require(slot.kind != Slot.Kind.life)
                             Expectation.Absent(if (type.hasBorn) Stamp(expected.member("born").str()).also { require(it != Stamp.UNSET) } else null.also { require(expected.member("born") === Json.Null) })
-                        } else Expectation.Version(SlotVersion.read(slot, expected)), op.member("before"))
+                        } else Expectation.Version(SlotVersion.read(slot, expected)), op.member("before"),
+                            op["values"]?.let { CreationValues.read(registry, type, it) })
                     }
                     "createdRecord" -> {
                         op.expectKeys(listOf("kind", "t", "id", "rowSeq", "footprint"))

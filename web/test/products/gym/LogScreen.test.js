@@ -104,7 +104,8 @@ test('the log draws arrived sessions without claiming the initial history has en
   await settle();
   const rows = () => elementsOf(view.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions;
   assert.deepEqual(rows().map(({ id }) => id), ['session0001']);
-  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), []);
+  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), ['Getting your log…']);
+  assert.deepEqual(findByClass(view.tree, 'gym-log-count'), [], 'no totals over a history this browser does not hold yet');
 
   await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
   await settle();
@@ -443,4 +444,17 @@ test('session totals use unavailable for pound conversion overflow and preserve 
     await settle();
     assert.equal(textOf(findByClass(room.screen(), 'gym-reader-totals')[0]), 'sets0reps0lb external0');
   } finally { spellWeightsIn('kg'); }
+});
+
+test('a workout’s share is offered in its options only to an account the shell has settled', async (t) => {
+  browserWith();
+  await gymAccount(t, sessionWithASet());
+  const { SessionDetail } = await loadScreen('products/gym/Log.jsx');
+  const shares = async (signedIn) => {
+    const view = renderHook(t, () => SessionDetail({ id: 'session0001', log: roomLog(), signedIn }));
+    await settle();
+    view.redraw();
+    return elementsOf(view.tree).filter((each) => each.type?.name === 'ShareWorkout').map((each) => each.props.sessionId);
+  };
+  assert.deepEqual([await shares(false), await shares(true)], [[], ['session0001']]);
 });

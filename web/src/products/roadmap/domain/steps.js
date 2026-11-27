@@ -11,6 +11,7 @@ import { between, dropKey, isOrderKey } from '../../../../../packages/api-contra
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { latticeOf } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { components, FollowGraph } from './graph.js';
+import { StepMark, StepMarkValue } from './progress.js';
 import { LandingNote, RoadmapTree } from './records.js';
 import { HeldRecord, Restore, RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, full, gone, restoring, writeIn } from './roadmapRules.js';
 
@@ -192,13 +193,13 @@ function siblingOrds(tree, parent) {
 }
 
 // The first new link on a loop among what steps follow: a loop that holds a present step. A loop of absent
-// steps alone is read without harm.
+// steps alone is read without harm. The room's links and Coach's `connect` refuse such a link alike.
 /**
  * @param {RoadmapTree} tree
  * @param {string[][]} links
  * @param {Set<string>} made
  */
-function firstLoop(tree, links, made) {
+export function firstLoop(tree, links, made) {
   const all = [...tree.edges.filter((edge) => edge.present).map((edge) => [edge.from, edge.to]), ...links];
   const ids = [...new Set([...tree.nodes.map((node) => node.id), ...all.flat()])];
   const slot = new Map(ids.map((id, index) => [id, index]));
@@ -638,18 +639,22 @@ export class ChangePrerequisites {
   }
 }
 
-// §5 Import and paste into a roadmap: the steps under fresh ids, in chunks, prerequisites first, one act and so
-// one Undo. Under a step, the import's first steps follow it.
+// §5 Import and paste into a roadmap: the steps under fresh ids, in chunks, prerequisites first, and the person's mark
+// on each step the import brings done, in their overlay: one act and so one Undo. Under a step, the import's first
+// steps follow it.
 export class ImportSteps {
   /**
    * @param {string} tree
    * @param {ImportedSteps} imported
    * @param {string | null} under
+   * @param {string[]} done
    */
-  constructor(tree, imported, under = null) {
+  constructor(tree, imported, under = null, done = []) {
+    precondition(new Set(done).size === done.length && done.every((key) => imported.steps.some((step) => step.key === key)), 'an import marks each of its own steps once');
     this.tree = tree;
     this.imported = imported;
     this.under = under;
+    this.done = done;
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -680,6 +685,15 @@ export class ImportSteps {
       edges: made.map((link) => [link.value.from, link.value.to]),
       names: linkedNames(tree, made.map((link) => link.value.from), labels),
     }).json);
+    if (this.done.length > 0) {
+      const marks = new Plan();
+      for (const key of this.done) {
+        const mark = new StepMarkValue(new Id(planned.ids[key] ?? '', StepMark), 'complete', false);
+        marks.create(new Valid(mark, moment), { fields: ['mark'] });
+        marks.undoBy(restoring(Restore.overlay, mark.id, ['mark']));
+      }
+      segments.push(new ScopedPlan(RoadmapScopes.overlay(this.tree), marks));
+    }
     return ActDecision.write(new ActPlan(segments), planned.ids);
   }
 }

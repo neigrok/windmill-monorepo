@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtempSync, createWriteStream, rmSync } from 'node:fs';
+import { mkdtempSync, createWriteStream, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
@@ -42,6 +42,17 @@ async function waitForServer(address, child) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error('stack readiness timed out');
+}
+// The completed sign-outs the local intake holds. Their batch leaves the page as a keepalive fetch or a beacon, whose
+// bodies Playwright does not show the page, so the intake's own table is what proves the event arrived.
+const signOuts = () => Number(sql("select count(*) from events where name = 'sync_signout' and props->>'outcome' = 'ok'").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0);
+async function signOutArrived(before) {
+  const end = Date.now() + 30000;
+  while (Date.now() < end) {
+    if (signOuts() > before) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('the completed sign-out event did not reach the local intake within 30 seconds');
 }
 async function check(name, run) {
   await run(); passed++; console.log(`PASS ${name}`);
@@ -163,6 +174,36 @@ try {
       await context.setOffline(false); await converged(page, 'offline page');
     } finally { await context.close(); }
   });
+  await check('signed out, Settings opens from the ghost seat on the browser\'s copy: none to export, then a written page exported', async () => {
+    const context = await browser.newContext({ acceptDownloads: true });
+    const exported = () => Number(sql("select count(*) from events where name = 'journal_export' and props->>'outcome' = 'ok' and props->>'seat' = 'signed_out'")
+      .toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0);
+    const before = exported();
+    try {
+      const page = await context.newPage();
+      const settingsFromSeat = async () => {
+        await page.getByRole('button', { name: 'Account', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+        await page.getByRole('heading', { name: 'Settings', exact: true, level: 1 }).waitFor();
+      };
+      const journal = page.locator('section', { has: page.getByRole('heading', { name: 'Your journal', exact: true }) });
+      await page.goto(`${origin}/app/journal`); await ready(page);
+      await settingsFromSeat();
+      await journal.getByText('No pages to export yet.', { exact: true }).waitFor();
+      assert.equal(await journal.getByRole('button').count(), 0, 'a browser with no written page is offered no export');
+      await page.goto(`${origin}/app/journal`); await ready(page);
+      await page.getByRole('textbox', { name: 'Write today' }).fill('written signed out'); await saved(page, 'written signed out');
+      await settingsFromSeat();
+      const [download] = await Promise.all([page.waitForEvent('download'),
+        journal.getByRole('button', { name: 'Export my pages', exact: true }).click()]);
+      assert.equal(download.suggestedFilename(), 'windmill-journal.md');
+      assert.equal(readFileSync(await download.path(), 'utf8'), `# Windmill journal\n\n## ${today}\n\nwritten signed out\n`);
+      await journal.getByText('Exported 1 page to windmill-journal.md.', { exact: true }).waitFor();
+      const end = Date.now() + 30000;
+      while (exported() === before && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 250));
+      assert.ok(exported() > before, 'the signed-out export\'s event reached the local intake');
+    } finally { await context.close(); }
+  });
   await check('unwritten days disappear locally and erasure reaches another browser and REST', async () => {
     const first = await browser.newContext(), second = await browser.newContext();
     const id = randomUUID(), secret = randomBytes(24).toString('hex');
@@ -218,8 +259,8 @@ try {
       await page.getByRole('textbox', { name: 'Write today' }).fill(`anonymous ${choice}`); await saved(page, `anonymous ${choice}`);
       await cookie(context); await page.reload(); await ready(page);
       await page.getByText('Add to your account?', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('dialog').getByText('1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
-      await page.keyboard.press('Escape'); assert.equal(await page.getByRole('dialog').count(), 1);
+      assert.equal(await page.getByRole('dialog').getByText('This browser has 1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
+      assert.deepEqual(await page.getByRole('dialog').getByRole('button').allInnerTexts(), ['Cancel sign-in', 'Discard', 'Add']);
       await page.getByRole('dialog').getByRole('button', { name: choice, exact: true }).click();
       if (choice === 'Discard') {
         await page.getByText('Discard 1 page and 1 unsaved change?', { exact: true }).waitFor();
@@ -233,21 +274,25 @@ try {
       await converged(page, expected);
     } finally { await context.close(); }
   });
-  await check('pre-engine cache and owed write migrate once and converge', async () => {
+  await check('an owed page from before the engine carries into the account as a claim once and converges; its cached copy is left to the pull', async () => {
     const context = await browser.newContext(); await cookie(context);
     try {
-      await context.addInitScript(({ account, today }) => {
-        if (localStorage.getItem('fixture-migrated')) return;
-        localStorage.setItem('fixture-migrated', 'yes');
+      // The account's page of today, read before this browser went offline and written on there: the claim keeps both.
+      const held = await context.request.get(`${backend}/v1/journal/page/${today}`);
+      const owed = held.status() === 200 ? `${(await held.json()).body}\n\nwritten offline before the engine` : 'written offline before the engine';
+      await context.addInitScript(({ account, today, owed }) => {
+        if (localStorage.getItem('fixture-seeded')) return;
+        localStorage.setItem('fixture-seeded', 'yes');
         localStorage.setItem(`wm.journal.v2.pages.u.${account}`, JSON.stringify({
-          [today]: { page: { day: today, body: 'legacy owed page', mood: 0, energy: null, source: 'typed', stamp: '9999999999999:0:legacy' }, needsPush: true, read: true },
+          [today]: { page: { day: today, body: owed, mood: 0, energy: null, source: 'typed', stamp: '9999999999999:0:legacy' }, needsPush: true, read: true },
           '2026-01-01': { page: { day: '2026-01-01', body: 'cached page', mood: 1, energy: null, source: 'typed', stamp: '1:0:legacy' }, needsPush: false, read: true },
         }));
-      }, { account, today });
+      }, { account, today, owed });
       const page = await context.newPage(); await page.goto(`${origin}/app/journal`); await ready(page);
-      await converged(page, 'legacy owed page');
+      await converged(page, owed);
       assert.equal(await page.evaluate((account) => localStorage.getItem(`wm.journal.v2.pages.u.${account}`), account), null);
-      await page.reload(); await ready(page); await converged(page, 'legacy owed page');
+      assert.deepEqual(await page.evaluate(() => journal.pagesOf(journal.syncSession.engine).map((each) => each.day)), [today]);
+      await page.reload(); await ready(page); await converged(page, owed);
     } finally { await context.close(); }
   });
   for (const choice of ['Keep', 'Discard']) await check(`revoke this session → Cancel → ${choice} → completed sign-out`, async () => {
@@ -276,9 +321,7 @@ try {
       const logout = page.waitForRequest((request) => request.url() === `${backend}/v1/auth/logout`);
       logout.catch(() => {});
       await revoke.click(); await question.waitFor();
-      const beacon = page.waitForResponse((response) => response.url() === `${backend}/v1/events`
-        && response.request().postDataJSON()?.events?.some((event) => event.name === 'sync_signout' && event.props?.outcome === 'ok'));
-      beacon.catch(() => {});
+      const signedOut = signOuts();
       await question.getByRole('button', { name: choice, exact: true }).click();
       await logout;
       assert.equal(page.url(), settings, 'navigation waits for credential cleanup');
@@ -293,7 +336,7 @@ try {
       }, id);
       assert.deepEqual(retained, { active: 'anon', accounts: choice === 'Keep' ? [{ state: 'dormant', entries: 1 }] : [] });
       assert.equal((await page.request.get(`${backend}/v1/me`)).status(), 401);
-      assert.ok((await beacon).ok(), 'completed sign-out beacon was accepted');
+      await signOutArrived(signedOut);
     } finally {
       release?.();
       try { await page?.unrouteAll({ behavior: 'wait' }); } finally { await context.close(); }
@@ -385,9 +428,7 @@ try {
       const closing = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Close your account', exact: true }) });
       await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
       await closing.getByRole('textbox').fill(email);
-      const beacon = page.waitForResponse((response) => response.url() === `${backend}/v1/events`
-        && response.request().postDataJSON()?.events?.some((event) => event.name === 'sync_signout' && event.props?.outcome === 'ok'));
-      beacon.catch(() => {});
+      const signedOut = signOuts();
       await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
       await deletion;
       assert.equal(page.url(), settings, 'closing waits for local sign-out to finish');
@@ -399,17 +440,16 @@ try {
       assert.equal(await page.evaluate(async (id) => (await journal.syncSession.engine.store.read()).device.replicas
         .filter((replica) => replica.meta.account === id).length, id), 0, 'the closed account has no device replica');
       assert.equal((await page.request.get(`${backend}/v1/me`)).status(), 401);
-      assert.ok((await beacon).ok(), 'completed account closure beacon was accepted');
+      await signOutArrived(signedOut);
     } finally {
       release?.();
       try { await page?.unrouteAll({ behavior: 'wait' }); } finally { await context.close(); }
     }
   });
   assert.ok(Number(sql("select count(*) from events where name in ('sync_commit','sync_signin','sync_signout','sync_writer')").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) > 0, 'sync beacons reached the local intake');
-  assert.ok(Number(sql("select count(*) from events where name = 'sync_signout' and props->>'outcome' = 'ok'").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) >= 3,
-    'all three completed sign-outs reached the local beacon intake');
-  assert.equal(passed, 10, 'every journal local-stack scenario must finish');
-  console.log(`Journal local-stack e2e: ${passed}/10 passed, 0 skipped; local beacon intake verified`);
+  assert.ok(signOuts() >= 3, 'all three completed sign-outs reached the local beacon intake');
+  assert.equal(passed, 11, 'every journal local-stack scenario must finish');
+  console.log(`Journal local-stack e2e: ${passed}/11 passed, 0 skipped; local beacon intake verified`);
 } catch (error) {
   console.error(error);
   console.error(`Stack diagnostics: ${logPath}`);

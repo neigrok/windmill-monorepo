@@ -82,7 +82,7 @@
   "shell.sessions.signOutEverywhere": "Sign out everywhere",
   "shell.sessions.thisDevice": "THIS DEVICE",
   "shell.sessions.title": "Sessions & devices",
-  "shell.settings.signedOut": "Sign in to view your settings — they belong to an account, and there isn't one signed in here yet.",
+  "shell.settings.signedOut": "Sign in for your profile, sessions and connected tools.",
   "shell.time.daysAgo": "{days}d ago",
   "shell.time.hoursAgo": "{hours}h ago",
   "shell.time.justNow": "just now",

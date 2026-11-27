@@ -22,8 +22,10 @@ extension JSON {
 
   static func strings(_ items: [String]) -> JSON { .array(items.map { .string($0) }) }
 
-  // The id an action's input names under `key`.
+  // The id an action's input names under `key`, the id it may name there, and the ids it lists there, none where it lists none.
   func id<E: Entity>(_ key: String) throws -> ID<E> { ID(try RecordID(json: member(key))) }
+  func optionalID<E: Entity>(_ key: String) throws -> ID<E>? { try optional(key) { ID(try RecordID(json: $0)) } }
+  func ids<E: Entity>(_ key: String) throws -> [ID<E>] { try (self[key]?.asArray() ?? []).map { ID(try RecordID(json: $0)) } }
 }
 
 extension NewKind {
@@ -33,11 +35,23 @@ extension NewKind {
   }
 }
 
+extension Step.Link {
+  init(form: JSON) throws {
+    self.init(url: try form.member("url").asString(), label: try form.member("label").asString())
+  }
+}
+
+extension RoadmapStep.Changes {
+  // `{label?, icon?, color?, description?, links?}`: the fields a case names of a step.
+  init(form: JSON) throws {
+    self.init(label: try form.optionalString("label"), icon: try form.optionalString("icon"), color: try form.optionalString("color"),
+              description: try form.optionalString("description"), links: try form.optional("links") { try $0.asArray().map(Step.Link.init(form:)) })
+  }
+}
+
 extension Step {
   init(form: JSON) throws {
-    let links = try form.optional("links") { links in
-      try links.asArray().map { Step.Link(url: try $0.member("url").asString(), label: try $0.member("label").asString()) }
-    }
+    let links = try form.optional("links") { try $0.asArray().map(Step.Link.init(form:)) }
     self.init(id: try form.member("id").asString(), present: try form.optionalBool("present"), born: try form.optionalStamp("born"),
               rc: try form.optionalInstant("rc"), ru: try form.optionalInstant("ru"), label: try form.optionalString("label"),
               icon: try form.optionalString("icon"), color: try form.optionalString("color"), ord: try form.optionalString("ord"),
@@ -62,7 +76,7 @@ extension RoadmapTree {
       Metadata(title: try meta.optionalString("title"), guide: try meta.optionalString("guide"),
                guideInherited: try meta.optionalBool("guideInherited"), root: try meta.optionalString("root") ?? id,
                depth: try meta.optional("depth") { Int(try $0.asInteger()) }, visibility: try meta.optionalString("visibility"),
-               reach: try meta.optionalString("reach"))
+               reach: try meta.optionalString("reach"), forkedFrom: try meta.optionalString("forkedFrom"))
     }
     let read = try form.optional("read") { name in
       guard let read = Read(rawValue: try name.asString()) else { throw ContractError("no read state \(name)") }
@@ -80,7 +94,7 @@ extension RoadmapTree {
               opens: try pointer.member("opens").asString(), setAt: try pointer.optionalStamp("setAt"))
     }
     self.init(id: id, present: try form.optionalBool("present"), read: read, own: try form.optionalBool("own"),
-              updatedAt: try form.optionalInstant("updatedAt"), parent: parent, meta: meta,
+              updatedAt: try form.optionalInstant("updatedAt"), stampedAt: try form.optionalInstant("stampedAt"), parent: parent, meta: meta,
               nodes: try (form["nodes"]?.asArray() ?? []).map(Step.init(form:)), edges: edges,
               kinds: try (form["kinds"]?.asArray() ?? []).map(Kind.init(form:)), marks: marks, pointers: pointers)
   }
@@ -145,7 +159,7 @@ extension RoadmapTree {
     let place: JSON = parent.map { ["tree": .string($0.tree), "step": .string($0.step)] } ?? .null
     let words: JSON = meta.map {
       ["title": .string($0.title), "guide": .string($0.guide), "guideInherited": .bool($0.guideInherited), "root": .string($0.root),
-       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach)]
+       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach), "forkedFrom": .of($0.forkedFrom)]
     } ?? .null
     let steps: [JSON] = nodes.map { step in
       let links: [JSON] = step.links.map { ["url": .string($0.url), "label": .string($0.label)] }
@@ -167,7 +181,7 @@ extension RoadmapTree {
       ["node": .string($0.node), "present": .bool($0.present), "opens": .string($0.opens), "setAt": $0.setAt?.json ?? .null]
     }
     return ["id": .string(id), "present": .bool(present), "read": .string(read.rawValue), "own": .bool(own), "updatedAt": .of(updatedAt),
-            "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
+            "stampedAt": .of(stampedAt), "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
             "pointers": .array(opened)]
   }
 }
@@ -232,6 +246,10 @@ extension Guide {
   var form: JSON { ["tree": .string(tree), "title": .string(title), "text": .string(text), "own": .bool(own)] }
 }
 
+extension ActivityRead {
+  var form: JSON { .array(rows.map { ["kind": .string($0.kind.rawValue), "step": .string($0.step), "at": .of($0.at)] }) }
+}
+
 extension ListedRoadmap {
   var form: JSON { ["id": .string(id), "title": .of(title), "counts": counts?.form ?? .null, "updatedAt": .of(updatedAt)] }
 }
@@ -242,7 +260,8 @@ extension LegendRead {
     let collisions: [JSON] = hues.filter { !$0.others.isEmpty }.map {
       ["hue": .string($0.name), "owner": .string($0.owner), "others": .strings($0.others)]
     }
-    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions)]
+    let shown: [JSON] = shown.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
+    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown)]
   }
 }
 
@@ -278,6 +297,13 @@ extension BoardRead {
     }
     return ["overall": overall.form, "sort": .string(sort.rawValue), "branch": .of(branch), "recovery": .of(recovery?.rawValue),
             "columns": .array(columns), "cards": .array(cards)]
+  }
+}
+
+extension EffectsRead {
+  var form: JSON {
+    ["kept": .of(kept), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable), "follow": .strings(follow),
+     "relocks": .strings(relocks)]
   }
 }
 

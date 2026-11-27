@@ -67,6 +67,7 @@ extension AppModel {
     guard let token = runtime.tokens.token(for: account) else { return failDeletion(reporting: "keychain") }
     journal.editing = false
     guard flushRooms() else { return failDeletion(reporting: "flush") }
+    beforeAccountChange()
     deletion = .deleting; accountTransition = true; signingOut = true
     defer { accountTransition = false; signingOut = false }
     let session: SignOutSession

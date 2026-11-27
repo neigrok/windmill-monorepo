@@ -1,6 +1,7 @@
 #include "platform/adapters/http/AuthApi.h"
 #include "platform/adapters/http/WriteRoutes.h"
 
+#include "test/DrogonLoopback.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
 
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -142,13 +144,24 @@ std::string checkSessionCookies(const drogon::HttpResponsePtr& response, bool se
 drogon::HttpResponsePtr call(Harness& h, void (AuthApi::*route)(const drogon::HttpRequestPtr&, HttpCallback&&),
                              const drogon::HttpRequestPtr& req) {
   drogon::HttpResponsePtr captured;
-  (h.api.get()->*route)(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
+  (h.api.get()->*route)(wm::test::DrogonLoopback::received(req), [&](const drogon::HttpResponsePtr& r) { captured = r; });
   return captured;
+}
+
+// GET /v1/me as Drogon parses it from the wire with `lines`, each a whole field line: /v1/me reads its caller from the
+// lines a request was received with, which a request built in place carries none of.
+drogon::HttpResponsePtr getMe(Harness& h, const std::vector<std::string>& lines = {}) {
+  std::string bytes = "GET /v1/me HTTP/1.1\r\nHost: auth-api-test\r\n";
+  for (const std::string& line : lines) bytes += line + "\r\n";
+  wm::test::DrogonLoopback::Connection connection;
+  const drogon::HttpRequestPtr req = connection.exchange(bytes + "\r\n").request;
+  if (!req) throw std::runtime_error("Drogon answered GET /v1/me without handing it over");
+  return call(h, &AuthApi::me, req);
 }
 
 drogon::HttpResponsePtr revoke(Harness& h, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
-  h.api->revokeSession(request(drogon::Delete, "/v1/sessions/" + id, "", session),
+  h.api->revokeSession(wm::test::DrogonLoopback::received(request(drogon::Delete, "/v1/sessions/" + id, "", session)),
                        [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
 }
@@ -161,8 +174,7 @@ TEST(auth_every_account_endpoint_refuses_a_caller_with_no_session) {
   Harness h;
   h.signIn("s-live");
 
-  CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me"))->getStatusCode(),
-           drogon::k401Unauthorized);
+  CHECK_EQ(getMe(h)->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(call(h, &AuthApi::patchMe, request(drogon::Patch, "/v1/me", R"({"name":"Ada"})"))
                ->getStatusCode(),
            drogon::k401Unauthorized);
@@ -178,15 +190,14 @@ TEST(auth_every_account_endpoint_refuses_a_caller_with_no_session) {
            drogon::k401Unauthorized);
   CHECK_EQ(revoke(h, "", "sess1")->getStatusCode(), drogon::k401Unauthorized);
 
-  CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-forged"))->getStatusCode(),
-           drogon::k401Unauthorized);
+  CHECK_EQ(getMe(h, {"Cookie: wm_session=s-forged"})->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(h.authRepo.sessions.size(), std::size_t{1});
 }
 
 TEST(auth_the_identity_probe_refuses_with_an_empty_body_and_every_other_route_explains_itself) {
   Harness h;
 
-  const drogon::HttpResponsePtr probe = call(h, &AuthApi::me, request(drogon::Get, "/v1/me"));
+  const drogon::HttpResponsePtr probe = getMe(h);
   CHECK_EQ(probe->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ((*probe->getJsonObject()).size(), 0u);
 
@@ -282,7 +293,7 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
 
   const std::string session = checkSessionCookies(response, true, kDomain, 7776000);  // 90 days
 
-  const drogon::HttpResponsePtr me = call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", session));
+  const drogon::HttpResponsePtr me = getMe(h, {"Cookie: wm_session=" + session});
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 
@@ -308,8 +319,7 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   checkSessionCookies(response, true, kDomain, 0);
 
   CHECK(h.authRepo.sessions.empty());
-  CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-live"))->getStatusCode(),
-           drogon::k401Unauthorized);
+  CHECK_EQ(getMe(h, {"Cookie: wm_session=s-live"})->getStatusCode(), drogon::k401Unauthorized);
 
   const drogon::HttpResponsePtr anonymous =
       call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout"));
@@ -398,8 +408,8 @@ TEST(auth_closing_an_account_refuses_a_shared_cookie_for_another_account) {
   CHECK_FALSE(h.authRepo.findUserById(intended)->deletedAt);
   CHECK_FALSE(h.authRepo.findUserById(successor)->deletedAt);
   CHECK_EQ(h.authRepo.sessions.size(), std::size_t{2});
-  CHECK(h.auth->authenticate("s-intended"));
-  CHECK(h.auth->authenticate("s-successor"));
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-intended")));
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-successor")));
 }
 
 TEST(auth_closing_an_account_requires_the_intended_account) {
@@ -414,7 +424,7 @@ TEST(auth_closing_an_account_requires_the_intended_account) {
     CHECK_EQ(*response->getJsonObject(), expected);
     CHECK(sessionCookieLines(response).empty());
     CHECK_FALSE(h.authRepo.findUserById(mine)->deletedAt);
-    CHECK(h.auth->authenticate("s-live"));
+    CHECK(h.auth->revalidate(h.auth->digestOf("s-live")));
   }
 }
 
@@ -478,23 +488,16 @@ TEST(auth_a_bearer_token_opens_the_same_door_the_cookie_does) {
   Harness h;
   h.signIn("s-live");
 
-  auto bearer = drogon::HttpRequest::newHttpRequest();
-  bearer->setMethod(drogon::Get);
-  bearer->setPath("/v1/me");
-  bearer->addHeader("authorization", "Bearer s-live");
-  CHECK_EQ(call(h, &AuthApi::me, bearer)->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(getMe(h, {"Authorization: Bearer s-live"})->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(getMe(h, {"Authorization: bearer s-live"})->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(getMe(h, {"Authorization: s-live"})->getStatusCode(), drogon::k401Unauthorized);
 
-  auto raw = drogon::HttpRequest::newHttpRequest();
-  raw->setMethod(drogon::Get);
-  raw->setPath("/v1/me");
-  raw->addHeader("authorization", "s-live");
-  CHECK_EQ(call(h, &AuthApi::me, raw)->getStatusCode(), drogon::k401Unauthorized);
-
+  // A cookie and a bearer of two accounts: every door reads them as the sync doors do and serves neither.
   h.signIn("s-other", "ada@example.com");
-  auto both = request(drogon::Get, "/v1/me", "", "s-live");
+  CHECK_EQ(getMe(h, {"Cookie: wm_session=s-live", "Authorization: Bearer s-other"})->getStatusCode(), drogon::k401Unauthorized);
+  auto both = request(drogon::Patch, "/v1/me", R"({"name":"Sam"})", "s-live");
   both->addHeader("authorization", "Bearer s-other");
-  CHECK_EQ((*call(h, &AuthApi::me, both)->getJsonObject())["user"]["email"].asString(),
-           std::string("sam@example.com"));
+  CHECK_EQ(call(h, &AuthApi::patchMe, both)->getStatusCode(), drogon::k401Unauthorized);
 }
 
 TEST(auth_a_blank_or_oversized_name_is_refused_and_a_good_one_comes_back_applied) {
@@ -515,10 +518,7 @@ TEST(auth_a_blank_or_oversized_name_is_refused_and_a_good_one_comes_back_applied
     CHECK_EQ((*refused->getJsonObject())["error"].asString(),
              std::string("That name's blank, or too long — 80 characters at most."));
   }
-  CHECK_EQ((*call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-live"))
-                 ->getJsonObject())["user"]["name"]
-               .asString(),
-           std::string("Ada Lovelace"));
+  CHECK_EQ((*getMe(h, {"Cookie: wm_session=s-live"})->getJsonObject())["user"]["name"].asString(), std::string("Ada Lovelace"));
 }
 
 TEST(auth_a_request_with_no_address_never_reaches_the_sender) {
@@ -641,7 +641,7 @@ TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
 
   const std::string session = checkSessionCookies(response, true, kDomain, 7776000);  // 90 days
 
-  const drogon::HttpResponsePtr me = call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", session));
+  const drogon::HttpResponsePtr me = getMe(h, {"Cookie: wm_session=" + session});
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 }
@@ -680,9 +680,7 @@ TEST(auth_native_email_sign_in_returns_the_cookie_secret_in_the_body_and_authent
     const std::string session = checkSessionCookies(response, true, kDomain, 7776000);
     CHECK_EQ(out["session"].asString(), session);
     if (!byCode) CHECK_EQ(out["forkedTree"].asString(), std::string("t_new"));
-    auto meRequest = request(drogon::Get, "/v1/me");
-    meRequest->addHeader("Authorization", "Bearer " + session);
-    const auto me = call(h, &AuthApi::me, meRequest);
+    const auto me = getMe(h, {"Authorization: Bearer " + session});
     CHECK_EQ(me->getStatusCode(), drogon::k200OK);
     CHECK_EQ((*me->getJsonObject())["user"], out["user"]);
   }
@@ -834,9 +832,7 @@ TEST(auth_native_apple_returns_a_bearer_session_and_uses_the_stable_identity_bin
   CHECK_FALSE(returning["created"].asBool());
   CHECK(returning["privateEmail"].asBool());
   CHECK_EQ(h.authRepo.usersById.size(), std::size_t{1});
-  auto meRequest = request(drogon::Get, "/v1/me");
-  meRequest->addHeader("Authorization", "Bearer " + returning["session"].asString());
-  CHECK_EQ((*call(h, &AuthApi::me, meRequest)->getJsonObject())["user"], out["user"]);
+  CHECK_EQ((*getMe(h, {"Authorization: Bearer " + returning["session"].asString()})->getJsonObject())["user"], out["user"]);
 }
 
 TEST(auth_native_apple_attaches_to_the_bearer_caller_and_preserves_an_account_with_data) {

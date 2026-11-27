@@ -9,8 +9,8 @@ layer a product's feature domains are declared on, beside the Swift `DomainKit` 
 
 A kit file imports the shared `packages/api-contract/sync/reference/core/<name>.js` by relative
 path, the web's `sync/core/encoding.js` and `content.js`, and kit files; a product domain
-(`src/products/<p>/domain/`) imports the same core modules, the kit, `platform/sync/schema.js` and
-itself. No clock, randomness, platform global, console, locale, rounding (the quantum's is
+(`src/products/<p>/domain/`, and its feature folders such as gym's `coach/`) imports the same core modules, the kit,
+`platform/sync/schema.js` and its own domain, never above it. No clock, randomness, platform global, console, locale, rounding (the quantum's is
 `core/values.js`) or concurrency; `runner.js`, the one impure file, alone awaits the engine. Every
 file opts into `tsc --checkJs` with `// @ts-check`. `npm run check:domain` first runs
 `test/domain-layering.test.js`, which parses every file with acorn and enforces these rules with a
@@ -29,10 +29,11 @@ fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 | `plans.js` | §8.1, §8.4 | `Plan`, `Operation`, `Prediction`, `PlanError` |
 | `translation.js` | §8.2, §8.3 | `translate(plan, scope, registry)` → the engine gesture, `recordIdOf` |
 | `actions.js` | §9.1, §9.2 | `Decision`, `Outcome`, `IDSource`, `decision`, `firstGone`, `refusalSubject` |
-| `acts.js` | §9.5 | `ActPlan`, `ScopedPlan`, `ActDecision`, `ActReader`, `ActIDSource`: an act over several scopes |
+| `acts.js` | §9.5, §9.7 | `ActPlan`, `ScopedPlan`, `ActDecision`, `ActReader`, `ActIDSource`: an act over several scopes; `scopedAct(action)`, a one-scope action as an act, which a composed act takes as a part |
 | `drafts.js` | §10 | `Draft`, `Saved`, `SaveResult`, `SaveDraft` (`ofDraft`, `creating`) |
 | `standardActions.js` | §11 | `Remove`, `Move` |
 | `refusals.js` | §12 | `Refused`, `commandSubject`, `DomainNotice` |
+| `collation.js` | §4.6 | `Collation`, the order `list_exercises` reads names in |
 | `runner.js` | §9.2 | `ActionRunner` over a replica port; `EngineReplica`, the port over `platform/sync/engine.js` |
 
 ## Spellings
@@ -51,7 +52,8 @@ runner in that synchronous execution context. Independent queued runs remain all
 web runner tests cover load, decide and refusal mapping: §15.2's pipeline vectors have no nested-call operation and use a
 loader that does nothing.
 
-`Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
+`Reader.replica` names the replica a run's commit writes to (its `rp_` id, §7.1), which `EngineReplica` reads from the
+engine's `readMetadata` and the vectors name `rp_00000000000000000000000000000001`. `Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
 a lookup (`get(key)`), so a read copies only the rows it asks for, each keeping its row's `seq`. `Repository.spentBorn(id)`
 answers the born of a record the device keeps only by its spent id (engine §7.5), which a revival takes (§9.2 step 5), and
 `spentSeq(id)` the `seq` of the dead row it came from (engine §2.5), null where it keeps none (§7.2). `EngineReplica.read` lets go of
@@ -80,9 +82,18 @@ Readers and plan translation check both the registry's scope kind and any fixed 
 `new ActionRunner(new EngineReplica(engine), engine.registry, zone)`, where `engine` is the shell's
 `BrowserSyncEngine`. The runner mints the gesture id through `engine.newGestureId()` and passes it as
 `opts.gestureId`, so a `too-large` refusal names the notice the commit wrote and the runner dismisses it;
-a held removal's receipt reads `releaseAt` from the gesture's entry. `runAct(act, {binding})` and
-`runComposed(parts, {binding})` hand `commitAct` the `engine.activeBinding()` a product planned the act under, so
-a sign-in or a sign-out in between rejects the run with the engine's `ReplicaChanged` and writes nothing. Reads
+a held removal's receipt reads `releaseAt` from the gesture's entry. Every receipt carries its act's `UndoHandle`
+(`receipt.undo`), the act id with the checks its plans named (`plan.undoCheckedBy`): `runner.undo(handle)` reads each check
+first and answers `unavailable` (`refused`) where one throws its `Violation`, and `runner.redo(requestId, handle)` answers
+`{ result, undo }`, the handle of the act the Redo wrote. Only the runner makes a handle. `runner.dismissNotices(scope, ids, when)`
+dismisses several notices in one write while `when` holds over the scope's `ScopeMetadata` (its views without
+their records: device rows, replica, commands) as that write reads it, so a rule that keeps a notice speaking
+cannot be overtaken between its reading and the dismissal; `EngineReplica` reads it with
+`engine.readMetadata(scope, replica)` inside the engine's `write`. The port method is the web kit's alone.
+`runAct(act, {binding})` and `runComposed(parts, {binding})` hand `commitAct` the `engine.activeBinding()` a
+product planned the act under, so a sign-in or a sign-out in between rejects the run with the engine's
+`ReplicaChanged` and writes nothing; without one, the engine pins every run to the binding standing when it reaches the
+engine, a commit's included. Reads
 outside a run come from `engine.observe(scope).getSnapshot()` and `engine.readMetadata(scope)`. Inside a run, confirmed rows,
 device rows, commands, actor, anonymity and checkpoint are loaded from the commit's own transaction.
 The checkpoint exposes `cleanSeq` only for a complete, same-epoch live cursor with no staging,

@@ -221,3 +221,33 @@ test('a pending proposal over an edit the log has not confirmed is out of date: 
   assert.equal(findByClass(screen.tree, 'gym-diff-row').length, 2);
   assert.equal(findByClass(screen.tree, 'gym-proposal-refusal').length, 0);
 });
+
+test('a pending proposal whose load the copy’s floor refuses is out of date: the domain closes Apply and Turn this down and says why, as the Coach card does', async (t) => {
+  browserWith();
+  // Coach assists Pull A's pull-ups by 20 kg, which a bodyweight movement allows.
+  const gym = await gymAccount(t, [
+    confirmed('routine', 'routinePullA', { name: 'Pull A', position: 0, entries: [{ exerciseId: 'pull-up', sets: [{ weightKg: 0, reps: 8 }] }] }),
+    proposal({ routineId: 'routinePullA', proposedName: 'Pull A', baseName: 'Pull A', changes: [
+      { kind: 'retargeted', exerciseId: 'pull-up', before: { sets: [{ weightKg: 0, reps: 8 }] }, after: { sets: [{ weightKg: -20, reps: 8 }] } },
+    ] })]);
+  const { ProposalPanel } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => ProposalPanel({ id: 'proposal0001', log: roomLog({ session: { id: 'live' } }) }), { live: true });
+  await settle();
+  const drawn = (tree) => ({ apply: button(tree, 'Apply') !== undefined, turnDown: button(tree, 'Turn this down') !== undefined,
+    bands: findByClass(tree, 'gym-proposal-band').length, caveats: findByClass(tree, 'gym-proposal-caveat').length,
+    receipts: findByClass(tree, 'gym-coach-receipt').map(textOf), rows: findByClass(tree, 'gym-diff-row').length,
+    refusals: findByClass(tree, 'gym-proposal-refusal').length });
+  assert.deepEqual(drawn(screen.tree), { apply: true, turnDown: true, bands: 1, caveats: 1, receipts: [], rows: 1, refusals: 0 });
+  // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it.
+  await gym.land(confirmed('exerciseName', 'pull-up', { equipment: 'barbell' }, { rc: 2 }));
+  await settle();
+  const outOfDate = { apply: false, turnDown: false, bands: 0, caveats: 0,
+    receipts: ['This change sets a load below what one of its movements allows. Nothing was applied.'], rows: 1, refusals: 0 };
+  assert.deepEqual(drawn(screen.tree), outOfDate);
+  // Opened again, the review reads it so from the copy before anyone applies it.
+  screen.unmount();
+  const reopened = renderHook(t, () => ProposalPanel({ id: 'proposal0001', log: roomLog({ session: { id: 'live' } }) }));
+  await settle();
+  assert.deepEqual(drawn(reopened.tree), outOfDate);
+  assert.deepEqual(gym.owed(), []);
+});

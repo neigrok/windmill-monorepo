@@ -92,6 +92,13 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
+  - The web's gym question (WD9) asks whenever the account holds gym records of its own, and names every kind of gym work
+    the browser holds, so its Add and Discard cover only what it named. Beside the drawn workouts, routines and weigh-ins
+    it names, in words no board draws, the movements the browser made or renamed (*2 movements* over their names) and its
+    settings (*your settings*), which 12n leaves unnamed on the phones; where the browser's gym work draws none of these
+    any longer, a workout made and deleted, it counts its changes (*2 changes*), as iOS does for a room holding only
+    unnamed kinds. Its confirmation reads *Discard 2 movements and your settings?* (`gymRuntime.js` `signInWork`).
+    Designer to draw the extra rows, or rule that the phones name them too.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in. `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: bound` to match, so a signed-out Coach turn is not offered it.
@@ -314,22 +321,11 @@ and Android disagree.
 - **10e · The Gym door's line.** The iOS build draws the *Where to start?* Gym door as *Log today's
   sets*, beside the Journal door's *Write tonight's page*, since the rack draws no *Last time* line. Check the first-run *Where to start?* boards and redraw any door that
   promises *last time*.
-- **10f · What Coach did, in iOS's words.** The web puts the phrase table's words in a step
-  list behind the read receipt. iOS and Android draw no step list: the receipt row opens *What Coach read*
-  (board 08.5), and the table's words stand where iOS says what Coach did — the receipt's *Read your
-  movement history* for a totals-only read and *Read nothing from your log*, *Also read your notes.*
-  under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note*, which iOS
-  draws as a card under the answer (10v). The words
-  differ too: the return receipt on boards 08.12–08.13 reads *Applied · Push A · 4 changes*,
-  *Applied · Push A · routine removed* and *Rejected · Push A.*; the web's `receiptLine` still says
-  *Turned down* (10v); iOS's card and History share one word per outcome — *Applied*, *Removed*,
-  *Rejected* — and add *Out of date* for a superseded proposal (`CoachCopy.settled`). Decide whether the step list holds on every surface, and whether web and Android take
-  *Removed* and *Out of date*.
 - **10g · Backend: the read receipt's weeks.** The server's read receipt counts weeks no
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
-  with no number; the web prints the server's weeks (`coach.js` `readLine`), and Android the weeks its own
+  with no number; the web prints the weeks its own receipt counts (`coach/CoachRoom.jsx` `receiptWords`), and Android the weeks its own
   receipt counts (`CoachReply.readLine`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
   drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
@@ -385,7 +381,9 @@ and Android disagree.
   `CoachTab.swift`): bubbles with tails, the lifter's in `gym/accent` set in `on-accent`, a sent photo
   as a 200 pt image bubble, timestamps, the typing bubble, Markdown in a full-width bubble, and the
   round + outside the field with the send arrow that appears with text. Android draws its own Material form of
-  them (`coach/CoachBubble.kt`); the web still draws the older chat.
+  them (`coach/CoachBubble.kt`). The web's target is 08W (12u), not the Messages language: the lifter's message a
+  right-aligned bubble with no tail, Coach's answer full-width prose with no bubble, and the send button inside the
+  field; its build still draws the older chat.
 - **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
@@ -395,10 +393,11 @@ and Android disagree.
   down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
   English. Boards 01.1–01.15 and 08.1–08.31 say so. Build work:
   - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in Android
-    `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
-    *Reject* and *Rejected* and asks nothing.
+    `Proposal.kt` and its review actions; iOS says *Apply*, *Reject* and *Rejected* and asks nothing. The web's
+    words are 08W-P's (12u).
   - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
-    routines*); the web and Android's retained onboarding answers still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
+    routines*); Android's retained onboarding answers still offer only Save. On the web Coach creates routines at once,
+    with no draft (08W.4, 12u). The card's loads read *60 kg* and *22 kg each*, the
     proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
   - Block order: a rename, moves, changes, removals, then additions, as the shared `ProposalDiff`
     vectors order them; iOS follows the vectors, and 08.2P and 08.27P draw that order.
@@ -423,10 +422,9 @@ and Android disagree.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
-    `Program.kt`, web `routines.js`), and web `coach.js` *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. Android's
+    `Program.kt`, web `i18n/entry/en.json`). The web Coach's strings are 08W's (12u). Android's
     refusals name a moment only where the server's `budgetResetsAtMs` names one
-    (`coach/turn/CoachTurnRefusal.kt`); web ignores the server's moments. iOS Coach's
+    (`coach/turn/CoachTurnRefusal.kt`). iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
@@ -634,25 +632,331 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
-  names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
-  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: Activity (01.13) and History
-  (03.12) without their dated *unlocked* rows (R-7) and showing only what the phone's copy holds a time for, since
-  both are read from it (R-11), so *Activity with no connection* (01.14) and *History with no connection* (03.13)
-  are states the room never reaches; a gallery row (09.12a) without its author (R-8), and its
-  caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last activity; the words for the
-  feed's other deeds — steps removed and recolored, links drawn and taken away, kinds added, renamed, described,
-  recolored, reordered and removed — where the boards word only *added*, *renamed* and *completed* and the server's
-  sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
-  the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
-  roster 17) and whose estimates lack the roster's *~*.
-- **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
-  ✅ Ready for dev in the Shell file
-  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
-  `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a detached copy; both belong in the
-  library (the build tree's step `m0-add-the-roadmap-door-to-the-library`). The sign-in and sign-out questions
-  that name roadmaps and conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the
-  Shell's own boards of those two questions say the same.
+- **Roadmap · iOS · what Activity, History and an empty Undo leave for the boards.** Activity, a step's History, the
+  room before its first read and its failed read, and the band of an Undo that brought nothing back are built in Debug
+  builds from 01.13, 01.13b, 01.15, 03.12, 01.5b, 01.5c, 02.10d and 06.5c. To draw or rule: 01.13's caption sets a row's
+  time in `.footnote` where 01.13 and 03.12 draw it at the body size, and it is built at the body size; a time and a date
+  follow the phone's region, so a US phone reads *9:12 AM* and *Nov 3* where the boards draw *9:12* and *3 Nov*; the
+  system's `DisclosureGroup` draws 01.13b's fold chevron in the label's ink whatever its tint or foreground, where the
+  board draws it in the accent, and opened it indents the folded rows, which no board draws; the fold's plus is
+  `roadmap/ink-dim` whatever kinds its steps wear; steps made in one moment share their time and stand in the roadmap's
+  authored order reversed, which for a planted roadmap follows the ids the phone minted, where 01.13 draws the plan's
+  order reversed; and Activity and History stand on the room's band like every screen of the room, where their boards
+  draw no foot.
+- **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
+  menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
+  a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where
+  the system paints the row itself (Dark `#1C1C1E` at rest and `#2C2C2E` slid, Light `#FFFFFF` and `#E5E5EA`), so on
+  `roadmap/card`, as built, the row slides as a square slab; 01.12 draws Done's rows without the excerpt that *Kept
+  exactly* gives every Board row and 02.13 draws, and they are built with it; the long-press menu's *Complete* wears
+  `checkmark`, and the accessibility tree reports that menu item as selected; no board words a refusal but *A roadmap
+  keeps one starting step* (02.12) and *This roadmap is at its limit.* (10.6a), so any other refusal of a Complete or
+  a Delete shows nothing ([Roadmap on iOS](../foundation/roadmap-ios.md) §3) and tells only its kind in an event; no
+  board says how long a band without *Undo* stands, and it takes a receipt's six seconds; and a receipt's band leaves
+  after its six seconds, or a delete's nine, under VoiceOver too, where reaching *Undo* takes longer.
+- **Roadmap · iOS · what the step page leaves for the boards.** A step's page is built in Debug builds from 03.1 and
+  03.4 to 03.9, with the row's chevron of 01.1. To draw or rule: 03.4 draws a just-completed step's status row as
+  *Sky* alone, where the section's NOTE keeps what Reset would do on a Done step's second line always and 03.6
+  draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
+  words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
+  built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
+  the Coach circle or composer, and the page is built without it until its screen is, so a Locked or a Done step's
+  foot holds the band alone and the … menu holds *Open in Graph*, *View
+  Branch*, *Attach a Roadmap* on a step that opens none, and *Delete Step*; the roadmap's one starting step keeps no
+  *Delete Step*, so its menu holds the others alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
+  address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
+  Done, and no board says so; the name is drawn as the first card's header, about 10 pt lower than 03.1 has it,
+  with the list's own spacing between the cards (55 pt from card to card where the boards draw 43); and a Board row
+  is now the system's link, so a slide toward a side that holds no action for it, right on a Locked or a Done row,
+  ends as a tap and opens the step where it ends on the row: seen under a UI test's synthesized swipe, not tried by
+  hand, and no board says what such a slide does.
+- **Roadmap · iOS · what the room's roadmaps leave for the boards.** The title menu, All Roadmaps, New Roadmap for a
+  blank roadmap, renaming in the bar and a roadmap's delete held with *Undo* are built in Debug builds from 01.3 to
+  01.6 and 01.9 to 01.11; New Roadmap's plans are the next entry's. To draw or rule: 01.10 words what else goes as *the step that opens it in Become a day
+  skipper, and its 3 Coach conversations*, and no domain reads a roadmap's Coach conversations, the web's and Swift's
+  alike, so the question is built naming the steps alone; the board words one step in one roadmap, and the rest are
+  the web's sentences with *roadmap* for *tree* (*Also removes 3 steps that open it in …*, *…, in A and B*, *…, in A,
+  B and 2 more roadmaps*), a roadmap a step owns named by that step where the web counts it unnamed; a roadmap no step
+  opens asks with no second line; the steps go with the roadmap on the server, so on a phone never signed in, and
+  until the account has the delete, the step stays and opens nothing, where the sentence says *removes*; 01.9 keeps an
+  emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
+  the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
+  keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
+  the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
+  name there wraps onto a second line where the board truncates it; the menu
+  lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
+  at the domain's 200 characters with no counter, and no board
+  draws the bound; no board draws All Roadmaps when a search finds nothing, and it is built as the system's own
+  `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
+  its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
+  stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
+  the phone's copy holds it, with no band, as no board draws one for it; and 01.3 and 01.4 group a count's digits
+  (*3,200 of 5,000*) and the app writes every count as Swift does, *3200 of 5000*.
+- **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
+  *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
+  built in Debug builds from 01.6, 01.8 to 01.8c, 02.16 to 02.18, 02.16b and 02.16c. To draw or rule: 01.8 and 01.8b
+  draw a plan that plants no step for its name, twelve steps whose steps under a heading stand Up next; the plan grammar
+  plants a step for a plan's name, the roadmap's starting step named as it, and a heading's step that its steps wait on,
+  on the web as on the iPhone, so the read-back's first row is the plan's name and the steps under a heading are Locked;
+  the captures read the boards' plan (`RoadmapFixture.summerCruise`, twelve steps, three branches, two done, four notes),
+  whose first steps differ from the board's for that reason. 01.8 draws the plan's steps in Sky, and they are built in
+  the colour each will wear, for a plan with no kind of its own the first kind's, Terracotta. 01.8 draws one header, *Pasted plan*, and it is built for a
+  file too, which is not pasted. 01.8 draws its four counts, each above zero, and 02.17 two: the counts are built shown
+  where they are above zero, *Steps* always; *Lines kept as notes* counts notes alone, an address that became a link
+  none. The read also counts the lines whose text the domain's bounds cut (a step's name past 200 characters, a
+  description past 16,000, `clips`): the web composer's gutter words such a line *shortened to fit*, and no board, on the
+  iPhone or the web, has a row or a count for them, so the iPhone's read-back is built without one. No board draws Paste
+  Steps over a text that lands no step, built as *No text to paste*, or an *Add* the domain refuses, built with the sheet
+  left open, *Add* off, and under its counts the band's *This roadmap is at its limit.* at the cap, *This roadmap changed
+  elsewhere.* where its starting step, the roadmap or a kind changed since the read, and *These steps can’t be added.*
+  otherwise. A file whose bytes are not UTF-8 is read as the web reads one, with U+FFFD in their place, so 01.8c is built
+  for a file that could not be opened; no board draws a file past the 2,000,000 bytes the phone reads, built in 01.8c's
+  footer as *“Name” is too large to read.*, or an importer that handed back no file, built as *Couldn’t open the file.* Paste
+  Steps is the + menu's item that 02.16 draws, which reads the clipboard itself once `UIPasteboard.hasStrings` says it
+  holds text, so the system asks before it hands over another app's text (02.16c), where
+  [Roadmap · iOS](ios/roadmap.md)'s stock parts name `PasteButton` for paste, as New Roadmap's *A Copied Plan* is; that
+  question is SpringBoard's alert, which the room waits on with its main actor free.
+- **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
+  and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
+  board of the form draws Coach's composer, and the form is built without it until its screen is; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
+  `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
+  dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
+  built as *Read the wind saved*; no board says whether *Kind* returns on a tap, and it does, as the system's
+  single-choice list; no board draws a save the domain refuses, since the form draws no save failure: the form stays
+  open, a loop the domain finds over links made elsewhere since the lists were read is named under the links in 05.6b's
+  words, a roadmap at its limit says *This roadmap is at its limit.* in the band at the sheet's foot, and any other
+  refusal, a step deleted elsewhere among them, shows nothing; the web drops a chosen step that comes to follow the draft's and says *… now comes after this step, so it left your
+  selection*, and no board draws that, so the form drops nothing and the save is refused as above; a form whose step
+  is deleted elsewhere, or whose roadmap is no longer the open one, closes and says nothing; within a state a list
+  stands in the roadmap's order as the domain reads it, by place, then birth, then id, so steps planted in one moment,
+  a new roadmap's own and the boards' *Learn to sail*, stand in the order of their ids, where 05.3 and 05.4 draw the
+  plan's order; the form's rows and the lists' are the system's 52 pt where the boards draw 44 and 47, and a list's
+  state symbols are the Board's size, larger than 05.3 draws them; the keyboard returns to the field that had it when
+  a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
+  and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
+  run under VoiceOver too, as every receipt's do.
+- **Roadmap · iOS · what the Board's Find, sort and filter, several steps and Kinds leave for the boards.** Find, the
+  Sort and filter menu, a branch, several steps selected, the long-press and … menus' new items, Kinds and a full
+  roadmap's New Step are built in Debug builds from 02.4 to 02.14, 03.7, 01.3, 05.2, 06.1 to 06.6 and 10.6a and 10.6b.
+  To draw or rule: 02.11 draws Recolor's unnamed hues as Sky, Brick, Plum, and the menu lists the six kinds as 05.2
+  does, the rule book's Brick, Sky, Plum; 06.4 and 06.5 draw Sky, the hue steps wear unnamed, before the kinds added
+  after it, and the legend lists the roadmap's kinds in their order and then the hues no kind names, as the web's legend
+  does, so Practice and Safety stand before Sky; the filter lists the kinds steps wear, so a kind shown that no step
+  wears any more leaves the menu and stays shown, and the Board says *No steps match · Showing Milestone* with *Clear
+  Filters* as 02.6b draws, until it is cleared, where the web's Board narrows only among the kinds its filter offers
+  (`among()`) and so drops a kind shown once no step wears it, the Board showing every step again: which surface keeps
+  it is for the owner and the designer to rule; a Find with a kind shown that matches nothing says *No steps match “…”*
+  over *Showing …* with both *New Step “…”* and *Clear Filters*, which no board draws; two kinds shown read *Showing
+  Learn and Sky*, which no board draws; one step chosen asks *Delete 1 step?* on *Delete 1 Step*, and its band says *Tie
+  a bowline deleted*, the web's sentence for one, where no board draws one; while several are selected Find and the tool
+  stay live, and a step the Board stops showing is chosen no longer, as the web's selection drops it; a kind's name and
+  description are written as their field leaves them, on return, on the next field or on Back, where 06.2's caption has
+  every change applied as it is made, so a person's typing is one write and not one a key; a kind Add Kind made and not
+  yet named, and a hue steps wear unnamed, are said in another kind's Color list as *In use*, where 10.6b words *In use
+  by …* for a named kind alone; a hue steps wear unnamed opens a page like a kind's, where a name or a description makes
+  it a kind wearing that hue and a free hue moves its steps to it, which no board draws; *Open in Graph* leaves the
+  Graph as the roadmap's view on this phone, as the switch does; 02.7's caption makes the order a `Picker`, whose label
+  an inline picker in a menu drops on iOS 26.5, so the order is built as three toggles under the *Sort* section the
+  board draws; 02.10b draws *Delete 2 Steps* beside its question, and the system's popover stands over the button; in
+  06.5 every row stands indented in edit mode, and the system indents only the row it offers to remove; and the Board's
+  own benchmark measures the switch to its first frame and its scrolls on a Mac's simulator alone, where §5 names an
+  iPhone XR.
+- **Roadmap · iOS · what a step's workspace leaves for the boards.** *Subtasks*, *Note* and *Your links* on a step's
+  page and *Links* in the step form are built in Debug builds from 03.1 to 03.3, 03.5, 03.10, 03.11, 03.14, 05.1 and
+  05.8. To draw or rule: no board draws the band after a workspace act, and it is built where the web's page gives an
+  *Undo* and where the engine holds: a subtask checked says *Check the harbour flag checked*, the web's sentence, with
+  *Undo* for six seconds, and a subtask or a link removed says *Check the harbour flag deleted*, the Board's sentence
+  for a held delete, with *Undo* for nine; an add, an uncheck and a note's save show no band, as the web's page shows
+  none; 03.3's *All subtasks done* is said under the list whenever every subtask is checked, on a Locked and a Done
+  step too, where the web offers its line with *Complete step* on an Up next step alone; a subtask's and a link's
+  *Delete* is revealed by the slide and a full swipe commits neither, the Board's rule, where the caption names the
+  swipe alone; 03.10's caption has the note saved on every change, and it is built as the kit's one draft, saved once
+  as the screen leaves by *Done* or Back, and as the app leaves the front, so a save the domain refuses or a commit
+  that fails then drops the words typed in that visit, which no board draws; 03.10's caption takes bold, italic, link
+  and list from the system's Format menu, and on iOS 26.5 that menu, reached by paging the edit menu, offers *Bold*,
+  *Italic* and *More…* alone: bold and italic are built and kept in the web's marks, a list item is a line typed with
+  its dash and a new link is typed with its marks, a link the phone opens shows in the field as its words and any
+  other stands as it is written, and *More…* raises the system's panel of typeface, size and colour, none of which the
+  note's text keeps: what the field shows of them until the screen leaves was not tried; the menu offers no *Underline*
+  there, since the field takes a font and a link alone; words set bold and italic at once are kept bold,
+  and bold or italic words that hold an asterisk lose their marks, since the web's dialect has neither; the page's
+  *Note* row shows the whole note as the web's page reads it, bold, italic, links that open and list items under
+  bullets, with no limit of lines, where 03.2 draws one plain paragraph; 03.11 draws the two fields filled, and they
+  are built with no placeholder, Title first with the keyboard, its return going on to URL; *Add* is lit once the
+  address reads as a web address, with https where it names no scheme, so one word such as *rya* lights it, and a
+  mail address cannot be added from the phone; *Your links* say a host without its *www.*, as the web's page does,
+  where the step's shared links on the same page keep it; the form's link rows stand and do not open, and list every
+  link the step holds, one no page opens by its address, so a save drops none, where the page lists only the links it
+  opens; New Link over the form is a sheet over a sheet; a workspace at the overlay's limit says *This roadmap is at
+  its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
+  start at the words, and the sections stand the list's own distance apart; and every board of the page draws
+  *History* and the Coach circle or composer, which are not built.
+- **Roadmap · iOS · what the Guide and the account's questions leave for the boards.** The Guide is built in Debug
+  builds from 08.1 to 08.5, and the Shell's questions name roadmap's work as 10.7 and 10.8 draw. To draw or rule: no
+  board draws the band after *Save*, and it is built as the room's receipt, *Guide saved*, or *Guide removed* for a
+  blank draft, with *Undo* for six seconds, where the web keeps no Undo of a guide; a roadmap with no guide of its own
+  under guides from above is not drawn, and it is built as 08.2's empty view with *Add Guide* over 08.5's sections;
+  08.3 draws the editor's footer as the counter alone, and below 4,500 characters, which the counter does not count,
+  the footer says who else reads the guide where the phone is signed in, as the web's phone does; 08.2's symbol is
+  the system's empty view's size, larger than the board draws it, as on the room's other empty views; and the editor's
+  text scrolls on under the sheet's bar, which the system blurs, where 08.3 starts it below the bar.
+  08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
+  nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
+  10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
+  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
+  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
+  person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
+- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
+  *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
+  or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout
+  does, the first step at
+  the left and the rest fanned to its right, as [Roadmap on iOS](../foundation/roadmap-ios.md) P-4 holds it; 04.4 grows
+  the captions with the discs, and the layout's captions are the web's, one size at every zoom, 13 pt in a 20 pt line,
+  seated anew as the picture grows, so the discs, halos, rings and connectors grow and a caption does not; the NOTE has
+  captions follow the text size, and they do not, since the layout seats them in boxes of that one size; every disc on
+  the boards is one size, and the layout's first step, which follows nothing, is 1.55 times wider with its caption
+  clear of that rim, and it is built so; the kit's node is 42 pt across where the layout's body is 40 at the phone's
+  working zoom, so each form is built as its share of the layout's body; the kit's selected node keeps its disc's size
+  and loses its halo for the ring, and it is built so, where the web grows the selected disc and the layout seats its
+  caption for the grown one; no board draws a selected step from far out, where the ring is held to 1.5 pt wide and
+  3 pt off its disc; connectors are the kit's 2 pt at the working zoom, grow and shrink with the picture, are not drawn
+  under a fifth of a point, and run from seat to seat under the discs in one width, where the web's ribbons stop at
+  the rim and are wider on the link a step is seated by; an Up next halo reaches a seventh of the body past the rim
+  the layout seats a caption from, so a caption beside one touches it when pinched in; the boards name all eight
+  steps, and the layout leaves a step unnamed where no seat is free of discs and connectors, *Name the boat parts* at
+  the opening frame on an iPhone 17; a caption appears a fifth of a second after its seat is found, with no fade; the
+  NOTE has the system fade the canvas at a bar's edge, which it does for what scrolls and not for a `Canvas`, so the
+  picture runs under the bars unfaded; a receipt's band takes the slot from *Next* and from the selected step while it stands; *Next*'s
+  bar and the selected step's are the system's glass capsule at its own height, not the kit's raised ground and
+  stroke; the system places *Next*'s menu centred over its bar and covers it, where 04.3 draws the menu to the right
+  with the bar's start showing; the menu lists every Up next step, 170 on the 5,000-step handbook's board, and no
+  board draws it past two; 04.3 has a picked step centred, and the camera puts it at the centre of what the bars
+  leave, comes no farther out than the working zoom, keeps a nearer zoom it already has, and glides there in the
+  web's 0.48 to 0.72 s under its easing, at once under Reduce Motion, as one pinch about a point of the canvas where
+  the web eases the centre and the zoom apart; 04.5 draws the picture a tenth larger with the bars gone, and the
+  layout's fit stops at the phone's working zoom, so under Fit *Learn to sail* keeps its size and stands in the
+  middle of what the status bar and the home indicator leave; no board says whether the picture can be moved while
+  Fit stands, and one finger and a pinch still move it, a tap alone ending Fit; that tap selects nothing, the step
+  under it included; Fit takes the foot's band away with the bars, so a receipt standing as Fit is pressed runs out
+  unseen with its *Undo*, a held delete's too, whose hold is then released, and no board says whether the band stays
+  under Fit; under Fit VoiceOver's one element has the hint *Brings the bars back.*, which no board words; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
+  that shows the whole roadmap, and the web's pinch ceiling, 2.5; a drag ends where the finger leaves it, with no
+  glide, and no board asks for one; a tap among steps closer than their 44 pt targets takes the nearest, where the
+  web zooms in on a crowd instead; the selection stays through the Board and a step's page and goes with its step or
+  its roadmap, which no board says; each roadmap opens in the view it was last switched to on this phone, the Board
+  until then, as the web keeps it; VoiceOver hears the canvas as one element, *Graph*, with the roadmap's progress
+  and *The Board lists every step.*, and no step of the picture is an element, so the question stands whether the
+  Graph should give its steps to VoiceOver in the roadmap's order; a double-tap on that element outside Fit is thought
+  to select whatever step stands at the canvas's centre, which its hint does not say, and no one has tried it with
+  VoiceOver; steps that follow each other in a loop have no
+  seats, and the Graph then says *Couldn’t load this roadmap* with no button, which no board draws; a hue no kind of
+  this build knows is drawn in the dim ink, and locked in the raised ground, the strong line and the faint ink; and
+  the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
+  times farther out than the working zoom, so until the Graph's own Find is built a person reaches a step there by
+  pinching, from *Next*, or by *Open in Graph* on the step's Board row or page.
+- **Roadmap · iOS · what a roadmap's link, its cover and Fork leave for the boards.** A roadmap's link opening the room,
+  a shared roadmap's cover and Fork are built in Debug builds from 09.4, 09.5a, 09.5b and 09.7 to 09.11. To draw or rule:
+  the cover's Graph seats *Learn to sail* where the web's layout does, as the room's Graph does, not top-down as 09.4
+  draws it; Find on the cover's Graph is dimmed, as on the room's, where 09.4 draws it at rest; 09.4 draws no bar in the
+  band slot, and the cover has no *Next*, but a step selected on its Graph stands there as the room's bar, which opens
+  the step's page, and no board draws it; *Forking…*'s spinner wears the accent, where 09.7 draws it grey; 09.9a's sheet
+  is the shell's own sign-in at its own height, with *Close* and *Sign in* in its bar and *Sign in to fork this
+  roadmap.* as its title over the shell's doors, where the board draws a full sheet titled *Sign In* with a close
+  symbol and the sentence centred in body type; *Sign In* on 09.10b opens the same sheet saying *Sign in to open this
+  roadmap.*, which no board words; 09.10a's headline stands on one line where the board breaks it in two; 09.8 draws
+  Coach's composer under the band, which the room has not built, so the copy's Board has the + alone; a cover's Board
+  with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
+  the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
+  cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
+  Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
+  or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
+  heading with no row; one the phone is still bringing shows its row with a spinner for its name and no count, and a
+  subtree nothing is known of yet its step's name alone, which no board draws; a Locked step's subtree footer says *Needs
+  …, then every step in this subtree.* and a done subtree's *Done because every step in this subtree is done.*, after 07.11's
+  *this subtree*, and an empty subtree takes 07.5a's roadmap sentence, none of which a board draws; *Open* is offered in
+  the leading swipe of every row whose roadmap can be gone into, a Locked or a Done one too, where 07.1b draws an Up next
+  row; the Graph's mark and line stand beside and under the caption the layout seats, which keeps no room for them, so a
+  line can meet a caption below it; the Roadmap row's … menu stands over the system's link rather than inside it, so a
+  tap on it opens the menu and never goes in; the pasted row of someone else's roadmap says *Someone else’s · you can read
+  it*, the web's words, since the phone's copy names no author, where 07.7 draws *By Maya · you can read it*; a pasted
+  link to one of the person's own roadmaps chooses it as a tap on its row does, and one the phone has no copy of and no
+  connection to read says *Needs a connection* under the row, neither of which a board draws; a pasted link to a subtree
+  of the person's chooses it too, where the web's picker offers it no row, and one to the roadmap the step stands in is
+  refused with the dimmed row's *This roadmap*; a choice the room refuses says why under the list, *This roadmap is at its
+  limit.* or *Your choice couldn’t be saved. Try again.*, where the web says *Couldn’t change the tree. Try again.*; *None*
+  has no footer for a roadmap that cannot be found, whose name the form's Roadmap row gives as *Not found*; Fork
+  Roadmap's band after a tap with no connection stands until the next tap, and a fork waits up to fifteen seconds for its
+  copy to head the list, saying *Forking…*, which no board draws; that band says *Forking needs a connection.*, the
+  cover's sentence, where 07.12a draws it without its full stop; 07.5d draws *Night passage* before *Log 100 miles*, and
+  the Board's Roadmap Order keeps the roadmap's authored order between steps equally far, so *Log 100 miles* stands
+  first; 07.2b draws the steps under *Opens* *Locked · 1 to go* while both *Day skipper theory* and the step stand open
+  behind them, which the room counts *2 to go*; a roadmap gone into has no *Export* in its … menu until Export is built;
+  one the phone has yet to read waits with a spinner, and with no connection says *Needs a connection* over *This
+  roadmap isn’t on this iPhone.*, the cover's 09.11 words; a roadmap the stack already stands in is gone into no deeper,
+  its row going nowhere and its foot holding no control, so a loop is gone round once; the band is the stack's one, so a
+  band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
+  draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
+  board of section 09 draws it.
+- **Roadmap · iOS · what offline, a change told once and Set Aside leave for the boards.** *Offline* in the subtitle, a
+  step that landed in a changed roadmap or came back told once by the band and its page's footer, and *Set Aside* are
+  built in Debug builds from 10.1 to 10.5c. For the owner to rule, where a board and the spec disagree: 10.4's caption
+  tells a step *removed elsewhere while this phone, offline, edited it*, and [Roadmap on the sync
+  engine](../foundation/roadmap-on-the-engine.md) §6 tells a step brought back only where the phone's change found it
+  absent, a revival the phone never saw, of a step it held as it changed it, told to no one, as the web's end-to-end run
+  asserts; it is built to the spec, so an edit made offline against a delete comes back and says nothing, and 10.4's band
+  stands where the phone's change found the step deleted, which the room's own gestures reach only when an edit is saved
+  over a read the delete has since passed, as the board's fixture writes it; and 10.3's caption has the step's History hold
+  the same line as its first entry, where §3 has History read what the phone's copy keeps, and the line leaves the
+  phone's note once told, so History holds no such entry. To draw or rule: 10.3's date follows the phone's region and
+  the fixture's clock (*26 Sep*, *Sep 26* on a US phone) where the board draws *16 Nov*; no board words a line of a link
+  the person made into a step made before, built as 10.3's footer without *Made on this phone on …*, several steps
+  deleted (*A and B were deleted …*) or followed (*… follows A and B*), or 10.4's page, whose footer is built as the band's
+  own sentence, as the caption has it; lines that land together are told one by one by the band, each once no other band
+  stands, a line waits behind a receipt so its *Undo* stands, and a line waits while no one could see its band, under a
+  sheet or while a field holds the keyboard, which no board says; a step's lines stand under its status row while its
+  roadmap is on the stack, so a roadmap left and opened again keeps no footer, as on the web; Set Aside's second line is drawn
+  for *New step* and *Note edited*, and built for the rest as *Step edited*, *New kind*, *Kind edited*, *New subtask*,
+  *Subtask edited*, *New link*, *Link edited*, *Roadmap renamed* and *Guide edited*, and its footer for the reasons no
+  board draws as *The roadmap reached its limit.*, *Editing access ended.* and *The combined note is too long.*, the
+  web's reasons in 10.5b's form; *Discard All*'s question is built as *Discard 2 changes?* over *They’re removed from this
+  iPhone.*, which no board draws; *Copy* takes a step's name and description, as 10.5c's caption has it, where the web's
+  takes the description alone where there is one, for the web's owner to rule, and says nothing once it has copied; a
+  group's header is the roadmap's name as the room last read it since the app launched or the account changed, since the
+  phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
+  step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
+  steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
+  which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
+  every board of the section draws Coach's composer, which is not built.
+- **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
+  5,000-step handbook in view is given five sixths of its frames
+  ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
+  changing the picture while a pinch, or the camera's glide to a step or to *Fit*, moves more than 500 steps in view,
+  and none once it rests; it uses none until a phone has measured them. To rule with the phone's numbers, since no
+  board draws a pinch in motion: *held* shows the picture as it was last drawn, scaled with the fingers between stops
+  half again apart in zoom, so discs, rings and the selection ring run between about four fifths and six fifths of
+  their size, soft when grown, and return to their size at each stop; it shows no caption until the pinch rests; and
+  a pinch out from a view that holds part of the roadmap leaves up to a fifth of the canvas empty at its edges until
+  the next stop. *coarse* keeps every step in its place, sharp and with the captions, as one square of its colour: a
+  Done step loses its dot, an Up next step its halo and dot, a Locked step its ring and dot. *layered* shows what the
+  room shows now.
+- **Roadmap file · three locked roles a step off the web's.** In *iOS · Roadmap roles*, `roadmap/locked-brick-glyph`
+  (Light `#CD9987`), `roadmap/locked-plum-fill` (Light `#E1D1D4`) and `roadmap/locked-plum-ring` (Dark `#4B2E42`) each
+  differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)
+  and `locked/plum-ring` (`#4B2F41`), which the kit's Graph node binds and [Roadmap · iOS](ios/roadmap.md) names as
+  their values. The app holds the web's. To fix in the file: the three variables.
+- **Shell · iOS · the first-run doors draw two copies of the product card.** On *Where to start?*
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)) the Roadmap door is an instance
+  of the Design System's published `iOS / Product card` · Roadmap; the Journal and Gym doors are instances of the
+  set's older copy, which Shell has not updated. The published Journal variant draws a `book.closed` symbol where
+  Shell's Journal door draws a plain bar, so accepting the library update changes that door's look. To decide: which
+  the Journal door draws, against the app, then accept the update or correct the variant.
+- **Roadmap · iOS · the sign-in questions in two files.** The sign-in and sign-out questions that name roadmaps and
+  conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the Shell's own boards of those two
+  questions say the same.
 - **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
   simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
   Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
@@ -663,24 +967,23 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   keyboard rises; a bar folds its buttons into an overflow before it truncates a title; `.glass` on a white card
   is white on white. Roadmap's kit is matched to the probe. To check against it: the library's iOS parts and the
   Gym and Journal iOS boards.
-- **Roadmap · iOS · the iOS 18 boards are not probed.** Section 12's iOS 18 boards are drawn from knowledge of
-  iOS 18, with no simulator run. Before they are built: one probe of the bar, the sheets, Find and the action
-  sheet on an iOS 18 runtime. With the title in the principal slot the system's in-bar rename is unavailable there,
-  so renaming on iOS 18 needs a ruling.
+- **Roadmap · iOS · the iOS 18 boards await review.** Section 12's boards 12.6 to 12.10 were checked against an iOS 18.6
+  simulator run of the room and the design probe (2026-11-26). Each differed from what iOS 18 draws, and each is
+  corrected as a 🧪 Proposal for the owner's review:
+  - the bar's tint is the ink;
+  - the bar's buttons are bordered circles;
+  - there is no hairline under the bar or on the foot;
+  - a dialog dims less;
+  - the medium sheet sits higher.
+
+  NOTE 12 says renaming is the in-bar field iOS 26 has, once the title is a binding. The app passes a string there, so
+  its title menu has no Rename on iOS 18 (plan step `m6-the-room-on-ios-18-renames-and-its-captures-pass`).
+- **Roadmap · iOS · a sheet's close word on iOS 18.** The built Kinds, Guide and Set Aside sheets close with *Done* on
+  iOS 18; board 12.10 and NOTE 12 say *Close*. To check against the iOS 26 boards and the Journal and Gym sheets, and
+  settle on one word.
 - **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
   state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
   the file's other pages were not checked. Delete it once they are.
-- **Roadmap Coach · the engineering note against the spec.** The Figma
-  [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
-  [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
-  1: the note runs the turn on the server over gym's turn wire and the web's tools on the server; the spec runs the
-  turn on the device and every ability on the browser's copy. 2: the note lists `get_health` and the change kind
-  `tidy`, both retired, and mints a server proposal record where its section 5 keeps it in the roadmap's replica; the
-  spec keeps it as a synced record with terminal states. 3: the note pre-reads a health score. 4: the note takes
-  allowance from the backend's installations and budget; the spec takes it from the
-  [AI service](../foundation/ai-service.md). 5: the note's proposal rests on `baseSeq`; the spec's on the copy's
-  stamps. 6: the note logs a turn on the backend, which no longer sees one. Rewrite the note; the boards are not
-  affected.
 - **Roadmap Coach · an applied proposal the server refuses.** The design rules that an applied proposal is never
   refused or discarded. A proposal is applied on the device and then synced, and the server can refuse the synced
   change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
@@ -690,9 +993,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
-- **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
-  was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
-  conversations.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -826,10 +1126,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
   *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
   canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
-  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
-  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
-  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
-  gallery.
+  included, and it can appear in the public gallery.*; published, to its owner and to a reader alike, *My year is public:
+  …* 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the gallery.
 - **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
   the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
   step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
@@ -1107,11 +1405,60 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Gym
 
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
-  full workout entry on the web and a gym room that opens signed out. Neither is drawn. To draw before it is
-  built: starting, logging, editing and finishing a workout on the web, with what stands in for a phone's Live
-  Activity; a workout open on another device; Coach during a workout and a workout proposal's card; the signed-out
-  gym room and its sign-in Add or Discard; and, for every room, a browser that keeps nothing and one whose saved
-  data was cleared.
+  full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
+  2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
+  answering the READ ME's questions. A browser that cannot keep a copy is not supported (R-7), so the Shell file's
+  boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
+  the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
+  `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
+  Where the build of WD1–WD7 parts from the boards:
+  - *Coach from the receipt.* The receipt has no *Share with Coach*: Coach on the web takes no handed question yet.
+  - *An empty History.* It says words no board draws, which claim nothing about a phone: *No conversations yet. What you
+    ask Coach is listed here.* (`coach/History.jsx`).
+  - *Coach during a workout (WD7).* A proposal's card keeps 08W.25's hairline between blocks, radius 12 and secondary
+    subtitle, which WD7 draws otherwise; its title and movement names are weight 600 on both cards. In the workout's Coach
+    its decisions are design-system Buttons, as WD7 draws them: Reject Secondary, the workout's Apply Primary and a routine's
+    Apply Secondary while a workout is open, an Apply saying *Applying…* while it waits and *Try again* after a failure;
+    Coach's room and History keep 08W.25's pills. A block lists only the lines that change, as WD7 draws, but an added movement keeps
+    its three lines (Sets, Reps, Load) from the shared `ProposalDiff`, as WD7 now draws it. A load of zero reads *0 kg* on the card, as the shared vectors pin `ProposalDiff` and WD7.1 draws,
+    where the workout's index says *bodyweight* for the same load (`gym.logbook.schemeBodyweight`); the owner kept *0 kg*
+    (2026-11-26) and left one word for both to the dogfood node `gym-how-a-zero-load-reads`. The sheet keeps the design system's grabber, as WD7's sheets draw it. Out of date, the card says
+    why in one sentence, of which WD7.3 draws only *You logged {movement} since this suggestion. Nothing was applied.*; the
+    rest no board draws: the iPhone's *A newer suggestion replaced this one.*, *This workout changed after this
+    suggestion.*, *This workout has finished.* and *You logged a movement since this suggestion.* (a refusal that names no
+    movement), and the web's own *This suggestion was already answered.*, *This change sets a load below what one of its
+    movements allows.* and *This suggestion is out of date.*, each closing *Nothing was applied.* The load sentence stands
+    both for the log's refusal and for a change the browser's copy would refuse for a load under a movement's floor, which
+    the card draws out of date as soon as the copy's rules would refuse it, in every tab and after a reload, with no Apply.
+    A routine's card (08W-P) says the same sentence for its own floor, under 08W.28's head *{routine} · Out of date* and in
+    place of the drawn *{routine} changed after this suggestion.*; no board draws it. The routines review says it too, in
+    place of its Apply and Turn this down, as it says *The routine changed after this was written. Nothing was applied.* for
+    a routine that moved; its component, *Gym / Coach / Inline proposal* (`575:5655`), draws no out-of-date state. The phone's Coach button
+    reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
+    and on a fresh chat otherwise, which no board draws. The workout page leaves Coach out signed out,
+    where no board draws it. WD7's card replaces 08W.14's read-only row for a phone's workout proposal (`2126:11058`,
+    `2126:11183`, 🗄 Archived).
+  - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
+  - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
+    Coach changed the plan.
+  - *The default rest (WD10, approved 2026-11-26).* Settings · Your training log sets Default rest and Rest sound on both
+    seats; a movement's rest in this workout stays Edit sets' *Rest*. While a workout is open, the Default rest line names
+    it only when one of its movements is on Default, where WD10.6 names any open workout. At 390 the open listbox runs
+    below the fold under the signed-in page's Profile, which is taller than WD10.2 draws; the page scrolls it into reach.
+  - *Where WD10 meets the phones.* Neither phone draws the rows or writes `restSeconds` or `restSound`; whether they get
+    WD10's rows is the owner's (WD10 READ ME, question 2). The web writes both through `SaveRestSettings`, whose vectors
+    (`rest-settings-actions.json`) both phones list as not applicable and whose bound (`prefs.restSeconds` 15–900) sits in
+    the web's rule book alone. No shared vector covers `RestTarget.of`, which every surface reads the default through
+    while it draws, so a changed default reaches an open workout's movements on Default. The iPhone gates the
+    rest-reached haptic on `confirmHaptic` where the web gates its tone and buzz on `restSound`. The web's Settings keeps
+    Units, which the phones dropped (9r).
+  - *Settings signed out (Shell `390:2417`, approved 2026-11-26).* The page keeps the shell's header and the account card
+    signed-in Settings has, where SO2–SO6 draw a bare column, so the column is about 498 px where the boards draw 540 and
+    the export lines wrap at 1440. *Preparing…* is the design system's disabled Button, where SO3 draws the button at
+    55 % opacity. The result line enters with `wm-fade-in-up`, a fade and an 8 px rise, where SO4 draws a fade; no
+    product-neutral fade keyframe exists. A lapsed seat, a session gone while the browser holds the account's copy, keeps
+    the sign-in door alone, which no board draws (LP-1); its one line is the signed-out page's, *Sign in for your
+    profile, sessions and connected tools.*, which there reads as if the rest of Settings worked without signing in.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1388,9 +1735,6 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android and iOS planned rows read the load the plan expects
-    (*100 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
-    (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
@@ -1584,10 +1928,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages. Sets go with their workout; settings, movement names and Coach
+  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
   drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
-  three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
+  three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
@@ -1706,7 +2050,7 @@ Android. It and the product differ in these places.
 - **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
   (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
-  weigh-ins, movements, notes and journal pages, so a phone holding only conversations reads *N changes* and Discard
+  weigh-ins, movements, notes, journal pages and roadmaps, so a phone holding only conversations reads *N changes* and Discard
   deletes them unnamed. For iOS: `conversation` in `AdoptionQuestion.named`, which reads *This phone has 2 conversations
   from before you signed in. Your account already has training. Add them, or discard them from this phone.* and *Discard 2
   conversations?* / *They are deleted from this phone. You can’t undo this.*
@@ -1732,9 +2076,8 @@ Android. It and the product differ in these places.
   board draws either. No board draws the way back from 08.72's Sign in: the sheets close and sign-in stands over the rack, and
   after the code a new account lands on the rack with the proposal still waiting, and an account with training first asks *Add to
   your account?*. A refused write that is neither training nor a named record says *That change could not be saved.* over its
-  reason, words the log's other refusals already use; no board draws it. A Stop refused for another
-  reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
-  already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
+  reason, words the log's other refusals already use; no board draws it. Stop is the phone's own, so no
+  band says a Stop went unheard, and 08.69's band draws a state Android no longer has. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*
 - **6z · The Android boards after the phone Coach (designer).** Once it ships, delete the originals it replaced, with their
   Daylight pairs: 08.5 `1253:28654`, 08.8 `1253:28820`, 08.9 `1253:28915`, 08.26 `1254:37761`, 08.61 `1442:18583`, 01.5
@@ -1756,8 +2099,53 @@ Android. It and the product differ in these places.
   phone's allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about
   $0.25 is left after signing in and *Sign in to continue.* holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.
+- **12u · The web's Coach room, ✅ Ready for dev (owner approved 2026-11-23).** The Gym file's Web page holds the room as
+  [08W](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2123-9861) (08W.1–08W.23) and its proposal card and
+  greeting as [08W-P](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2128-11609) (08W.24–08W.28), Dark only.
+  Owner ruling: Coach's greeting is part of onboarding and shows only while the person has no conversation at all; a New
+  chat for someone who already has one opens the plain fresh chat of the phones' 08.1, with no greeting. 08W.24 draws the
+  greeting beside an empty History, and 08W.3's desktop board draws the same screen. iOS keys its greeting to this phone
+  (until a first message is accepted, while the gym holds no routines or is signed out: `CoachTab.greets`,
+  `CoachConversation.showsGreeting`), not to whether the account has a conversation. The owner settled each open question
+  as drawn: a History row names no device; the empty History keeps 08.53's *on this phone* words; another tab's turn says
+  *Answering on another device*; a picture held elsewhere is a wordless tile with no tooltip, the same when the picture is
+  gone; a phone's workout proposal stays a read-only count row after the workout ends; allowance used says *You have used
+  all of your AI allowance.* whatever the allowance holds; shared capacity says 08.44's words, with *Use your own AI agent*
+  (five words, over the three-word budget); Update keeps the phones' sentence and reloads the page; *Build my own* opens New
+  routine and *Add screenshot* keeps its word on desktop; Applying and a failed apply take iOS's 08.29 and 08.30 in the card's
+  web form. No board names the picture tile's accessible name (designer). Daylight is not drawn. The web's build still draws
+  the earlier room: the step list behind the read receipt, *Turned down*, *Review routine* and *Save routine*, *Logged sets
+  stay unchanged.*, *Response stopped.*, *Stop didn’t reach Coach. Try again.*, *The next question frees up in a couple of
+  hours.*, *Coach reads your log, so it needs you signed in.* and *Coach isn’t part of this Windmill…* (`web/src/products/gym/i18n/en.json`, `proposals.js` `receiptLine`), which
+  08W retires.
+- **12v · iOS says a Stop reaches a server.** A Stop that fails for want of a connection says *Coach is stopped on this phone.
+  Stopping it on the server needs a connection.* (`Turn/CoachTurnDriver.swift`), true while the server runs the phone's loop
+  and holds a stop route. On the AI service the turn runs on the device and the stop route retires (gym Coach on the AI
+  service §4, §9), as 08W.11 retires the web's *Stop didn’t reach Coach. Try again.*, and no board draws a Stop that needs a
+  connection. The second sentence goes with the move; for the owner, whether iOS's band then says only *Coach is stopped on
+  this phone.*
+- **12w · 01.8 says *Check them, then apply.*** iOS 01.8 (`1173:4471`, 🚀) draws Coach's answer as *Your screenshot has 3
+  full-body days. Here are 3 new routines. Check them, then apply.* over three *Routine created* rows. A routine Coach creates
+  exists at once, with nothing to apply (gym Coach on the AI service R-7; 08W.13 ends the sentence at *routines.*). iOS's capture fixture says
+  the same sentence (`Coach/CoachFixtures.swift`), and *Check it, then apply.* for one routine. The board's last sentence
+  goes (designer), and the fixture with it.
+- **12x · *did not answer* has no full stop on the phones.** iOS (`CoachCopy.noAnswer`, `Coach/CoachWire.swift`) and Android
+  (`gym_coach_fault_no_answer`) say *Coach didn’t answer. Try again in a moment* with no full stop; iOS appends `. ` and a
+  detail to it when the server names one (`CoachTransport.swift`). The web's `gym.coach.noAnswer` and 08W.18 end it with a
+  full stop. For the phones' build: the full stop, with any detail joined after it.
 
 ### Native and web differences
+
+- **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
+  2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
+  shell's words and roadmap's in flow 50's.
+- **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
+  in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
+  all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
+- **In this browser has no editor.** WD9.3 draws a copy waiting on the account's open workout (*Keep as finished*) and
+  one the retry answers (*Add to your log*). The web has no Fix workout, so a copy refused for its times, its sets, its
+  movements or a spent id says why in one undrawn sentence (`gym.recovery.reason.*`) and offers Discard alone, held
+  with Undo as the room's deletes are. Designer to rule those sentences and whether the web gets the phones' editor.
 
 - **A retargeted line that moved, on the web.** A proposal's count is every line not kept and every kept line that moved, and the
   phones draw a move as *Order* on its row. The web never sees the base, so it marks the order only when the count holds more than
@@ -1853,6 +2241,37 @@ Android. It and the product differ in these places.
 
 ### Figma reconciliation
 
+- **Enter on the web's rack.** The Gym file's component Gym / Workout / Rack (`2151:11710`) says Enter logs from either
+  field. The build follows the iPhone (`docs/design/ios/workout-in-flight.md`, 03.23D.4): Enter, a phone keyboard's done
+  key included, lands the value and drops the field, and only Log set logs, so a lifter who taps done after typing a load
+  does not log the set before lifting it. The component's description is corrected, or the owner rules otherwise.
+- **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
+  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms.
+- **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
+  bottom panel, and its Gym Tab, Set row, Set line, Editable number and Action band bind the retired Gym · Colour
+  collection. It needs the owner's Publish.
+- **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
+  until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
+- **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
+  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
+  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+- **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
+  the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
+  weigh-ins*.
+- **Board status chips.** The Gym file's Board status set (`802:11855`) has Built, Ready, Archived, In progress and
+  Proposal: a 🔨 In dev board wears Ready and a 🚀 In production board wears Built. The WD parts section
+  (`2150:11608`) says its parts join Components · Gym web when the build lands; WD1–WD9 are built and the parts stay
+  local. The Shell file's ✅ section *Where to start? · the Roadmap door* (`326:7899`) holds boards named 🔨 In dev
+  (`326:7900`, `326:7971`).
+- **The Design System's Select** (`294:129`) draws rows about 100 px tall and no compact variant, where `forms/Select.jsx`
+  is a combobox with compact rows and a `compact` variant (a mono value, the listbox under the trigger's right edge) that
+  WD3.2 and WD10 draw as a local part.
+- **The home door's gym accent.** The Design System's `Brand:light/shell/home/gym/accent` is `#137A6C` in the file, as gym's
+  day is verdigris (owner, 2026-11-26); its subscribers see iris until the owner publishes the library.
+- **The Shell file's Settings boards.** Board 21 (`2:203`) lags the code (no Back, another Profile section, no Notes
+  door), and boards 21 and 30 (`2:464`) show a real account's name and email where boards use example data. The Gym
+  file's signed-in WD frames draw the signed-out seat in the head.
+
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design
   System. Short conversations start at the top in the targets; the app keeps them bottom-aligned.
@@ -1885,10 +2304,6 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
   says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
   the page name the store a person will buy through.
-- **Echoes and the AI allowance.** `journal.landing.echoes.free`, `shell.landingHead.faq.costAnswer` and
-  `web/public/pricing.html` say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
-  allowance, including background Journal processing. Check whether echo derivation calls a hosted
-  model, then make the copy or the allowance document name what is true.
 
 ## Marketing and email
 
@@ -1908,5 +2323,9 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
+- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
+  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
+  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
+  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.
