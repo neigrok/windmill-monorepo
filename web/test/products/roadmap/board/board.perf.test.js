@@ -5,8 +5,10 @@ import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { Board } from '../../../../src/products/roadmap/board/Board.js';
 import { PrerequisiteChoices } from '../../../../src/products/roadmap/step/StepDraft.js';
 
-test('Board — a 5,000-step lattice with 1,800 steps unfinished builds in under 50 ms, search keystroke included', () => {
-  const tree = new SkillTree({ id: 't', title: 'Lattice', nodes: Array.from({ length: 5000 }, (_, index) => ({
+// Each timed build is of a roadmap the room has not read yet, so it pays the domain's one reading of it, records and
+// graph, as the room does once for each change of the roadmap or the marks.
+test('Board — a 5,000-step lattice with 1,800 steps unfinished builds cold in under 50 ms, its reading included, search keystroke included', () => {
+  const lattice = () => new SkillTree({ id: 't', title: 'Lattice', nodes: Array.from({ length: 5000 }, (_, index) => ({
     id: `n${index}`,
     label: `Step ${index}`,
     prerequisites: [...new Set([
@@ -15,10 +17,12 @@ test('Board — a 5,000-step lattice with 1,800 steps unfinished builds in under
       ...(index > 7 ? [`n${index - 7}`] : []),
     ])],
   })) });
-  const progress = { completed: new Set(Array.from({ length: 3200 }, (_, index) => `n${index}`)), completedAt: {} };
-  new Board(tree, progress);
+  const marks = () => ({ completed: new Set(Array.from({ length: 3200 }, (_, index) => `n${index}`)), completedAt: {} });
+  new Board(lattice(), marks());
 
   const timings = Array.from({ length: 5 }, (_, run) => {
+    const tree = lattice();
+    const progress = marks();
     const started = performance.now();
     const board = new Board(tree, progress, { search: run % 2 === 0 ? '' : 'step 4' });
     const elapsed = performance.now() - started;

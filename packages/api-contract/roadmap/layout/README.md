@@ -58,8 +58,9 @@ does every list below that says "in the steps' order".
   The web seats a roadmap with `radial` when the bubble layout throws; no roadmap here makes it throw, so the two
   `radial` files are seated by `fallbackLayoutEngine()` directly, and a port seats them with its fallback.
 - **`seats`** holds one `[x, y]` for each step, in the steps' order, in world units with y down.
-- **`tiers`** holds one number for each step: `0` locked, `1` available, `2` complete (`UnlockRules.statesUnder`,
-  then `nodeTier`). A step in `done` is complete; any other is available when every step it follows is in `done`.
+- **`tiers`** holds one number for each step: `0` locked, `1` available, `2` complete (the domain's state of each
+  step, `graph.json`, with the steps of `done` marked, then `nodeTier`). A step in `done` is complete; any other is
+  available when every step it follows is in `done`.
 - **`links`** holds one row for each id a step follows, steps in order and each step's `follows` in order:
   `from` the followed step, `to` the follower, `kind` (`trunk` where `to` is seated under `from`, else
   `in-branch` or `cross-branch`), `sway` (`bendOf(from, to)`, in [-0.5, 0.5)), and `cx`, `cy`, the control point
@@ -98,7 +99,7 @@ raises a power, or takes anything from `Math` but `abs`, `ceil`, `floor`, `imul`
 | `model/SkillTree.js` | The topological order, the links, the bounds |
 | `model/TrunkTree.js` | The link each step is seated by, sibling order, branches, link kinds |
 | `model/footprint.js` | The box a step reserves, from its label's length |
-| `model/UnlockRules.js`, `theme.js` | Tiers; the constants every file shares |
+| `theme.js` | The constants every file shares |
 | `model/SpatialGrid.js` | Which steps are near a view |
 | `scene/framing.js` | The fit, the zoom floor, the centre the chrome leaves, the family a focus frames |
 | `scene/edgeCurve.js` | A link's sway and its control point |

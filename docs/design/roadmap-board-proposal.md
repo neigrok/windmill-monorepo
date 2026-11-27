@@ -22,8 +22,8 @@ shape and distance. Both read one roadmap and one model.
 ## Model
 
 - Every step is one card, the root included. Edges are prerequisites. A step's colour is its kind.
-- The three columns are derived, never chosen. This must be true, as `model/UnlockRules.js` derives
-  it: a completed step is **Done**; an unfinished step whose prerequisites are all complete is
+- The three columns are derived, never chosen. This must be true, as the domain's graph derives
+  it (`graph.json`): a completed step is **Done**; an unfinished step whose prerequisites are all complete is
   **Up next** (no prerequisites counts); every other step is **Locked**. Completion wins.
 - Nothing is dragged. No assignees, deadlines or new status field.
 - **Steps left.** A Locked step's distance is the count of unfinished steps in its transitive
@@ -262,7 +262,7 @@ never sits above eight-step columns.
   addition through restore needs a first-addition register on the wire (dogfood node
   `rb-created-restore-born-at`). Genesis-stamped and legacy steps read as unknown. Unknown dates
   sort last in both directions; ties keep stable order. Never infer a date.
-- **Unlocked sort** stays out until `unlockedAt` persists. `model/UnlockRules.js` derives present
+- **Unlocked sort** stays out until `unlockedAt` persists. The domain's graph derives present
   eligibility only.
 - **Done order** reads `completedAt`, which `model/progress.js` records per step.
 - **Creation** must be one intent for the step and all its prerequisite edges, with an idempotent

@@ -260,8 +260,11 @@ extension LegendRead {
     let collisions: [JSON] = hues.filter { !$0.others.isEmpty }.map {
       ["hue": .string($0.name), "owner": .string($0.owner), "others": .strings($0.others)]
     }
-    let shown: [JSON] = shown.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
-    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown)]
+    let shown: [JSON] = shown.map { ["hue": .string($0.hue), "id": .of($0.kind?.id), "steps": JSON($0.steps)] }
+    let choices: [JSON] = choices.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
+    let filters: [JSON] = filters.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
+    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown),
+            "choices": .array(choices), "free": .of(free), "filters": .array(filters), "removable": .strings(removable.map(\.id))]
   }
 }
 
@@ -279,7 +282,7 @@ extension BoardQuery {
     }
     self.init(sort: sort ?? .roadmap, kinds: try form.optional("kinds") { try $0.asArray().map { try $0.asString() } } ?? [],
               search: try form.optionalString("search") ?? "", branch: try form.optionalString("branch"),
-              doneExpanded: try form.optionalBool("doneExpanded") ?? false)
+              doneExpanded: try form.optionalBool("doneExpanded") ?? false, reveal: try form.optionalString("reveal"))
   }
 }
 
@@ -295,15 +298,27 @@ extension BoardRead {
       return ["id": .string(card.id), "column": .string(card.column.rawValue), "needs": needs, "unlocks": unlocks,
               "unlockCount": JSON(card.unlockCount)]
     }
+    // Each part that hides the revealed step, as it reads cleared.
+    let cleared: [BoardRead.Part: JSON] = [.kinds: .array([]), .search: .string(""), .branch: .null]
+    let revealing = self.revealing.map { parts in JSON.object(JSON.Object(uniqueKeysWithValues: parts.map { ($0.rawValue, cleared[$0] ?? .null) })) }
     return ["overall": overall.form, "sort": .string(sort.rawValue), "branch": .of(branch), "recovery": .of(recovery?.rawValue),
-            "columns": .array(columns), "cards": .array(cards)]
+            "columns": .array(columns), "cards": .array(cards), "revealing": revealing ?? .null]
   }
 }
 
 extension EffectsRead {
+  // A case's selection, the draft's sides it names and the roadmap it attaches, complete or not.
+  static func asked(_ input: JSON) throws -> (ids: [String], links: Links?, attach: Bool?) {
+    let strings = { (list: JSON) throws -> [String] in try list.asArray().map { try $0.asString() } }
+    let links = try input["links"].map { Links(requires: try strings($0.member("requires")), opens: try strings($0.member("opens"))) }
+    return (try strings(input.member("ids")), links, try input["attach"].map { try $0.member("complete").asBool() })
+  }
+
   var form: JSON {
-    ["kept": .of(kept), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable), "follow": .strings(follow),
-     "relocks": .strings(relocks)]
+    ["kept": .of(kept), "under": .of(under), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable),
+     "follow": .strings(follow), "relocks": .strings(relocks), "setAside": setAside.map(JSON.strings) ?? .null,
+     "attachRelocks": attachRelocks.map(JSON.strings) ?? .null,
+     "loops": loops.map { ["requires": .strings($0.requires), "opens": .strings($0.opens)] } ?? .null]
   }
 }
 

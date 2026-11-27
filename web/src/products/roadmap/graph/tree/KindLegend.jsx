@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 import { KIND_CSS, NODE_COLOR_NAMES } from '../../theme.js';
 import { RECOLOR } from '../../copy.js';
-import { hueName, kindName } from '../../model/Legend.js';
+import { freeHue, hueName, kindName } from '../../model/Legend.js';
 import { t } from '../../i18n/index.js';
 
 
@@ -35,8 +35,7 @@ export function KindLegend({
   const editable = Boolean(onRename || onRecolor || onAdd || onRemove || onDescribe);
   const canEditRow = Boolean(onRename || onDescribe);
   const inUse = kinds.filter((k) => k.count > 0);
-  const takenHues = new Set(kinds.map((k) => k.hue));
-  const freeHue = NODE_COLOR_NAMES.find((h) => !takenHues.has(h)) || null;
+  const free = freeHue(kinds);
   // Editing shows every kind so empties can be recoloured or removed; read-only voices only the hues in use.
   const rows = editable ? kinds : inUse;
 
@@ -338,7 +337,7 @@ export function KindLegend({
             )}
 
             {!editing && hover && (
-              k.count > 0 ? (
+              !k.removable ? (
                 <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
                   {k.count}
                 </span>
@@ -366,10 +365,10 @@ export function KindLegend({
         );
       })}
 
-      {hover && onAdd && freeHue && (
+      {hover && onAdd && free && (
         <button
           type="button"
-          onClick={() => onAdd(freeHue)}
+          onClick={() => onAdd(free)}
           style={{
             display: 'flex',
             alignItems: 'center',

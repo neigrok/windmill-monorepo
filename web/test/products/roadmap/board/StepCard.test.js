@@ -54,7 +54,7 @@ test('StepCard — several missing prerequisites name the first and count the re
     '<span class="st-board-card-rail" aria-hidden="true"></span>',
     '<span class="st-board-card-content">',
     '<span class="st-board-card-title">Sail solo</span>',
-    '<span class="st-board-card-reason">Needs Sail a triangle +1 · 4 to go</span>',
+    '<span class="st-board-card-reason">Needs Tie a bowline +1 · 4 to go</span>',
     '</span></button>',
   ].join(''));
 });

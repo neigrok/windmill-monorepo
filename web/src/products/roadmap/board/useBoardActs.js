@@ -3,7 +3,8 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, deletabl
 import { countBucket } from '../../../telemetry/countBucket.js';
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
-import { UnlockRules, takesMark } from '../model/UnlockRules.js';
+import { domainReading } from '../model/domainReads.js';
+import { takesMark } from '../model/Opening.js';
 import { LABELS, SAVE_FAILURE, TREE_TOAST, deleteFailedToast, openTreeLabel, treeBand } from '../copy.js';
 import { fieldValue, sameFieldValue } from '../step/InlineStepDraft.js';
 import { BoardQuery } from './Board.js';
@@ -104,7 +105,7 @@ export class BoardActs {
     const c = this.collaborators;
     if (!c.active || !c.owner || !c.tree || !['swipe', 'key'].includes(door)) return false;
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
-    if (UnlockRules.derive(tree, c.progress).get(id) !== 'available') return false;
+    if (domainReading(tree, c.progress).states.get(id) !== 'available') return false;
     const step = tree.nodesById.get(id);
     if (!takesMark(step)) {
       this.sayTreeCompletes(step);

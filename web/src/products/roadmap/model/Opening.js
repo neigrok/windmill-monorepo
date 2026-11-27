@@ -85,6 +85,12 @@ export class Opening {
   }
 }
 
+// A step that opens a tree is never marked by hand: no door offers its completion and no mark is sent for it. A step
+// the roadmap no longer holds opens nothing.
+export function takesMark(step) {
+  return !step?.opening;
+}
+
 // What one load read of the trees a roadmap's steps open, by step: the pointers in `byStep`, and the subtrees the steps
 // own in `owned`. `read` is false where the load read no pointer: the device's own copy, or a server that could not
 // follow them. `pointers` is false for a room that is not its owner's, which takes no pointer at all.

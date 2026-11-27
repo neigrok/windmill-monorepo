@@ -67,7 +67,7 @@ import SyncTesting
     let open = try #require(model.shown)
     let page = try #require(open.page(of: row.id))
     let opening = try #require(row.opening)
-    let footer = [opening.rule(of: row, in: open, detaches: model.owns), row.marked ? RoadmapModel.Opened.markAside(relocks: open.graph.unlocks(row.id).count) : nil]
+    let footer = [opening.rule(of: row, in: open, detaches: model.owns), open.setAside(of: row).map { RoadmapModel.Opened.markAside(relocks: $0.count) }]
     return [row.card.column.rawValue, opening.face.rawValue, opening.pill ?? "-", opening.progress ?? "-", RoadmapStepPage.detail(of: page, in: open),
             footer.compactMap { $0 }.joined(separator: " "), row.completes ? "completes" : opening.primary].joined(separator: " | ")
   }
@@ -86,7 +86,7 @@ import SyncTesting
     let opening = try #require(learn.opening)
     #expect([opening.tree, String(opening.owned), opening.face.rawValue, opening.title ?? "", "\(opening.done) of \(opening.total)"]
       == [sail.tree.description, "false", "open", "Learn to sail", "3 of 8"])
-    #expect(!learn.completes && !learn.resets && !learn.marked && learn.opensStanding)
+    #expect(!learn.completes && !learn.resets && model.shown?.setAside(of: learn) == nil && learn.opensStanding)
     #expect(try shown("Learn to sail", in: model) == [
       "upNext", "open", "Learn to sail · 3 of 8", "3 of 8 done", "Build · 5 to go in Learn to sail",
       "Done when every step in Learn to sail is done.", "Open Roadmap",

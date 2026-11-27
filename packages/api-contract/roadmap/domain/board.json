@@ -29,6 +29,7 @@
       "sort": "roadmap",
       "branch": null,
       "recovery": "search",
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
         {"name": "upNext", "count": 2, "ids": ["d", "z"], "shown": ["d", "z"], "folded": false},
@@ -72,6 +73,7 @@
       "sort": "roadmap",
       "branch": null,
       "recovery": null,
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 1, "ids": ["c"], "shown": ["c"], "folded": false},
         {"name": "upNext", "count": 2, "ids": ["a", "b"], "shown": ["a", "b"], "folded": false},
@@ -137,6 +139,7 @@
       "sort": "newest",
       "branch": null,
       "recovery": null,
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
         {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
@@ -194,6 +197,7 @@
       "sort": "newest",
       "branch": null,
       "recovery": null,
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
         {"name": "upNext", "count": 3, "ids": ["c", "d", "a"], "shown": ["c", "d", "a"], "folded": false},
@@ -235,6 +239,7 @@
       "sort": "oldest",
       "branch": null,
       "recovery": null,
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
         {"name": "upNext", "count": 3, "ids": ["c", "d", "a"], "shown": ["c", "d", "a"], "folded": false},
@@ -276,6 +281,7 @@
       "sort": "roadmap",
       "branch": "b",
       "recovery": "kinds",
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
         {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
@@ -309,6 +315,7 @@
       "sort": "roadmap",
       "branch": null,
       "recovery": "search",
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
         {"name": "upNext", "count": 1, "ids": ["umlaut"], "shown": ["umlaut"], "folded": false},
@@ -370,6 +377,7 @@
       "sort": "newest",
       "branch": null,
       "recovery": null,
+      "revealing": null,
       "columns": [
         {"name": "locked", "count": 0, "ids": [], "shown": [], "folded": false},
         {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
@@ -397,6 +405,138 @@
         {"id": "n12", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0},
         {"id": "n13", "column": "done", "needs": null, "unlocks": null, "unlockCount": 0}
       ]
+    }
+  },
+  {
+    "name": "A step a query hides is revealed by clearing each part that alone hides it: here its kind and the words",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "a", "label": "Rig the boat", "color": "terracotta", "ord": "a0"},
+          {"id": "b", "label": "Read the wind", "color": "sky", "ord": "a1"},
+          {"id": "c", "label": "Sail solo", "color": "olive", "ord": "a2"},
+          {"id": "d", "label": "Tie a knot", "color": "sky", "ord": "a3"}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "c", "present": true}]
+      },
+      "query": {"kinds": ["sky"], "search": "wind", "branch": "b", "reveal": "c"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "roadmap",
+      "branch": "b",
+      "recovery": "both",
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 1}
+      ],
+      "revealing": {"kinds": [], "search": ""}
+    }
+  },
+  {
+    "name": "A step outside the branch whose words miss is revealed by clearing the search and the branch, its kind kept",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "a", "label": "Rig the boat", "color": "terracotta", "ord": "a0"},
+          {"id": "b", "label": "Read the wind", "color": "sky", "ord": "a1"},
+          {"id": "c", "label": "Sail solo", "color": "olive", "ord": "a2"},
+          {"id": "d", "label": "Tie a knot", "color": "sky", "ord": "a3"}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "c", "present": true}]
+      },
+      "query": {"kinds": ["sky"], "search": "wind", "branch": "b", "reveal": "d"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "roadmap",
+      "branch": "b",
+      "recovery": "both",
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 1}
+      ],
+      "revealing": {"search": "", "branch": null}
+    }
+  },
+  {
+    "name": "A step the query keeps names nothing to clear",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "a", "label": "Rig the boat", "color": "terracotta", "ord": "a0"},
+          {"id": "b", "label": "Read the wind", "color": "sky", "ord": "a1"},
+          {"id": "c", "label": "Sail solo", "color": "olive", "ord": "a2"},
+          {"id": "d", "label": "Tie a knot", "color": "sky", "ord": "a3"}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "c", "present": true}]
+      },
+      "query": {"kinds": ["sky"], "search": "wind", "branch": "b", "reveal": "b"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "roadmap",
+      "branch": "b",
+      "recovery": "both",
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 1}
+      ],
+      "revealing": {}
+    }
+  },
+  {
+    "name": "A step the roadmap does not hold reveals nothing",
+    "input": {
+      "operation": "board",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "a", "label": "Rig the boat", "color": "terracotta", "ord": "a0"},
+          {"id": "b", "label": "Read the wind", "color": "sky", "ord": "a1"},
+          {"id": "c", "label": "Sail solo", "color": "olive", "ord": "a2"},
+          {"id": "d", "label": "Tie a knot", "color": "sky", "ord": "a3"}
+        ],
+        "edges": [{"from": "a", "to": "b", "present": true}, {"from": "b", "to": "c", "present": true}]
+      },
+      "query": {"kinds": ["sky"], "search": "wind", "branch": "b", "reveal": "gone"}
+    },
+    "expect": {
+      "overall": {"done": 0, "total": 4},
+      "sort": "roadmap",
+      "branch": "b",
+      "recovery": "both",
+      "columns": [
+        {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
+        {"name": "upNext", "count": 0, "ids": [], "shown": [], "folded": false},
+        {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
+      ],
+      "cards": [
+        {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 1}
+      ],
+      "revealing": null
     }
   }
 ]

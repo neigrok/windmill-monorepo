@@ -274,7 +274,7 @@ export function runRead(input) {
     }
     if (input.operation === 'effects') {
       const graph = account.graph(input.tree);
-      return graph === null ? null : new EffectsRead(graph, input.ids).result();
+      return graph === null ? null : new EffectsRead(graph, input.ids, { links: input.links ?? null, attach: input.attach ?? null }).result();
     }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
@@ -289,7 +289,7 @@ export function runRead(input) {
   if (input.operation === 'graph') return graph.result(input.subjects);
   if (input.operation === 'board') return new BoardRead(graph, input.query).result();
   if (input.operation === 'diagnostics') return diagnose(graph);
-  if (input.operation === 'effects') return new EffectsRead(graph, input.ids).result();
+  if (input.operation === 'effects') return new EffectsRead(graph, input.ids, { links: input.links ?? null, attach: input.attach ?? null }).result();
   if (input.operation === 'landing') return landingFacts(graph, input.edges);
   throw new Error(`Unclaimed roadmap read operation: ${input.operation}`);
 }

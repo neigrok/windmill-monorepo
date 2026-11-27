@@ -50,14 +50,55 @@ LegendRead::LegendRead(const RoadmapTree& tree) {
     if (step.present) worn_.push_back(step.color);
 }
 
+namespace {
+
+const std::vector<std::string> kPalette = {"terracotta", "olive", "gold", "brick", "sky", "plum"};
+
+bool holdsHue(const std::vector<ShownHue>& entries, const std::string& hue) {
+  return std::any_of(entries.begin(), entries.end(), [&](const ShownHue& entry) { return entry.hue == hue; });
+}
+
+}
+
 std::vector<ShownHue> LegendRead::shown() const {
-  static const std::vector<std::string> kPalette = {"terracotta", "olive", "gold", "brick", "sky", "plum"};
+  const auto wearing = [&](const std::string& hue) { return static_cast<std::size_t>(std::count(worn_.begin(), worn_.end(), hue)); };
   std::vector<ShownHue> shown;
   for (const Kind& kind : kinds_)
-    if (ownerOf(kind.hue)->id == kind.id) shown.push_back(ShownHue{kind.hue, kind.id});
+    if (ownerOf(kind.hue)->id == kind.id) shown.push_back(ShownHue{kind.hue, kind.id, wearing(kind.hue)});
   for (const std::string& hue : kPalette)
-    if (!claims(hue) && std::find(worn_.begin(), worn_.end(), hue) != worn_.end()) shown.push_back(ShownHue{hue, std::nullopt});
+    if (!claims(hue) && wearing(hue) > 0) shown.push_back(ShownHue{hue, std::nullopt, wearing(hue)});
   return shown;
+}
+
+std::vector<ShownHue> LegendRead::choices() const {
+  std::vector<ShownHue> named;
+  for (const ShownHue& entry : shown())
+    if (entry.kind && !ownerOf(entry.hue)->label.empty()) named.push_back(ShownHue{entry.hue, entry.kind});
+  std::vector<ShownHue> choices = named;
+  for (const std::string& hue : kPalette)
+    if (!holdsHue(named, hue)) choices.push_back(ShownHue{hue, std::nullopt});
+  return choices;
+}
+
+std::optional<std::string> LegendRead::freeHue() const {
+  const std::vector<ShownHue> entries = shown();
+  for (const std::string& hue : kPalette)
+    if (!holdsHue(entries, hue)) return hue;
+  return std::nullopt;
+}
+
+std::vector<std::string> LegendRead::removable() const {
+  std::vector<std::string> removable;
+  for (const Kind& kind : kinds_)
+    if (std::find(worn_.begin(), worn_.end(), kind.hue) == worn_.end()) removable.push_back(kind.id);
+  return removable;
+}
+
+std::vector<ShownHue> LegendRead::filters() const {
+  std::vector<ShownHue> wearing;
+  for (const ShownHue& entry : shown())
+    if (entry.steps > 0) wearing.push_back(entry);
+  return wearing.size() < 2 ? std::vector<ShownHue>{} : wearing;
 }
 
 const Kind* LegendRead::ownerOf(const std::string& hue) const {

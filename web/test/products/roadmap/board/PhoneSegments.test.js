@@ -64,7 +64,7 @@ function learnToSailMarkup(shown, selectedId = null) {
     pane('locked', 'Locked', shown === 'locked', [
       card('locked', 'terracotta', 'dock', 'Leave the dock', { reason: 'Needs Read the wind · 1 to go', stop: shown === 'locked' }),
       card('locked', 'olive', 'triangle', 'Sail a triangle', { reason: 'Needs Leave the dock · 2 to go' }),
-      card('locked', 'gold', 'solo', 'Sail solo', { reason: 'Needs Sail a triangle +1 · 4 to go' }),
+      card('locked', 'gold', 'solo', 'Sail solo', { reason: 'Needs Tie a bowline +1 · 4 to go' }),
     ]),
     pane('upNext', 'Up next', shown === 'upNext', [
       card('upNext', 'sky', 'wind', 'Read the wind', { reason: 'Unlocks Leave the dock', stop: shown === 'upNext' }),

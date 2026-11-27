@@ -72,6 +72,7 @@ export class SkillTreeScene {
       this.affordanceLayer = new AffordanceLayer(canvas, {
         camera: this.camera,
         pick: (x, y) => this.pick(x, y),
+        loopsOf: (id) => this.options.loopsOf?.(id) ?? null,
         onCreate: (id) => this.options.onCreateChild && this.options.onCreateChild(id),
         onConnect: (sourceId, targetId) => this.options.onConnectNodes && this.options.onConnectNodes(sourceId, targetId),
         onReconnect: (oldFrom, oldTo, newFrom, newTo) => this.options.onReconnectEdge && this.options.onReconnectEdge(oldFrom, oldTo, newFrom, newTo),

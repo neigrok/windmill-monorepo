@@ -8,6 +8,7 @@ import { parsePlan } from '../../../../src/products/roadmap/paste/planGrammar.js
 import { edgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { renderHook } from '../../gym/harness.mjs';
+import { standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
 
 const SAIL = { id: 'sail', title: 'Sail', nodes: [
   { id: 'course', label: 'Choose a course', prerequisites: [], color: 'terracotta' },
@@ -95,7 +96,7 @@ test('the Graph refuses a delete that takes the last root a hold leaves standing
   const tree = new SkillTree(session.lattice.toTreeData());
   assert.deepEqual(tree.roots().map((root) => root.id).sort(), ['course', 'solo']);
   const before = steps(session);
-  standingTreeRef.current = tree.without(['solo']);
+  standingTreeRef.current = standingWithout(tree, ['solo']);
   editing.tree.deleteNodeAt('course');
   assert.deepEqual(steps(session), before);
   assert.deepEqual(toasts, []);

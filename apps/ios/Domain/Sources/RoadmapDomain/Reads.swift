@@ -18,8 +18,16 @@ public struct LegendRead: Sendable {
     public let others: [String]
   }
 
-  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims.
+  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims, with the
+  // present steps that wear it.
   public struct Shown: Sendable {
+    public let hue: String
+    public let kind: Kind?
+    public let steps: Int
+  }
+
+  // One of the hues a step may wear, and the named kind that owns it, none for a hue no named kind has.
+  public struct Choice: Sendable {
     public let hue: String
     public let kind: Kind?
   }
@@ -30,6 +38,14 @@ public struct LegendRead: Sendable {
   // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue a
   // present step wears that no kind claims, in the palette's order, with no kind.
   public let shown: [Shown]
+  // The six kinds a step may wear: the named ones in the legend's order, then each hue none of them has, in the palette's order.
+  public let choices: [Choice]
+  // The hue a kind added takes: the first of the palette no entry of the legend has; none once all six are had.
+  public let free: String?
+  // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
+  public let filters: [Shown]
+  // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+  public let removable: [Kind]
   let claimed: Set<[UInt8]>
 
   public init(_ tree: RoadmapTree) {
@@ -45,9 +61,18 @@ public struct LegendRead: Sendable {
     self.hues = hues.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     claimed = Set(wearers.keys)
     let owners = Set(hues.map { Array($0.owner.utf8) })
-    let worn = Set(tree.index.nodes.map { Array($0.color.utf8) })
-    shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0) }
-      + RoadmapRules.hues.filter { worn.contains(Array($0.utf8)) && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil) }
+    var worn = ByText<Int>()
+    for node in tree.index.nodes { worn[node.color, default: 0] += 1 }
+    let shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0, steps: worn[$0.hue] ?? 0) }
+      + RoadmapRules.hues.filter { worn[$0] != nil && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil, steps: worn[$0] ?? 0) }
+    let named = shown.filter { $0.kind.map { !$0.label.isEmpty } == true }
+    let has = { (entries: [Shown], hue: String) -> Bool in entries.contains { $0.hue.utf8.elementsEqual(hue.utf8) } }
+    choices = named.map { Choice(hue: $0.hue, kind: $0.kind) } + RoadmapRules.hues.filter { !has(named, $0) }.map { Choice(hue: $0, kind: nil) }
+    free = RoadmapRules.hues.first { !has(shown, $0) }
+    let wearing = shown.filter { $0.steps > 0 }
+    filters = wearing.count < 2 ? [] : wearing
+    removable = kinds.filter { worn[$0.hue] == nil }
+    self.shown = shown
   }
 
   public func claims(_ hue: String) -> Bool { claimed.contains(Array(hue.utf8)) }
@@ -100,7 +125,8 @@ extension RoadmapTree {
   }
 }
 
-// What the Board asks: how to sort what is unfinished, the hues to keep, words to find in a label or a description, and a branch to stay in.
+// What the Board asks: how to sort what is unfinished, the hues to keep, words to find in a label or a description, a branch
+// to stay in, and a step to show, which names the parts that alone hide it.
 public struct BoardQuery: Sendable {
   public enum Sort: String, Sendable {
     case roadmap, newest, oldest
@@ -111,13 +137,16 @@ public struct BoardQuery: Sendable {
   public var search: String
   public var branch: String?
   public var doneExpanded: Bool
+  public var reveal: String?
 
-  public init(sort: Sort = .roadmap, kinds: [String] = [], search: String = "", branch: String? = nil, doneExpanded: Bool = false) {
+  public init(sort: Sort = .roadmap, kinds: [String] = [], search: String = "", branch: String? = nil, doneExpanded: Bool = false,
+              reveal: String? = nil) {
     self.sort = sort
     self.kinds = kinds
     self.search = search
     self.branch = branch
     self.doneExpanded = doneExpanded
+    self.reveal = reveal
   }
 }
 
@@ -126,6 +155,11 @@ public struct BoardRead: Sendable {
   // The filters the query applies, which an empty column offers to clear.
   public enum Recovery: String, Sendable {
     case search, kinds, both
+  }
+
+  // A part of the query that alone hides the step it reveals.
+  public enum Part: String, Sendable, CaseIterable {
+    case kinds, search, branch
   }
 
   // Why a card is locked: the first step it still follows, how many more, and how many steps it owes however far back.
@@ -167,25 +201,59 @@ public struct BoardRead: Sendable {
   public let recovery: Recovery?
   public let columns: [Column]
   public let cards: [Card]
+  // The parts that alone hide the step the query reveals, in their order; nil where it reveals none or the step is not present.
+  public let revealing: [Part]?
+
+  // A query's parts over a graph, each as it keeps the step at a slot: the branch it stays in, the hues it keeps and the
+  // words it finds in a label or a description.
+  struct Parts {
+    let branch: [Bool]?
+    let hues: Set<[UInt8]>
+    let needle: [UInt8]
+    let index: TreeIndex
+
+    init(_ graph: FollowGraph, _ query: BoardQuery) {
+      index = graph.tree.index
+      branch = query.branch.flatMap { graph.branch(of: $0) }
+      let words = query.search.unicodeScalars
+      var needle: [UInt8] = []
+      if let first = words.firstIndex(where: { !TextWhitespace.contains($0) }), let last = words.lastIndex(where: { !TextWhitespace.contains($0) }) {
+        needle = BoardRead.lowercase(String(words[first...last]))
+      }
+      self.needle = needle
+      hues = Set(query.kinds.map { Array($0.utf8) })
+    }
+
+    func keeps(_ part: Part, _ slot: Int) -> Bool {
+      let node = index.nodes[slot]
+      switch part {
+      case .branch: return branch.map { $0[slot] } ?? true
+      case .kinds: return hues.isEmpty || hues.contains(Array(node.color.utf8))
+      case .search:
+        return needle.isEmpty || BoardRead.lowercase(node.label).holds(needle) || BoardRead.lowercase(node.description).holds(needle)
+      }
+    }
+
+    // The parts that alone hide the step the query reveals; nil where it reveals none or the step is not present.
+    func revealing(_ query: BoardQuery) -> [Part]? {
+      query.reveal.flatMap(index.slot(of:)).map { revealed in Part.allCases.filter { !keeps($0, revealed) } }
+    }
+  }
+
+  // The parts of `query` that alone hide the step it reveals, read without the Board's cards.
+  public static func revealing(_ graph: FollowGraph, _ query: BoardQuery) -> [Part]? { Parts(graph, query).revealing(query) }
 
   public init(_ graph: FollowGraph, _ query: BoardQuery = BoardQuery()) {
     let index = graph.tree.index
-    let branch = query.branch.flatMap { graph.branch(of: $0) }
-    let words = query.search.unicodeScalars
-    var needle: [UInt8] = []
-    if let first = words.firstIndex(where: { !TextWhitespace.contains($0) }), let last = words.lastIndex(where: { !TextWhitespace.contains($0) }) {
-      needle = BoardRead.lowercase(String(words[first...last]))
-    }
-    let hues = Set(query.kinds.map { Array($0.utf8) })
+    let parts = Parts(graph, query)
+    let (branch, needle, hues) = (parts.branch, parts.needle, parts.hues)
     let toGo = graph.owedIndex().toGo
+    revealing = parts.revealing(query)
     var cards: [Card] = []
     var slots: [Int] = []
-    for (slot, node) in index.nodes.enumerated() {
-      if let branch, !branch[slot] { continue }
-      if !hues.isEmpty && !hues.contains(Array(node.color.utf8)) { continue }
-      if !needle.isEmpty && !BoardRead.lowercase(node.label).holds(needle) && !BoardRead.lowercase(node.description).holds(needle) {
-        continue
-      }
+    for slot in index.nodes.indices {
+      let node = index.nodes[slot]
+      if !Part.allCases.allSatisfy({ parts.keeps($0, slot) }) { continue }
       let state = graph.stateAt[slot]
       let unlocked = state == .complete ? [] : graph.opens[slot].map { index.ids[$0] }
       let needs = state == .locked ? graph.firstUnmet[slot].map { first in
@@ -270,27 +338,56 @@ public struct ActivityRead: Sendable {
   }
 }
 
-// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+// What deleting `ids`, resetting one, attaching a roadmap to one or linking one would do (the corpus README's
+// `effects`); each fact past the starting steps walks the graph when asked. `links` are a draft's sides of the one step,
+// by default what it follows and what follows it as stored; `attach` is a roadmap attached to it, complete or not.
 public struct EffectsRead: Sendable {
+  // A draft's two sides of one step: the steps it would require and the steps it would open.
+  public struct Links: Sendable {
+    public let requires: [String]
+    public let opens: [String]
+
+    public init(requires: [String], opens: [String]) {
+      self.requires = requires
+      self.opens = opens
+    }
+  }
+
+  // The present steps a new link of the one step would close a loop with: the steps it may not come to follow, and
+  // the steps it may not come to lead to, each itself included.
+  public struct Loops: Sendable {
+    public let requires: [String]
+    public let opens: [String]
+  }
+
   public let kept: String?
+  // Where a paste lands: the first starting step in authored order, none where every step follows another.
+  public let under: String?
   public let takesEveryStart: Bool
   public let deletable: Bool
   let graph: FollowGraph
   let chosen: [Int]
-  let marked: Bool
+  let only: Int?
+  // The one step `ids` names, present or not.
+  let drafted: String?
+  let links: Links?
+  let attach: Bool?
 
-  public init(_ graph: FollowGraph, ids: [String]) {
+  public init(_ graph: FollowGraph, ids: [String], links: Links? = nil, attach complete: Bool? = nil) {
     let index = graph.tree.index
     let slots = ids.compactMap(index.slot(of:))
     let chosen = Set(slots)
     let present = slots.count == ids.count
     self.graph = graph
     self.chosen = Array(chosen)
+    only = present && chosen.count == 1 ? chosen.first : nil
+    drafted = Set(ids.map { Array($0.utf8) }).count == 1 ? ids.first : nil
+    self.links = links
+    attach = complete
     kept = graph.starting.count == 1 ? graph.starting[0] : nil
+    under = graph.starting.first
     takesEveryStart = !graph.starting.isEmpty && graph.starting.allSatisfy { index.slot(of: $0).map(chosen.contains) == true }
     deletable = !ids.isEmpty && present && !takesEveryStart
-    let only = chosen.count == 1 ? chosen.first : nil
-    marked = present && only.map { graph.done[$0] && index.markedDone[$0] } == true
   }
 
   public var follow: [String] {
@@ -308,7 +405,49 @@ public struct EffectsRead: Sendable {
     return followers.sorted().map { index.ids[$0] }
   }
 
-  public var relocks: [String] { marked ? follow.filter { graph.states[$0] == .available } : [] }
+  // Whether the one step holds a complete mark, counted or set aside.
+  var marked: Bool { only.map { graph.tree.mark(on: graph.tree.index.ids[$0])?.isComplete == true } ?? false }
+
+  // The followers that stand Up next only while the one step stands complete.
+  var upNextFollowers: [String] { follow.filter { graph.states[$0] == .available } }
+
+  public var relocks: [String] {
+    guard let only, graph.done[only], graph.tree.index.markedDone[only] else { return [] }
+    return upNextFollowers
+  }
+
+  // A complete mark the graph does not count, because the step opens or owns a roadmap that is not complete: the steps
+  // it alone would open, which lock while it stands aside.
+  public var setAside: [String]? {
+    guard let only, marked, !graph.tree.index.markedDone[only], !graph.done[only] else { return nil }
+    return graph.opens[only].map { graph.tree.index.ids[$0] }
+  }
+
+  // What attaching a roadmap does to the steps after a marked step: a roadmap that is not complete sets the mark aside,
+  // so the steps that stood Up next by the step's completion lock again.
+  public var attachRelocks: [String]? {
+    guard let complete = attach, let only, marked else { return nil }
+    return complete || !graph.done[only] ? [] : upNextFollowers
+  }
+
+  // Live links are walked through absent steps, never through the step itself: onward from the steps it opens for the
+  // steps it may not require, back from the steps it requires for the steps it may not open. A step the roadmap does not
+  // hold yet is read by a draft's sides alone.
+  public var loops: Loops? {
+    let index = graph.tree.index
+    guard only != nil || (links != nil && drafted != nil) else { return nil }
+    let own = drafted.flatMap { index.vertices[$0] }
+    let reached = { (sides: [String]?, onward: [[Int]]) -> [String] in
+      var passed = Set(own.map { [$0] } ?? [])
+      var pending = sides.map { $0.compactMap(index.slot(of:)) } ?? own.map { onward[$0] } ?? []
+      while let vertex = pending.popLast() {
+        guard passed.insert(vertex).inserted else { continue }
+        pending.append(contentsOf: onward[vertex])
+      }
+      return passed.filter { $0 < index.ids.count }.sorted().map { index.ids[$0] }
+    }
+    return Loops(requires: reached(links?.opens, index.children), opens: reached(links?.requires, index.parents))
+  }
 }
 
 // A step the device linked that is now read through an absent step: its own links that bridge the absence, and what it follows through them.

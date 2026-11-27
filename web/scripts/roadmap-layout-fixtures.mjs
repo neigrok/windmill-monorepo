@@ -11,7 +11,7 @@ import { PI, REDUCIBLE_BELOW, asin, atan, atan2, cos, hypot, sin } from '../src/
 import { fallbackLayoutEngine, layoutTree } from '../src/products/roadmap/layout/index.js';
 import { SkillTree } from '../src/products/roadmap/model/SkillTree.js';
 import { SpatialGrid } from '../src/products/roadmap/model/SpatialGrid.js';
-import { UnlockRules } from '../src/products/roadmap/model/UnlockRules.js';
+import { domainReading } from '../src/products/roadmap/model/domainReads.js';
 import { CaptionPlacer, captionRankLimit, wrapCaption } from '../src/products/roadmap/scene/captionLayout.js';
 import { bendOf, controlPoint } from '../src/products/roadmap/scene/edgeCurve.js';
 import { fitFrame, focusFrame, minZoom } from '../src/products/roadmap/scene/framing.js';
@@ -243,7 +243,7 @@ function pictureOf(roadmap) {
   });
   const layout = layoutTree(roadmap.engine === 'radial' ? fallbackLayoutEngine() : new BubbleLayoutEngine(), tree);
   if (layout.name !== roadmap.engine) throw new Error(`${roadmap.name} was laid out by ${layout.name}, not ${roadmap.engine}`);
-  const model = tree.toRenderModel(layout.positions, UnlockRules.derive(tree, { completed: new Set(roadmap.done) }));
+  const model = tree.toRenderModel(layout.positions, domainReading(tree, { completed: new Set(roadmap.done) }).states);
   const nodesById = new Map(model.nodes.map((node) => [node.id, node]));
   const metrics = new Map(model.nodes.flatMap((node) => {
     const metric = wrapCaption(node.label, measure);

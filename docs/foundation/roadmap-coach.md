@@ -245,8 +245,8 @@ ability's result as data and never as instructions.
 - Coach reads what the person sees. An ability answers from the standing roadmap (D-2), including
   writes the server has not confirmed, so Coach never names a step the person has just deleted and
   never gives a state the screen contradicts.
-- A step's state (locked, available, complete) is the one the room shows, from the function that
-  derives it today, `UnlockRules.derive`, over the graph as the room draws it.
+- A step's state (locked, available, complete) is the one the room shows, the domain's graph's
+  (`FollowGraph`, which the room reads through `model/domainReads.js`), over the graph as the room draws it.
 - A step that opens another roadmap is complete when that roadmap is. Where the device has not
   finished pulling the opened roadmap, or holds nothing of it, the step's state is `unknown`. So it
   is where the opened roadmap's own completion waits on such a roadmap: it is not complete, and each
