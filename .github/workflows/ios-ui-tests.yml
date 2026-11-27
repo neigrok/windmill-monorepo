@@ -55,7 +55,8 @@ jobs:
           sudo mdutil -a -i off || true
           mdutil -s /System/Volumes/Data
 
-      # iOS 27.0 is the newest runtime that carries an iPhone 17: Xcode 27.1's own iOS 27.1 runtime carries only the iPhone Duo.
+      # iOS 27.0 is the newest runtime Xcode 27.1 runs that carries an iPhone 17: its own iOS 27.1 runtime carries only the
+      # iPhone Duo, and the image's iOS 27.2 runtime needs Xcode 27.2.
       - name: Create and prepare the UI simulator
         timeout-minutes: 10
         run: |

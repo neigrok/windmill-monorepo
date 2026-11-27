@@ -150,6 +150,12 @@ jobs:
         working-directory: apps/ios/WindmillKit
         run: swift test --explicit-target-dependency-import-check error
 
+      # Warnings as errors leave a warning a @preconcurrency declaration or import downgraded, the way a closure off the
+      # main actor reaches a held draft; the gate refuses every warning WindmillKit's build kept but a deprecation.
+      - name: Check WindmillKit kept no warning
+        working-directory: apps/ios/WindmillKit
+        run: python3 ../App/Tools/warning_gate.py .build
+
       # The runners are Apple silicon, so a simulator build compiles the arm64 slice alone. The App build below compiles
       # every Sync library for the simulator; the unit tests compile SyncTesting.
       - name: Build the SyncProbe app for the iOS simulator
@@ -267,6 +273,11 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/App" ARCHS=arm64 \
             -derivedDataPath "$RUNNER_TEMP/app-release"
 
+      # The same gate over the Release build, the App's sources and WindmillKit's as the App compiles them.
+      - name: Check the App kept no warning
+        working-directory: apps/ios/App
+        run: python3 Tools/warning_gate.py "$RUNNER_TEMP/app-release"
+
       # The String Catalogs hold what the Release build's sources extract; a catalog that differs fails here.
       - name: Check the String Catalogs
         working-directory: apps/ios/App
@@ -294,8 +305,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
-      # The unit-test scheme leaves out the UI-test bundle and its runner. iOS 27.0 is the newest runtime that carries an
-      # iPhone 17: Xcode 27.1's own iOS 27.1 runtime carries only the iPhone Duo.
+      # The unit-test scheme leaves out the UI-test bundle and its runner. iOS 27.0 is the newest runtime Xcode 27.1 runs that
+      # carries an iPhone 17: its own iOS 27.1 runtime carries only the iPhone Duo, and the image's iOS 27.2 runtime needs
+      # Xcode 27.2.
       - name: Build and run App unit tests
         run: |
           python3 Tools/generate_project.py

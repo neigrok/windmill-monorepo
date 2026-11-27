@@ -217,8 +217,8 @@ timestamp comparison is `gym-hang-audit.md`; baseline and serial privacy scans f
 or credentials in their event/envelope payloads.
 
 Local Xcode 27.1 architecture-probe failures also reproduce on clean `a352e56b`
-(`domain-baseline-architecture.log`); they do not establish a change regression. CI is pinned to
-Xcode 26.3 and remains the authoritative full compatibility gate. The pure `CoachBubbleShape` and
+(`domain-baseline-architecture.log`); they do not establish a change regression. For that run, CI's
+Xcode 26.3 was the full compatibility gate. The pure `CoachBubbleShape` and
 archive content predicates declare their nonisolated behavior explicitly. `CoachScreensTests`
 expresses its eight cases as a typed loop to avoid the Xcode 27 macro type-check timeout.
 

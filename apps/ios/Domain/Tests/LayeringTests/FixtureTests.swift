@@ -9,15 +9,6 @@ import Testing
     #expect(rules.findings(in: fixture.text, file: fixture.name).sorted().map(\.withoutFile) == fixture.expected)
   }
 
-  // Each file under Fixtures/UI judged as the app's source, its header naming each finding (`// expect: …`).
-  @Test(arguments: try Fixture.names(in: Checkout.fixtures.appending(path: "UI"), suffix: ".swift"))
-  func userInterfaceFixture(_ name: String) throws {
-    let text = try String(contentsOf: Checkout.fixtures.appending(path: "UI/\(name)"), encoding: .utf8)
-    let findings = MainActorDrafts.queueFindings(in: text, file: name)
-      + MainActorDrafts.importFindings(in: text, file: name, packageModules: ["DomainKit"])
-    #expect(findings.sorted().map(\.withoutFile) == Fixture.header(of: text)["expect"] ?? [])
-  }
-
   @Test(arguments: try WorldCase.all())
   func worldCase(_ worldCase: WorldCase) async throws {
     let findings = try await Shell.offThePool {
@@ -43,6 +34,20 @@ import Testing
       }
     }
     #expect(findings.sorted().map(\.withoutFile) == appCase.expected)
+  }
+
+  // A unit test bundle keeps only the testing plugin Xcode supplies it; one character off is a flag of the project's own.
+  @Test(arguments: [
+    ("/usr/lib/swift/host/plugins/testing", [String]()),
+    ("/usr/lib/swift/host/plugins/testinG", ["WindmillTests [Debug, iphonesimulator]: OTHER_SWIFT_FLAGS -plugin-path /X/usr/lib/swift/host/plugins/testinG"]),
+  ])
+  func unitTestBundleFlags(plugin: String, expected: [String]) {
+    let settings = [
+      "PRODUCT_TYPE": "com.apple.product-type.bundle.unit-test", "TOOLCHAIN_DIR": "/X", "OTHER_SWIFT_FLAGS": "-plugin-path /X\(plugin)",
+      "SWIFT_VERSION": "6.0", "SWIFT_TREAT_WARNINGS_AS_ERRORS": "YES", "SWIFT_WARNINGS_AS_WARNINGS_GROUPS": "DeprecatedDeclaration",
+    ]
+    let entry = AppProject.Resolved(target: "WindmillTests", configuration: "Debug", sdk: "iphonesimulator", settings: settings)
+    #expect(AppProject.settingFindings(entry) == expected)
   }
 
   @Test func completeCatalogueInspectionFromSmallCallerStack() async throws {

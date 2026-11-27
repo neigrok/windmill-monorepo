@@ -1510,14 +1510,14 @@ a second open draft of the same record. Either leaves the held draft on its old 
 draft's next save edits from it: its text can merge against the person's own words, and a guarded
 field refuses `stale` against this device's write.
 - Swift: `Draft` is not `Sendable`, and every non-test target of `WindmillKit` and the app is
-  main-actor code by default, in language mode 6 with warnings as errors (§2.4 item 3). So the held
-  draft is saved only on the main actor: a task, queue or thread that captures it does not compile,
-  and a Dispatch block the SDK leaves unannotated traps when it runs off the main thread. Where a
-  `@preconcurrency` declaration or import downgrades that refusal, Swift only warns, and warnings as
-  errors leave the warning a warning: the SDK's `DispatchQueue.async` and `asyncAfter`, or a
-  `@preconcurrency import` of the kit. So the app and `WindmillKit`'s platform and product UI modules
-  reach no Dispatch queue but `DispatchQueue.main`, and the app imports §2.1's modules without an
-  attribute (§2.3 holds §2.1's packages to that); `LayeringTests` reads both. A copy rebuilt
+  main-actor code by default, in language mode 6 with warnings as errors but deprecations (§2.4 item
+  3). So the held draft is saved only on the main actor. A closure that may run elsewhere and reaches
+  the draft is refused at compile time, or, where the SDK leaves the API unannotated, is main-actor
+  code that traps when it runs off the main thread. Where a `@preconcurrency` declaration or import
+  downgrades the refusal, Swift reports it as a warning that warnings as errors leave a warning, and
+  the closure runs with no check; so `App/Tools/warning_gate.py`, run by iOS CI over WindmillKit's
+  build and the app's, refuses every warning those builds keep from the app's and WindmillKit's
+  sources but a deprecation, reading the compiler's serialized diagnostics. A copy rebuilt
   elsewhere from the draft's entities is the copy case. `nonisolated`, `@unchecked Sendable` and
   `nonisolated(unsafe)` opt out deliberately, and are out of scope.
 - Kotlin: `Draft` is immutable, and each edit returns a new draft, which Compose state or a
@@ -1833,8 +1833,8 @@ and a refused or failed save changes nothing in the draft; a failed one committe
 
 *Mechanism.* `save` is synchronous, takes the draft `inout` (Kotlin: hands it to a write-back the
 caller passes) and is a draft's only door, since no action returns a `Saved`; Swift UI code is
-main-actor code in language mode 6 with warnings as errors, reaching no Dispatch queue but the main one
-and importing the kit without `@preconcurrency` (§10.1), and a Kotlin save traps off its draft's
+main-actor code in language mode 6 with warnings as errors, the warning gate refusing what a
+`@preconcurrency` downgrade leaves a warning (§10.1), and a Kotlin save traps off its draft's
 thread; `commit` throws only before its transaction commits, and the runner's dismissal only after a
 refusal (§10.1, §9.2 step 7, engine §7.1).
 

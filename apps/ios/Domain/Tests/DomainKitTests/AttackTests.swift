@@ -3,20 +3,21 @@ import Testing
 
 // The compile attacks of domain-kit.md §13 and §16.2: every file under Attacks/ is compiled to SIL, so the data-race
 // diagnostics run too, against the modules this build made, over the probe domain in Attacks/ProbeDomain.swift, either as product-domain code (`domain.*`) or as UI
-// code (`ui.*`: main-actor by default, warnings as errors but deprecations, as §2.4 item 3 sets WindmillKit). A `fail`
-// attack must not compile, with the error its first line expects; a `pass` control must compile clean.
+// code (`ui.*`: main-actor by default, warnings as errors but deprecations, as §2.4 item 3 sets WindmillKit, and judged by
+// the warning gate CI runs over the app's build, App/Tools/warning_gate.py). A `fail` attack must not compile, or must keep a
+// warning the gate refuses, with the message its first line expects; a `pass` control must compile clean and pass the gate.
 struct AttackTests {
   @Test(arguments: try Attack.all())
   func attack(_ attack: Attack) throws {
-    let (status, output) = try Compiler.shared.compile(attack)
-    let errors = output.split(separator: "\n").filter { $0.contains("error: ") }.map { String($0.split(separator: "error: ", maxSplits: 1).last ?? "") }
+    let compiled = try Compiler.shared.compile(attack)
+    let failures = compiled.errors + compiled.refusedWarnings
     guard let expected = attack.expected else {
-      #expect(status == 0 && errors.isEmpty, "\(attack) should compile:\n\(output)")
+      #expect(compiled.status == 0 && failures.isEmpty, "\(attack) should compile clean:\n\(compiled.output)")
       return
     }
-    #expect(status != 0, "\(attack) compiled")
-    #expect(errors.contains { $0.contains(expected) }, "\(attack) failed otherwise:\n\(errors.joined(separator: "\n"))")
-    #expect(!output.contains("no such module"), "\(attack) could not load its modules:\n\(output)")
+    #expect(!failures.isEmpty, "\(attack) compiled, and the warning gate refused nothing")
+    #expect(failures.contains { $0.contains(expected) }, "\(attack) failed otherwise:\n\(failures.joined(separator: "\n"))")
+    #expect(!compiled.output.contains("no such module"), "\(attack) could not load its modules:\n\(compiled.output)")
   }
 }
 
@@ -51,6 +52,14 @@ struct Attack: Sendable, CustomTestStringConvertible {
   }
 
   var testDescription: String { file.lastPathComponent }
+}
+
+// One attack's compile: the compiler's errors, and the warnings it kept that the warning gate refuses (UI code only).
+struct Compiled {
+  let status: Int32
+  let output: String
+  let errors: [String]
+  let refusedWarnings: [String]
 }
 
 struct AttackError: Error, CustomStringConvertible {
@@ -91,17 +100,28 @@ final class Compiler: Sendable {
     }
   }
 
-  func compile(_ attack: Attack) throws -> (status: Int32, output: String) {
+  func compile(_ attack: Attack) throws -> Compiled {
     try probeDomain.get()
-    return Compiler.swiftc(Compiler.common(modules: modules, workspace: workspace, target: target) + attack.mode.flags + [
+    let diagnostics = workspace.appendingPathComponent("\(attack.file.deletingPathExtension().lastPathComponent).dia")
+    try? FileManager.default.removeItem(at: diagnostics)
+    let serialized = attack.mode == .ui ? ["-Xfrontend", "-serialize-diagnostics-path", "-Xfrontend", diagnostics.path] : []
+    let (status, output) = Compiler.swiftc(Compiler.common(modules: modules, workspace: workspace, target: target) + attack.mode.flags + serialized + [
       "-emit-sil", "-o", "/dev/null", "-module-name", "Attack", attack.file.path,
     ])
+    let errors = output.split(separator: "\n").filter { $0.contains("error: ") }.map { String($0.split(separator: "error: ", maxSplits: 1).last ?? "") }
+    guard attack.mode == .ui else { return Compiled(status: status, output: output, errors: errors, refusedWarnings: []) }
+    let gate = Compiler.run("/usr/bin/env", ["python3", Compiler.warningGate.path, "--sources", Attack.directory.path, diagnostics.path])
+    let refused = gate.output.split(separator: "\n").filter { $0.hasPrefix(attack.file.path) }.map { String($0.split(separator: "] ", maxSplits: 1).last ?? "") }
+    return Compiled(status: status, output: output + gate.output, errors: errors, refusedWarnings: refused)
   }
 
   static func common(modules: URL, workspace: URL, target: String) -> [String] {
     ["-swift-version", "6", "-parse-as-library", "-target", target, "-sdk", sdk, "-I", workspace.path, "-I", modules.path,
      "-module-cache-path", workspace.appendingPathComponent("ModuleCache").path]
   }
+
+  static let warningGate = Attack.directory.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent().appendingPathComponent("App/Tools/warning_gate.py")
 
   static let sdk = run("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
 
