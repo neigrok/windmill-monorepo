@@ -335,7 +335,7 @@ step page and the step form, and a sheet for its answers.
   read back, added with the count as a bucket, cancelled and undone; Share opened, its switch
   turned on and off, the link shared and copied, and sign-in opened from it; a roadmap exported,
   and whether the file was saved; the gallery opened and each page read, with what the read came
-  to (loaded, empty, failed), a retry, a row opened, a fork from a row and a copy opened; Activity
+  to (available, empty, failed), a retry, a row opened, a fork from a row and a copy opened; Activity
   opened, with what its read came to (loaded, empty), and a row opened.
 - Coach's events are [Roadmap Coach](roadmap-coach.md) §13's, emitted on the iPhone as on the web.
 - **Sentry**, under static names, at the room's boundaries: the owner's
@@ -374,7 +374,7 @@ makes it false.
   field sets bold and italic alone, from the system's Format menu on iOS 26. A reader's cover shows what a step's
   subtree has come to and does not go into it. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
-  the roadmaps above it, and writes the guide from one draft; its *Share…* raises the Share sheet's one switch over a
+  the roadmaps above it, and writes the guide from one draft; its *Share* raises the Share sheet's one switch over a
   root, which hands out the share address while the roadmap is public (§7.4), and its *Export*, and that of a roadmap
   gone into, hands the system's exporter the roadmap as the plan grammar writes the phone's copy (`PlanFile(_:in:)`,
   §7.3); All Roadmaps pushes *Planted in Public*, the public gallery read a page at a time, whose rows open as their
