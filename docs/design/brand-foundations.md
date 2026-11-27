@@ -108,7 +108,8 @@ says **can appear**, never a promise of placement.
 
 ### Landings
 
-1. The status badge states the product's true current state.
+1. A page that states a product's status states its true current one, in a plain sentence. No
+   landing carries a status badge.
 2. Landings carry no price numbers; `web/public/pricing.html` does. The paid layer is new power,
    never a re-sold default: absent rather than locked, no blurred previews, no counters of what you
    are missing, no "upgrade to unlock".
@@ -120,12 +121,9 @@ says **can appear**, never a promise of placement.
 7. Brand-scope copy counts only open rooms as fact.
 
 **The moat rule.** A product's picture on a public page is built from the product's real vocabulary
-— never a screenshot, stock or an invented illustration. On a page in the Instrument look (the front page)
-each picture is a still composition of the product's own components, tokens and type, labelled as
-composed, and the page carries no infinite motion. A product landing not yet rebuilt (`/roadmap`,
-`/journal`, `/gym`) opens on a live, self-playing vignette: it autoplays only in the viewport of a
-visible tab, mounts off the critical path, settles to a legible end state under reduced motion, and is
-the page's one infinite-motion budget.
+— never a screenshot, stock or an invented illustration. On a page in the Instrument look (the front page and
+the three product landings) each picture is a still composition of the product's own components,
+tokens and type, labelled as composed, and the page carries no infinite motion.
 
 ## Visual foundations
 
@@ -204,10 +202,12 @@ the page's one infinite-motion budget.
 fonts. They are self-hosted via `@fontsource`, imported in `web/src/styles/fonts.js`; the stacks
 live in `web/src/styles/tokens/fonts.css`. The product and the public pages not yet rebuilt use them.
 
-**Inter** is the typeface of the public front page in the Instrument look. It is self-hosted from
-`@fontsource-variable/inter`, declared in `web/src/shell/marketing/brandLanding.css` and named by
-`--look-font` in `web/src/styles/tokens/looks.css`. Only that page fetches it: the service worker
-leaves it out of the precache.
+**Inter** is the typeface of the public pages in the Instrument look: the front page, the three
+product landings and the pricing page. It is self-hosted from `@fontsource-variable/inter`, declared
+in `web/src/shell/marketing/site.css` for the front page and the landings and in the generated
+`/instrument.css` for the pricing page, and named by `--look-font` in
+`web/src/styles/tokens/looks.css`. Only those pages fetch it: the service worker leaves it out of the
+precache.
 
 ## Logo
 
@@ -232,10 +232,11 @@ Bold. Child node `9:108` is the standalone mark.
   `BrandWordmark` (mark with readable brand text, for navigation) and `BrandLogo` (the stacked
   lockup, for standalone branding). Give each image explicit width and height; the full export
   keeps Figma's whitespace, so size the visible artwork deliberately.
-- The public front page's header and footer set the word "Windmill" in the page's type (Inter 600)
-  beside the approved mark, and draw the night mark on a night ground, falling back to the day mark
-  if it fails to load (`web/src/shell/marketing/BrandLanding.jsx`). The Inter word belongs to that
-  page; elsewhere the assets above apply, the stacked lockup with its Baloo 2 wordmark included.
+- On the public pages in the Instrument look, the header and footer set the word "Windmill" in the
+  page's type (Inter 600) beside the approved mark, and draw the night mark on a night ground. The
+  front page and the product landings fall back to the day mark if the night mark fails to load
+  (`web/src/shell/marketing/SiteChrome.jsx`). The Inter word belongs to those pages; elsewhere the
+  assets above apply, the stacked lockup with its Baloo 2 wordmark included.
 - Outside the night mark, keep the artwork's own colours on light and dark surfaces; the logo has no
   background of its own.
 - Derive every raster icon from the compact SVG so geometry cannot drift between sizes.

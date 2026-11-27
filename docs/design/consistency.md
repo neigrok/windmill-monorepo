@@ -1409,6 +1409,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Gym
 
+- **Brand foundations on the open workout.** [Brand foundations](brand-foundations.md) says under Gym that the phone
+  owns the open workout and the web never finishes a live session. The web now starts, logs and finishes a workout,
+  signed in or signed out ([the web as a device](../foundation/web-device-parity.md) §4, `finishWorkout` in
+  `web/src/products/gym/gymRuntime.js`). Correct the line.
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
   full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
   2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
@@ -2311,7 +2315,7 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
 - **The public pages still in the family look.** The front page, pricing and the three room landings are built in the
   Instrument look ([marketing site](marketing-site-proposal.md#the-instrument-look)). Connect, the legal pages, support,
   the changelog, the gallery and 404 are not drawn in it and wear the family look (`web/scripts/staticPageChrome.css`).
-  Brand foundations' Fonts, Logo and moat rule name both looks until each page is rebuilt.
+  Brand foundations' Fonts and Logo name both looks until each page is rebuilt.
 - **The family template's defects.** The static pages in the family look (`web/scripts/staticPageChrome.css`):
   `connect.html`, `changelog.html`, `gallery.html`, `privacy.html`, `terms.html`, `refunds.html`, `support.html`,
   `404.html` and `pause.html`. By day their footer links measure 3.52:1 against the ground. At 390 the appearance
@@ -2325,9 +2329,9 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   report, or say which of these the site accepts.
 - **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
   `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
-- **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
-  (three product bands with per-room platform lines), describe the root the front page replaced. Archive
-  them (🗄 Archived prefix and tag).
+- **Superseded landing boards.** The Marketing file's superapp landing boards, among them `98:2538`
+  (three product bands with per-room platform lines), and its boards for the earlier `/roadmap`, `/journal` and `/gym`
+  landings describe pages the Instrument pages replaced. Archive them (🗄 Archived prefix and tag).
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
@@ -2337,9 +2341,5 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
-- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
-  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
-  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
-  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.

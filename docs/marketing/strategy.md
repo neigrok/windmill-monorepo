@@ -30,7 +30,7 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 
 | | Today | Source |
 |---|---|---|
-| The web | Roadmap, Journal and Gym run at windmill.works. Roadmap and Journal work signed out. Gym on the web keeps an account gate. | [Product strategy](../PRODUCT_LOG.md) · [Web rules](../../web/CLAUDE.md) |
+| The web | Roadmap, Journal and Gym run at windmill.works. All three work signed out; in Gym, Coach, notes and share links need a free account. | [Product strategy](../PRODUCT_LOG.md) · [Web rules](../../web/CLAUDE.md) |
 | iPhone | A TestFlight beta carries Journal and Gym. There is no App Store listing and no release date. Roadmap on the iPhone and live Talk are release requirements, not things to show yet. | [Launch contract](#launch-contract) |
 | Android | Gym only, as a signed APK a person installs by hand. It is not on Google Play. | [Access checks](reports/01-store-readiness.md) |
 | Windmill One | It cannot be bought on any surface. The pricing page names $12 a month and says nothing is on sale yet. | [Paid line](../../AGENTS.md) · [Pricing page](../../web/public/pricing.html) |
