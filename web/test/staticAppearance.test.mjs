@@ -1,5 +1,6 @@
-// The Light · Dark toggle the plain HTML pages in public/ carry (scripts/staticAppearance.js, served
-// as /appearance.js). Like boot.test.mjs, this drives the EMITTED ES5 against a document just real
+// The appearance switch the plain HTML pages in public/ carry (scripts/staticAppearance.js, served
+// as /appearance.js): Light · Dark in the family look's nav, Auto · Light · Dark in the instrument
+// look's footer. Like boot.test.mjs, this drives the EMITTED ES5 against a document just real
 // enough for it — the script has no module to import, so the honest test gives it the globals it
 // touches and watches what it stores, stamps and repaints.
 
@@ -7,8 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { SEGMENTS, staticAppearanceScript } from '../scripts/staticAppearance.js';
-import { checkStaticPage, staticPageAssets } from '../scripts/staticPageAssets.js';
+import { CHOICES, staticAppearanceScript } from '../scripts/staticAppearance.js';
+import { staticPageAssets } from '../scripts/staticPageAssets.js';
 import { KEY } from '../src/shell/appearance.js';
 
 const SCRIPT = staticAppearanceScript(KEY);
@@ -35,28 +36,31 @@ function element(tag, page) {
     get firstChild() { return this.children[0] ?? null; },
     addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); },
     fire(type, event = {}) { for (const fn of this.listeners[type] ?? []) fn(event); },
+    dispatchEvent(event) { page.announced.push(event); return true; },
     focus() { page.focused = this; },
   };
 }
 
-function page({ stored = null, prefersDark = false, storageThrows = false, box = true } = {}) {
-  const state = { focused: null, storage: new Map(stored === null ? [] : [[KEY, stored]]) };
+function page({ stored = null, prefersDark = false, storageThrows = false, box = true, choices = null } = {}) {
+  const state = { focused: null, announced: [], storage: new Map(stored === null ? [] : [[KEY, stored]]) };
   const html = element('html', state);
   html.style = { props: {}, setProperty(name, value) { this.props[name] = value; }, removeProperty(name) { delete this.props[name]; } };
   const nav = element('span', state);
   const reserved = box ? nav.appendChild(element('span', state)) : null;
   if (reserved) { reserved.className = 'wm-appearance'; reserved.setAttribute('aria-hidden', 'true'); }
+  if (reserved && choices) reserved.setAttribute('data-choices', choices);
   const existing = nav.appendChild(element('a', state));
   const meta = { 'theme-color': element('meta', state), 'color-scheme': element('meta', state) };
   meta['theme-color'].setAttribute('content', LIGHT_GROUND);
   meta['color-scheme'].setAttribute('content', 'light');
-  if (prefersDark && stored !== 'light') { html.setAttribute('data-theme', 'dark'); html.setAttribute('data-brand', 'clay'); html.style.setProperty('--wm-boot-ground', DARK_GROUND); }
+  if (prefersDark ? stored !== 'light' : stored === 'dark') { html.setAttribute('data-theme', 'dark'); html.setAttribute('data-brand', 'clay'); html.style.setProperty('--wm-boot-ground', DARK_GROUND); }
   const media = { matches: prefersDark, listeners: [], addEventListener(type, fn) { this.listeners.push(fn); } };
   const windowListeners = {};
   const context = {
+    CustomEvent: class { constructor(type, init) { Object.assign(this, { type, ...init }); } },
     document: {
       documentElement: html,
-      querySelector: (selector) => (selector === '.navr .wm-appearance' ? reserved : meta[/name="([^"]+)"/.exec(selector)[1]] ?? null),
+      querySelector: (selector) => (selector === '.wm-appearance' ? reserved : meta[/name="([^"]+)"/.exec(selector)[1]] ?? null),
       createElement: (tag) => element(tag, state),
     },
     localStorage: {
@@ -80,6 +84,7 @@ function page({ stored = null, prefersDark = false, storageThrows = false, box =
     radio: (label) => radios.find((each) => each.getAttribute('aria-label') === label),
     checked: () => radios.filter((each) => each.getAttribute('aria-checked') === 'true').map((each) => each.getAttribute('aria-label')),
     stored: () => state.storage.get(KEY) ?? null,
+    announced: () => state.announced.splice(0).map(({ type, bubbles, detail }) => [type, bubbles, detail]),
     flipSystem(dark) { media.matches = dark; for (const fn of media.listeners) fn({ matches: dark }); },
     otherTab(key, value) {
       if (value === null) state.storage.delete(key); else state.storage.set(key, value);
@@ -98,27 +103,14 @@ test('every dressed page links /appearance.js deferred, beside /nav-auth.js, and
   }
 });
 
-// The gate is what FORCES a new page to carry the toggle: the file goes out through the same map as
-// /boot.js, so a page that forgets the link — or the box the script fills — fails the config, not
-// the visitor.
+// The file goes out through the same map as /boot.js; test/scripts/staticPageAssets.test.mjs holds the gate
+// that makes every page link it and reserve the box it fills.
 test('/appearance.js is emitted by the same asset map as /boot.js, as the script this module builds', () => {
   const emitted = [];
   staticPageAssets().generateBundle.call({ emitFile: (file) => emitted.push(file) });
   const names = emitted.map((file) => file.fileName);
-  for (const sheet of ['fonts.css', 'chrome.css', 'boot.js', 'appearance.js']) assert.ok(names.includes(sheet), `${sheet} is not emitted`);
+  for (const sheet of ['fonts.css', 'chrome.css', 'instrument.css', 'boot.js', 'appearance.js']) assert.ok(names.includes(sheet), `${sheet} is not emitted`);
   assert.equal(emitted.find((file) => file.fileName === 'appearance.js').source, SCRIPT);
-});
-
-test('the gate refuses a dressed page whose .navr does not open with the empty toggle box', () => {
-  const sheets = ['fonts.css', 'chrome.css', 'boot.js', 'appearance.js'];
-  const pricing = fs.readFileSync(new URL('pricing.html', PAGES), 'utf8');
-  assert.doesNotThrow(() => checkStaticPage('pricing.html', pricing, sheets));
-  const boxless = pricing.replace('<span class="wm-appearance" aria-hidden="true"></span>', '');
-  assert.throws(() => checkStaticPage('pricing.html', boxless, sheets), /public\/pricing.html does not open .navr with <span class="wm-appearance" aria-hidden="true"><\/span>/);
-  const boxLater = pricing.replace('<span class="wm-appearance" aria-hidden="true"></span>\n', '').replace('</span>\n    </header>', '<span class="wm-appearance" aria-hidden="true"></span></span>\n    </header>');
-  assert.throws(() => checkStaticPage('pricing.html', boxLater, sheets), /does not open .navr with/, 'a box anywhere but first in .navr is a nav that still slides');
-  const unlinked = pricing.replace('<script defer src="/appearance.js"></script>', '');
-  assert.throws(() => checkStaticPage('pricing.html', unlinked, sheets), /does not link \/appearance.js/);
 });
 
 // The file is served raw to every browser that reaches a static page: no syntax the boot itself avoids.
@@ -144,7 +136,7 @@ test('the toggle fills the box first in .navr as a two-segment radiogroup named 
     ['button', 'button', 'radio', 'Light', 'light'],
     ['button', 'button', 'radio', 'Dark', 'dark'],
   ]);
-  assert.deepEqual(p.radios.map((each) => each.innerHTML), SEGMENTS.map(([, , icon]) => icon));
+  assert.deepEqual(p.radios.map((each) => each.innerHTML), CHOICES.slice(1).map(([, , icon]) => icon));
   assert.ok(p.radio('Light').innerHTML.includes('<circle cx="12" cy="12" r="4"/>'), 'the light segment draws lucide\'s sun');
   assert.ok(p.radio('Dark').innerHTML.includes('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'), 'the dark segment draws lucide\'s moon');
   assert.deepEqual(p.radios.map((each) => each.children[0].textContent), ['Light', 'Dark']);
@@ -251,6 +243,54 @@ test('arrow keys move the choice between the two and carry focus with it, wrappi
   assert.equal(event.prevented, false);
 });
 
+// The instrument look's footer offers Auto beside Light and Dark, as the front page's does, and shows
+// what was chosen: Auto while the page follows the device, whatever the device says.
+test('a box naming Auto fills with Auto, Light and Dark, and checks the choice rather than the appearance', () => {
+  const p = page({ choices: 'system light dark', prefersDark: true });
+  assert.deepEqual(p.radios.map((each) => [each.attributes['aria-label'], each.attributes['data-value'], each.children[0].textContent]), [
+    ['Auto', 'system', 'Auto'],
+    ['Light', 'light', 'Light'],
+    ['Dark', 'dark', 'Dark'],
+  ]);
+  assert.deepEqual(p.radios.map((each) => each.innerHTML), CHOICES.map(([, , icon]) => icon));
+  assert.ok(p.radio('Auto').innerHTML.includes('<rect width="20" height="14" x="2" y="3" rx="2"/>'), 'the auto segment draws lucide\'s monitor');
+  assert.deepEqual(p.checked(), ['Auto']);
+  assert.equal(p.group.attributes['data-resolved'], 'dark', 'the page still wears what the device says');
+  assert.deepEqual(p.radios.map((each) => each.attributes.tabindex), ['0', '-1', '-1']);
+  assert.deepEqual(page({ choices: 'system light dark', stored: 'system' }).checked(), ['Auto']);
+  assert.deepEqual(page({ choices: 'system light dark', stored: 'light', prefersDark: true }).checked(), ['Light']);
+  assert.deepEqual(page({ choices: 'system light dark', stored: 'dark' }).checked(), ['Dark']);
+});
+
+test('picking Auto stores system and hands the page to the device, which then turns it; Light pins it again', () => {
+  const p = page({ choices: 'system light dark', stored: 'dark' });
+  assert.equal(p.html.attributes['data-theme'], 'dark');
+  p.radio('Auto').fire('click');
+  assert.equal(p.stored(), 'system');
+  assert.deepEqual(p.checked(), ['Auto']);
+  assert.deepEqual(p.html.attributes, {});
+  assert.deepEqual(p.html.style.props, {});
+  assert.equal(p.meta['theme-color'].attributes.content, LIGHT_GROUND);
+  assert.equal(p.meta['color-scheme'].attributes.content, 'light');
+  p.flipSystem(true);
+  assert.deepEqual(p.checked(), ['Auto'], 'Auto stays the choice while the device turns');
+  assert.deepEqual(p.html.attributes, { 'data-theme': 'dark', 'data-brand': 'clay' });
+  assert.equal(p.meta['color-scheme'].attributes.content, 'dark');
+  p.radio('Light').fire('click');
+  assert.equal(p.stored(), 'light');
+  assert.deepEqual(p.checked(), ['Light']);
+  assert.deepEqual(p.html.attributes, {});
+  p.flipSystem(false);
+  p.flipSystem(true);
+  assert.deepEqual(p.html.attributes, {}, 'a chosen Light does not move with the device');
+  p.radio('Light').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(p.checked(), ['Dark']);
+  assert.equal(p.state.focused, p.radio('Dark'));
+  p.radio('Dark').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(p.checked(), ['Auto'], 'right from the last wraps to Auto');
+  assert.equal(p.stored(), 'system');
+});
+
 test('a page without the box and a browser without storage both cost nothing', () => {
   const bare = page({ box: false });
   assert.equal(bare.group, null);
@@ -280,4 +320,22 @@ test('the toggle\'s chrome is token-valued and hides the word, not the name, on 
   assert.match(rules, /@media \(max-width: 479px\) \{[^\n]*\.wm-appearance-word \{ display: none; \}/);
   assert.match(rules, /\.wm-appearance\[data-resolved="dark"\] \.wm-appearance-thumb \{ transform: translateX/);
   assert.equal(SCRIPT.includes("setAttribute('aria-label',label)"), true, 'the word on the button survives its label being hidden');
+});
+
+// /events.js tells a pick as the front page's footer does: only one that moves the check, so a segment already in use
+// tells nothing, though picking it still stores the choice.
+test('a pick that moves the check is announced as a bubbling wm-appearance event carrying the stored value', () => {
+  const p = page({ prefersDark: true });
+  p.radio('Dark').fire('click');
+  assert.equal(p.stored(), 'dark');
+  assert.deepEqual(p.announced(), [], 'the device already showed Dark');
+  p.radio('Light').fire('click');
+  p.radio('Light').fire('click');
+  p.radio('Light').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(p.announced(), [['wm-appearance', true, 'light'], ['wm-appearance', true, 'dark']]);
+  const auto = page({ choices: 'system light dark', prefersDark: true });
+  auto.radio('Auto').fire('click');
+  auto.radio('Dark').fire('click');
+  auto.radio('Dark').fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.deepEqual(auto.announced(), [['wm-appearance', true, 'dark'], ['wm-appearance', true, 'system']], 'with Auto the check is the choice, so Dark on a dark device moves it');
 });

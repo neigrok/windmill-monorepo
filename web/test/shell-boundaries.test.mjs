@@ -117,7 +117,11 @@ function productOf(absolutePath) {
 const PLATFORM_I18N = path.join(SRC, 'platform', 'i18n') + path.sep;
 const BRAND_ROOT_PICTURES = PRODUCTS.map((product) => path.join(PRODUCTS_DIR, product.id, 'marketing', 'RootPicture.jsx'));
 const ENTRY_LOADED = entryLoaded([path.join(SRC, 'main.jsx'), ...BRAND_ROOT_PICTURES]);
-const LANDINGS = PRODUCTS.map((product) => path.resolve(SRC, '..', product.landing.head.module));
+// A product's landing is the page its head names and the pictures that page loads lazily into the shell's frames.
+const LANDINGS = PRODUCTS.flatMap((product) => {
+  const page = path.resolve(SRC, '..', product.landing.head.module);
+  return [page, ...importsOf(page).filter(({ dynamic }) => dynamic).map(({ specifier }) => targetOf(page, specifier))];
+});
 const LANDING_LOADED = new Set([...entryLoaded(LANDINGS)].filter((file) => !ENTRY_LOADED.has(file)));
 // The app's chrome and home: the /app chrome App.jsx loads lazily and each product's home card. The settings page:
 // the page App.jsx loads lazily and each product's settings sections. A door names where its route table keeps them.
@@ -225,7 +229,7 @@ test('a module reads the catalog of the moment it loads: the brand root\'s, the 
 // The landing seam. Since the shell stopped hard-coding /roadmap, the router mounts a landing by
 // looking up `landing.href` — a product that declares none has no front door at all.
 const landingsMissing = PRODUCTS
-  .filter((p) => typeof p.landing?.href !== 'string' || !p.landing?.Component)
+  .filter((p) => typeof p.landing?.href !== 'string' || typeof p.landing?.page !== 'function')
   .map((p) => `product "${p.id}" declares no mountable landing — shell/App.jsx has no branch of its own left to fall back on, so its pathname would render the brand root`);
 
 // Two faces of the same fact: the /app chrome sends visitors out to shell.landingHref, the router

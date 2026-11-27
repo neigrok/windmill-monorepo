@@ -217,6 +217,18 @@ class CaddyfileRoutesTest(unittest.TestCase):
             ("app.localhost", "/.well-known/oauth-protected-resource"): proxied,
             ("api.localhost", "/.well-known/apple-app-site-association"): proxied})
 
+    def test_every_shelf_page_s_short_address_redirects_onto_its_file(self):
+        port = self.edge("0.0.0.0/0 ::/0")
+        pages = ("pricing", "privacy", "terms", "refunds", "changelog", "connect", "support")
+        located = {}
+        for page in pages:
+            result = subprocess.run(["curl", "-sk", "--max-time", "5", "--resolve", f"app.localhost:{port}:127.0.0.1",
+                                     "-H", "CF-Connecting-IP: 17.58.0.1", "-o", "/dev/null",
+                                     "-w", "%{http_code} %{redirect_url}", f"https://app.localhost:{port}/{page}"],
+                                    capture_output=True, text=True, timeout=30)
+            located[page] = result.stdout
+        self.assertEqual(located, {page: f"301 https://app.localhost:{port}/{page}.html" for page in pages})
+
     def test_the_app_store_door_answers_apple_s_subnet_alone(self):
         port = self.edge("0.0.0.0/0 ::/0")
         path = "/v1/stores/app-store/notifications"

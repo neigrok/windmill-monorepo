@@ -1,7 +1,7 @@
 # Marketing site
 
 The public pages of windmill.works: the sitemap, the rules, the Instrument look, what is built, what
-is approved and waiting, how search engines read the pages, and the strings still false. The drawings
+is proposed, how search engines read the pages, and the strings still false. The drawings
 are on the Marketing file's page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
 A page is built only from its section marked ✅ Ready for dev. Its wording is on that section's boards;
 each page's title, which the boards do not draw, is recorded here.
@@ -23,10 +23,11 @@ A visitor should learn four things, in this order, and each page owns one of the
 | Address | Its one job | State |
 |---|---|---|
 | `/` | Say what Windmill is, name its three tools with the feature that leads each, and send the visitor to a room | Built in the Instrument look |
-| `/roadmap` | Any goal as a skill tree | Built in the older landing look; the Instrument page is approved and not built |
-| `/journal` | A daily journal you can search by meaning | As `/roadmap` |
-| `/gym` | A workout log that remembers what you lifted | As `/roadmap` |
-| `/pricing` | What is free, what One is, where the money goes | Exists as `/pricing.html` in the older look; the Instrument page is approved and not built |
+| `/roadmap` | Any goal as a skill tree | Built in the Instrument look |
+| `/journal` | A daily journal you can search by meaning | Built in the Instrument look |
+| `/gym` | A workout log that remembers what you lifted | Built in the Instrument look |
+| `/pricing` | What is free, what One is, where the money goes | Built in the Instrument look, as `/pricing.html` |
+| `/support` | Where to write, how to keep or remove your data, where a subscription is managed | Exists as `/support.html`, in the family look |
 | `/connect` | Use the assistant you already have | Exists as `/connect.html`; linked from the front page and the footers |
 | `/about` | Why Windmill exists, what the name means, what it will not do | Proposed; no page and no link |
 | `/changelog` | What changed, with real dates | Exists as `/changelog.html`; Roadmap only, every entry July 2026 |
@@ -81,7 +82,7 @@ and, for each room's row and section, in that product's `web/src/products/<produ
 under `<product>.root.*`, which the product's `routes.js` hands the page as `landing.root`. Each room's
 picture is its `marketing/RootPicture.jsx`. The head and the no-script body are
 `web/src/shell/marketing/landingHeads.js`, copied into `web/index.html`. Its events are in
-[web/OBSERVABILITY.md](../../web/OBSERVABILITY.md#front-page).
+[web/OBSERVABILITY.md](../../web/OBSERVABILITY.md#front-page-product-landings-and-the-pricing-page).
 
 | Part | Wording |
 |---|---|
@@ -96,7 +97,7 @@ The page runs in this order:
    account seat signed in; the pill "Open Windmill".
 2. **The first screen.** The heading and the two lines under it.
 3. **The three tools**, a row per open room with its full name, what it is ("skill-tree planner",
-   "daily journal", "workout log"), its line and a link: Start a tree · Write tonight · See Windmill Gym.
+   "daily journal", "workout log"), its line and a link: Start a tree · Write tonight · Open the log.
 4. **A section per open room**, Roadmap, Journal, Gym: a two-line heading, one paragraph and its
    link, the composed picture ("Composed tree", "Composed page", "Composed session") and three named
    features.
@@ -104,35 +105,23 @@ The page runs in this order:
    month; "Windmill One raises the ceiling for one price. It is not on sale yet." → See pricing.
 6. **Where it runs.** "Web: Roadmap, Gym and Journal. The phone apps are in beta and not public yet."
 7. **Footer.** Rooms (Roadmap, Gym, Journal) · Your own assistant (Connect) · Windmill (Pricing,
-   Changelog, Gallery) · Legal (Privacy, Terms, Refunds); then Feedback and Auto · Light · Dark.
+   Changelog, Gallery, Support) · Legal (Privacy, Terms, Refunds); then Feedback and Auto · Light · Dark.
 
 A room that holds itself shut brings no row and no section, and keeps its place in the header and
-footer. The boards also draw About in the header and footer; it is not built, because the page does
-not exist.
+footer.
 
-## Approved, waiting to be built
+## Built: the room pages, pricing and support
 
-Each section below is marked ✅ Ready for dev. Its pictures are composed from the room's own scenes and
-screens, and labelled.
+The three room pages and the pricing page are drawn on their sections of the same Figma page and share
+the front page's header and footer (`web/src/shell/marketing/SiteChrome.jsx`, `site.css`). Their
+events are in [web/OBSERVABILITY.md](../../web/OBSERVABILITY.md#front-page-product-landings-and-the-pricing-page).
 
-### Pricing `/pricing`
-
-[C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508). Title "Pricing —
-Windmill". Main heading "Windmill is free." Sections in order:
-
-1. **Three equal columns:** by hand, free · with your own AI, free here · with Windmill's AI, $0.50
-   of AI a month on a free account.
-2. **Counted in dollars, at the provider's price.** The amounts: $0.25 once, signed out in the phone
-   app; $0.50 each calendar month on a free account; $7 each paid month with Windmill One. Free AI also
-   draws on one shared pool, named without its size.
-3. **Windmill One.** $12 a month, "Not on sale yet." beside the price in plain text. Where the $12
-   goes, as a bar in three parts: the AI you use, $7.00 · store and payment fees, about $1.80 ·
-   Windmill, about $3.20.
-4. **Questions**, a visible list that is also the page's structured data.
-
-The split names no store: its middle part is "store and payment fees". The page promises nothing
-about refunds: it says the store you buy from takes the payment and handles cancelling and refunds.
-No other page gives a price.
+A room page is plain page data, `web/src/products/<product>/marketing/landingPage.js`, in the words of
+`web/src/products/<product>/i18n/landing/en.json`, drawn by `web/src/shell/marketing/ProductLanding.jsx`.
+Its pictures are `marketing/LandingPictures.jsx`, composed from the room's own components and labelled.
+The build writes the same page data into the first HTML (`web/scripts/productLandingBody.mjs`), and a
+browser test holds the first HTML and the running page alike. If the page's code fails to load, the
+first HTML stays on screen.
 
 ### Windmill Roadmap `/roadmap`
 
@@ -149,7 +138,8 @@ first tree." Windmill One does not appear on it.
 App With Search by Meaning | Windmill Journal". Main heading "A daily journal you can search by
 meaning". Sections: Your own words, echoed back · Find what you wrote, without the exact words · One
 page a night · Look back without a score · Nothing writes back · What stays on your device, and what
-does not · Yours to keep, and where it runs · seven questions · "Tonight's page is waiting."
+does not · Yours to keep, and where it runs · seven questions · "Tonight's page is waiting." What it
+says about echoes and Anthropic follows the privacy page word for meaning.
 
 ### Windmill Gym `/gym`
 
@@ -157,15 +147,39 @@ does not · Yours to keep, and where it runs · seven questions · "Tonight's pa
 for Lifters on a Program | Windmill Gym". Main heading "A workout log that remembers what you lifted".
 Sections: A coach that answers from your log · Or bring your own assistant · Your target, or last
 time's numbers, before every set · How to track progressive overload · For the program you already
-run · What it will not do · What stays on your phone, and what does not · Where it runs · eight
-questions · "Bring the program you already run." Its first link goes to Where it runs, because a set
-cannot be logged on the web. Its structured data names "Web browser" until an app has a public listing.
+run · What it will not do · What stays on your device, and what does not · Where it runs · eight
+questions · "Bring the program you already run." Its first link opens the log, which works in a
+browser with no account; Coach, notes and share links need a free account. Its structured data names
+"Web browser" until an app has a public listing.
 
-### Before build
+### Pricing `/pricing`
 
-- Echoes do not draw on a person's AI amount: Windmill's background budgets pay for them
-  ([AI allowances](../../backend/AI_ALLOWANCES.md)). The pricing page's answer and the Journal page's
-  echoes section say so.
+[C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508). A static page,
+`web/public/pricing.html`, in the look through the generated `/instrument.css`
+(`web/scripts/staticInstrument.css`); a test holds its header and footer to the shared ones. Title
+"Pricing — Windmill". Main heading "Windmill is free." Sections in order:
+
+1. **Three equal columns:** by hand, free · with your own AI, free here · with Windmill's AI, $0.50
+   of AI a month on a free account.
+2. **Counted in dollars, at the provider's price.** The amounts: $0.25 once, signed out in the phone
+   app; $0.50 each calendar month on a free account; $7 each paid month with Windmill One. Free AI also
+   draws on one shared pool, named without its size.
+3. **Windmill One.** $12 a month, "Not on sale yet." beside the price in plain text. Where the $12
+   goes, as a bar in three parts: the AI you use, $7.00 · store and payment fees, about $1.80 ·
+   Windmill, about $3.20.
+4. **Questions**, a visible list that is also the page's structured data.
+
+The split names no store: its middle part is "store and payment fees". The page promises nothing
+about refunds: it says the store you buy from takes the payment and handles cancelling and refunds.
+Echoes do not draw on a person's AI amount, and the page says so
+([AI allowances](../../backend/AI_ALLOWANCES.md)). No other page gives a price.
+
+### Support `/support`
+
+`web/public/support.html`, in the family look; `/support` redirects to it. Where to write, what stays
+on the device signed out, how to export and how to close an account, and where Windmill One will be
+managed. The legal pages name no payment company and promise no refund: the store a person buys from
+takes the payment and handles cancelling and refunds.
 
 ## Proposed, not drawn
 
@@ -183,40 +197,29 @@ them does not wait for the rebuild.
 
 | Where | Says | Problem | Do |
 |---|---|---|---|
-| `/roadmap` | "It can’t share roadmaps, delete them…" | `/connect` lists delete as a level an assistant can be granted | Say what each level allows |
-| `/roadmap` | "Starter quests and paste-a-list are growing in" | Both ship | Remove |
-| `/roadmap` | "The tree keeps score" | Reads against "never graded" | "keeps track" |
-| `/gym` | "Two taps between sets" | Not established; the approved page leaves it out | Remove |
-| `/gym`, `/404`, `/connect`, `/privacy`, `/terms` | "training log" | Public pages call Gym a workout log | "workout log" |
-| `/journal` | "Nothing you write teaches anything" | The privacy page says signed-in pages go to a hosted model for echoes | Remove unless a no-training term is verified |
-| `/refunds` | "what will cost money is the AI doing the work" | The AI guides; the person does the work | Rewrite |
-| `/pricing`, `/refunds` | A 30-day money-back guarantee | The approved pricing page promises nothing about refunds | Remove with the rebuild |
-| `/pricing`, `/refunds`, `/terms`, `/privacy` | Paddle is the seller | One is sold first in the App Store, and the web sells nothing | Say the store a person buys from takes the payment |
 | `/404` | A private tree link "now 404s" | The backend answers an unknown or private tree with the front page | Make the answer a real 404 |
-| Status badges | "Now in public beta", "Now open", none, and Terms' "public beta" | Four vocabularies | One true status per room, same words everywhere |
-| Roadmap social cards | Three different descriptions | One page, three stories | One description |
 
 ## How search engines read the pages
 
 In order of weight:
 
-1. **Render the landings whole at build time.** A crawler that runs no script gets, on `/`, the
-   heading, the two lines, the three tools with their links and two shelves of links; on a room landing,
-   a badge, a heading, one paragraph and links. The whole page should be in the first HTML, with the
-   live parts mounting over it.
+1. **The landings are whole in the first HTML.** A crawler that runs no script gets, on `/`, the
+   heading, the two lines, the three tools with their links and two shelves of links; on a room
+   landing, every heading, paragraph, feature, link, question and answer, and the same two shelves.
+   The pictures mount over it.
 2. **One visible main heading per page**, equal to what the title promises.
 3. **A published tree is its own page.** Its heading, summary and first steps in the first HTML; its own
    structured data or none; an unknown or private tree answers 404. Listed trees join the sitemap with a
    last-changed date.
 4. **Structured data says only what is true.** `/` carries `WebSite`, `Organization` and `WebPage`, and
    no questions. One `SoftwareApplication` per room with its real platforms and no offer until
-   something is on sale: `/roadmap` still carries a free offer. Questions only on `/pricing` and on
-   each room page, matching the visible list.
+   something is on sale. Questions only on `/pricing` and on each room page, matching the visible
+   list.
 5. **A social card per page**, drawn with the page: front page, each room, connect, pricing, about.
 6. **Short canonical addresses**, with the `.html` address redirecting to the short one; today it is
    the other way round. One description per page.
-7. **Links.** Every public page is reachable from the footer. The front page links `/connect` and
-   `/gallery`; the room pages gain links to them when they are rebuilt.
+7. **Links.** Every public page is reachable from the footer, and from the two shelves of links in
+   the first HTML of `/` and of each room page.
 8. **Naming.** "Windmill Roadmap", "Windmill Gym", "Windmill Journal" and windmill.works at first
    mention, so a search does not confuse Windmill with the unrelated developer automation platform.
 9. **Small repairs.** The `robots.txt` comment names a route that does not exist; the web manifest and

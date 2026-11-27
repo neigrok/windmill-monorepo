@@ -328,28 +328,49 @@ unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismi
 the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
 to say, so the room voices no notice and tells no `refusal` step for it.
 
-## Front page
+## Front page, product landings and the pricing page
 
-The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) tells one event for each link and control a person uses, through
-`track` in `src/telemetry/beacon.js`. Properties are allowlisted, bounded labels: no address, link text, account or email
-enters them. `product` is a product's registry id. Nothing inside a picture frame is a control, so a picture tells nothing.
-`test/shell/marketing/BrandLanding.test.js` drives every link and control, signed out, signed in and with a link already sent,
-and holds the events to this table.
+The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) and each product's landing (`/roadmap`, `/journal`, `/gym`,
+`src/shell/marketing/ProductLanding.jsx` drawing the page its product supplies) wear one chrome
+(`src/shell/marketing/SiteChrome.jsx`) and tell one event for each link and control a person uses, through `track` in
+`src/telemetry/beacon.js`. Every event carries `page`: `front` for the brand root, the product's registry id for its
+landing. Properties are allowlisted, bounded labels: no address, link text, account or email enters them. `product` is a
+product's registry id. One use of a link tells one event: the second click of a double click tells nothing. Nothing inside a picture frame is a control, so a picture tells nothing.
+`test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js` drive every link and
+control, signed out, signed in and with a link already sent, and hold the events to this table.
+
+The pricing page (`public/pricing.html`), a static page in the same look, and the support page (`public/support.html`), in
+the family look, tell the same events as `page: pricing` and `page: support` through `/events.js`
+(`scripts/staticEvents.js`); the build makes every static page in the instrument look link it, and any page that links it
+name a page it knows on `<html data-page>`. The support page's switch is the family look's Light · Dark in its header, told as `front_control`
+`appearance` like the footer's. It sends each event as it happens, one beacon each, or one keepalive request
+where the browser refuses the beacon; a failed send is dropped and never tried again. It reads the session key `beacon.js`
+keeps, minting it there when none is stored, and is muted on localhost as `beacon.js` is. A link tells `front_link` from
+the `data-to` and `data-product` it carries and the `data-area` around it, each checked against the file's fixed lists; a
+link without them, the skip link, tells nothing. The page's links are links, not controls: Sign in (`sign_in`, the brand
+root's door), the account seat (`settings`) and Feedback (`feedback`, the mail address) each tell `front_link`. The
+switch tells `front_control` when `/appearance.js` announces a pick that moves the check. `test/scripts/staticEvents.test.mjs`
+drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on the page to the labels it tells.
 
 | Step | Event | Allowlisted props |
 |---|---|---|
-| The page opened, once per mount, at its first paint without waiting on the network; the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | none |
-| A link followed. `area` is where it stands: the header, the three tools, a room's section, "Your AI, or ours." or the footer's sitemap. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page | `front_link` | `area: header/tools/room/ai/sitemap`, `to: home/landing/room/app/pricing/connect/changelog/gallery/privacy/terms/refunds`, `product?: roadmap/journal/gym` |
-| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+| The page opened, once per mount, at its first paint without waiting on the network (on the pricing page, once per load); the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym/pricing/support` |
+| A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page. On the static pages `area` is also pricing's three ways (`ways`), support's body (`content`) or the footer (`footer`), and `to` also the sign-in door, account settings or the feedback address | `front_link` | `page: front/roadmap/journal/gym/pricing/support`, `area: header/tools/room/ai/sitemap/first/section/feature/closing/ways/content/footer`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds/sign_in/settings/feedback`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing/support`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
 
-A room's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
-`front-picture-journal` or `front-picture-gym` once, with kind `render` and no stack (`BrandLanding.browser.test.js`). Any
-other render crash reaches `client_error` under the route family `/`. The sign-in door and the feedback dialog it opens tell
+A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
+`front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route, once per page
+load for each page and picture, however often the page mounts (`BrandLanding.browser.test.js`,
+`ProductLanding.browser.test.js`). A landing whose own code cannot load (its chunk, its page's words, a stylesheet, or a
+session provider above it) keeps the first HTML the document arrived with, its whole page and links, and reports
+`landing-front`, `landing-roadmap`, `landing-journal` or `landing-gym` once, with kind `render`, no stack and the page's
+path as its route (`src/shell/arrival.jsx`). Any other render crash reaches `client_error` under the page's route family. The sign-in door and the feedback dialog it opens tell
 and report their own sends:
 
 | Step | Event | Allowlisted props |
 |---|---|---|
 | A sign-in link asked for at the shared door, on any page | `sign_in_link` | `outcome: sent/refused/failed`, `reason?: invalid_email/rate_limited` when refused, `network/server/request` when failed |
+| Continue with Google chosen at the shared door, as the browser leaves for Google's consent; the sign-in that follows arrives as a new page | `sign_in_google` | `outcome: started` |
 | Feedback sent from the shared dialog | `feedback_send` | `outcome: sent/refused/failed`, `reason?: refused` (a 400 or 429), `network/server/request` when failed |
 
 A failed send, not a refusal, also reports to Sentry with no stack: `auth-magic-link` (kind `auth`) and `feedback-send`
@@ -520,7 +541,6 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Device roadmaps claimed at sign-in, where the room reads roadmap's own sync (the switch off) | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
 | A build whose room reads the device's copy: the sign-in question for the browser's signed-out roadmaps where the account already holds roadmaps (flow 50.01, 50.03), shown, then answered Add or Discard, or cancelled by Escape, which signs the account out and leaves the roadmaps on the browser unsent. `roadmaps` counts the browser's own roadmaps it names; it also names, by their changes, the roadmaps of others the work changes, which its Discard takes too. An account that holds none takes them without a question, and so does one whose signed-out work changes no roadmap of the browser's own: nothing is emitted here, and the engine's `sync-signin` says the sign-in completed | `roadmap_signin` | `step: shown/add/discard/cancel`, `roadmaps: 0/1/2-5/6-20/21+` |
 | A build whose room reads the device's copy: the sign-out question where every unsent change is roadmap's (flow 50.02, 50.04), shown, then answered Keep or Discard, or cancelled by Escape, which stays signed in. `changes` counts the unsent changes, one an act of the person's (a gesture), however many entries it commits, and the changes of the account's roadmaps waiting in the old stores (§8.2), which it names and its Discard takes; it is asked where only those wait. A sign-out with nothing unsent and nothing waiting, or with another product's work or notice, asks in the shell's words and emits nothing here | `roadmap_signout` | `step: shown/keep/discard/cancel`, `changes: 0/1/2-5/6-20/21+` |
-| Roadmap landing opened | `land` | `signedIn: true/false` |
 
 Roadmap Coach's tool host tells nothing of a call and reports nothing of one: the platform's turn engine tells each call it
 runs, through its telemetry port, as `roadmap_coach_ability` (the ability and its outcome or refusal code), and reports

@@ -6,8 +6,10 @@
 import { API_BASE } from '../shell/apiBase.js';
 import { captureError } from './sentry.js';
 
-const SESSION_KEY_STORAGE = 'windmill:beacon:key';
-const DEV_OPT_IN_STORAGE = 'windmill:beacon:dev';
+// The browser's one event identity and the developer's opt-in on localhost; the static pages' /events.js
+// (scripts/staticEvents.js) reads both.
+export const SESSION_KEY_STORAGE = 'windmill:beacon:key';
+export const DEV_OPT_IN_STORAGE = 'windmill:beacon:dev';
 const FLUSH_AT = 20;
 const FLUSH_AFTER_MS = 5000;
 const MAX_EVENTS_PER_SEND = 50;

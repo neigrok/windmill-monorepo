@@ -25,7 +25,7 @@ function queuedBeacon(online = true, beacon = () => true) {
   const code = source
     .replace("import { API_BASE } from '../shell/apiBase.js';", "const API_BASE = '';")
     .replace("import { captureError } from './sentry.js';", 'const captureError = () => {};')
-    .replaceAll('export function ', 'function ');
+    .replace(/^export (function|const) /gm, '$1 ');
   const track = runInNewContext(`${code}\ntrack`, {
     window: {
       location: { hostname: 'windmill.works' },

@@ -1,0 +1,55 @@
+/* The journal's pictures on its landing (LandingPictures.jsx), in the night canvas's tokens at any hour; the lamp is
+   --color-brand. Each fills its stage, its contents centred. */
+.jnNight { box-sizing: border-box; display: flex; align-items: center; justify-content: center; height: 100%;
+           background: var(--surface-canvas); color: var(--text-primary); font-family: var(--font-body); text-align: left; }
+.jnNight :where(p, ul) { margin: 0; padding: 0; list-style: none; }
+.jnCursor { display: inline-block; width: 2px; height: 18px; margin-left: 2px; vertical-align: -3px; background: var(--color-brand); }
+
+/* ---- tonight's page, the line before it and an echo under it ---- */
+.jnWindow { padding: 40px 48px; }
+.jnWindow-page { width: 600px; }
+.jnWindow-stamp { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 11px; line-height: 14px;
+                  letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+.jnWindow-stamp i { width: 9px; height: 9px; border-radius: 50%; background: var(--color-brand); }
+.jnWindow-earlier { margin-top: 18px; font-size: 16px; line-height: 28px; color: var(--text-secondary); }
+.jnWindow-tonight { margin-top: 14px; font-size: 16px; line-height: 28px; }
+.jnWindow-echo { margin-top: 20px; padding: 15px 17px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-card);
+                 font-size: 14.5px; line-height: 23px; color: var(--text-secondary); }
+.jnWindow-date { margin-top: 9px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-brand); }
+.jnWindow[data-stage="narrow"] { padding: 24px 16px; }
+.jnWindow[data-stage="narrow"] .jnWindow-page { width: 318px; }
+
+/* ---- the search sheet ---- */
+.jnSearch { padding: 56px 16px; }
+.jnSearch-sheet { width: 720px; overflow: hidden; border: 1px solid var(--border-default); border-radius: 16px; background: var(--surface-card); }
+.jnSearch-query { display: flex; align-items: center; gap: 11px; padding: 15px 18px; border-bottom: 1px solid var(--border-subtle); font-size: 16px; line-height: 22px; }
+.jnSearch-query svg { color: var(--color-brand); }
+.jnSearch ul { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
+.jnSearch li { display: flex; gap: 14px; opacity: .45; }
+.jnSearch li.is-hit { opacity: 1; }
+.jnSearch-day { flex: none; width: 56px; padding-top: 2px; font-family: var(--font-mono); font-size: 10px; line-height: 16px; text-transform: uppercase; color: var(--text-tertiary); }
+.is-hit .jnSearch-day { color: var(--color-brand); }
+.jnSearch-line { display: block; font-size: 13.5px; line-height: 21px; }
+.is-hit .jnSearch-line { font-size: 14.5px; line-height: 23px; }
+.jnSearch-why { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-brand); }
+.jnSearch-foot { padding: 11px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 18px; color: var(--text-tertiary); }
+.jnSearch[data-stage="narrow"] { padding: 24px 16px; }
+.jnSearch[data-stage="narrow"] .jnSearch-sheet { width: 326px; }
+
+/* ---- a scene of the room, 328 × 190, at 2× on a wide stage and at the frame's width on a phone ---- */
+.jnScene-box { flex: none; box-sizing: border-box; width: 328px; height: 190px; padding: 18px 20px; transform: scale(2); }
+.jnScene[data-stage="narrow"] .jnScene-box { transform: scale(.994); }
+.jnScene-stamp { font-family: var(--font-mono); font-size: 10px; line-height: 14px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-tertiary); }
+.jnScene-stamp.is-today { margin-top: 16px; color: var(--color-brand); }
+.jnScene-past { margin-top: 4px; font-size: 13.5px; line-height: 22px; color: var(--text-secondary); }
+.jnScene-now { margin-top: 4px; font-size: 13.5px; line-height: 22px; }
+.jnScene-now .jnCursor { height: 14px; vertical-align: -2px; }
+.jnYear { display: flex; flex-direction: column; gap: 9px; margin-top: 12px; }
+.jnYear p { display: grid; grid-template-columns: 26px repeat(21, 1fr); align-items: center; column-gap: 5px; }
+.jnYear span { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; color: var(--text-tertiary); }
+.jnYear i { aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; border: 1px solid var(--neutral-300); }
+.jnYear i.is-lamp2 { border: none; background: var(--lamp-200); }
+.jnYear i.is-lamp4 { border: none; background: var(--lamp-400); }
+.jnYear i.is-lamp5 { border: none; background: var(--lamp-500); }
+.jnYear i.is-lamp6 { border: none; background: var(--lamp-600); }
+.jnScene-legend { margin-top: 14px; font-size: 11px; line-height: 16px; color: var(--text-tertiary); }

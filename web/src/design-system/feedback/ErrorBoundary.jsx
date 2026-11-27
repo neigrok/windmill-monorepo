@@ -1,5 +1,6 @@
 // A render/lifecycle error below becomes a recoverable screen with a Reload and is beaconed, unless the owner
-// passes its own fallback and onCrash. Global (non-React) errors are reported from main.jsx.
+// passes its own fallback and onCrash. A fallback given as a function is asked once it has crashed, and its undefined
+// is the screen. Global (non-React) errors are reported from main.jsx.
 
 import React from 'react';
 import { reportError } from '../../telemetry/beacon.js';
@@ -22,7 +23,8 @@ export class ErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.crashed) return this.props.children;
-    if (this.props.fallback !== undefined) return this.props.fallback;
+    const fallback = typeof this.props.fallback === 'function' ? this.props.fallback() : this.props.fallback;
+    if (fallback !== undefined) return fallback;
     return <CrashFallback />;
   }
 }

@@ -9,6 +9,9 @@ import { t } from '../i18n/entry/index.js';
 
 export { SITE_ORIGIN, SITE_SCHEMA };
 
+// The shell's page every product's landing is drawn by; its shell preloads it beside the product's page.
+export const PRODUCT_LANDING_MODULE = 'src/shell/marketing/ProductLanding.jsx';
+
 // The root draws a row and a section for the open products alone, so the shell says exactly those.
 const open = PRODUCTS.filter((product) => product.shell.status === 'open');
 

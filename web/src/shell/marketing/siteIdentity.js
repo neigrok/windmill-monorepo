@@ -39,6 +39,7 @@ export const LEGAL_LINKS = [
   { href: '/terms.html', label: t('shell.site.terms') },
   { href: '/refunds.html', label: t('shell.site.refunds') },
   { href: '/changelog.html', label: t('shell.site.changelog') },
+  { href: '/support.html', label: t('shell.site.support') },
 ];
 
 export const PRODUCT_SHELF_LABEL = t('shell.site.productShelf');

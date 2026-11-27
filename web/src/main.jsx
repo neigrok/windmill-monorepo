@@ -8,6 +8,7 @@ import { reportError } from './telemetry/beacon.js';
 import './shell/pwa/installPrompt.js';
 import { PRODUCTS } from './shell/products.js';
 import { captureError } from './telemetry/sentry.js';
+import { arrivedPage, keepArrival, reportCrash } from './shell/arrival.jsx';
 import './styles/fonts.js';
 import './styles/global.css';
 
@@ -35,9 +36,12 @@ if ('serviceWorker' in navigator) {
 
 initializeNavigation();
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+const root = document.getElementById('root');
+keepArrival(root, { '/': 'front', ...Object.fromEntries(PRODUCTS.map((product) => [product.landing.href, product.id])) });
+
+ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <ErrorBoundary fallback={() => arrivedPage() ?? undefined} onCrash={reportCrash}>
       <App />
     </ErrorBoundary>
   </React.StrictMode>

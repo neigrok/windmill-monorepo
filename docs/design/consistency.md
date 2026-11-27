@@ -1165,10 +1165,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   library owner should correct the primitive sizing before replacing that adapter with an instance.
 - **Gallery controls.** Search/filter thresholds in `galleryIndex.js` are not rendered by
   `BrowsePage.jsx` and are not current controls.
-- **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
-  are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
-  that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
-  Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
 - **Design system · Figma library focus effect.** The library's `shadow/focus-ring` effect still uses
   terracotta-100. The design-system owner must align it with the approved light focus ring:
   2px `surface/canvas` gap plus a 2px terracotta-500 ring
@@ -1299,10 +1295,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   halo. Choose one treatment and align shader and specimen.
 - **F32 · Quest roster icons.** An optional `node.icon` can leave an empty reserved glyph well.
   Give the roster a fallback or remove the unused well.
-- **F50 · Marketing silhouettes.** The app uses bubble layout; `marketing/treeScenes.js` and
-  the Marketing drawings use authored radial compositions. Redraw the marketing scenes in bubble
-  while preserving their names, progress states and unlock ceremony. Engine output alone does not
-  define the marketing framing. Gallery portraits and minimap use the live canvas positions.
+- **F50 · Marketing silhouettes.** The app uses bubble layout; the site's composed trees
+  (`marketing/ComposedTree.jsx`, on the front page and the Roadmap landing) are hand-placed left-to-right
+  compositions, as the approved Marketing boards draw them, with the room's states and rule. The ready paths
+  on the landing use the room's own `QuestThumb`. Gallery portraits and minimap use the live canvas positions.
 - **21 · The fruit tiers in daylight.** The locked fruit is `color-mix(kind 18%, transparent)` with a
   35% ring; the fill measures **1.14–1.29:1** against the canvas in both themes, so a locked step and
   an available step of the same kind differ by an 11px smudge on a phone in daylight. Not a token
@@ -1413,6 +1409,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Gym
 
+- **Brand foundations on the open workout.** [Brand foundations](brand-foundations.md) says under Gym that the phone
+  owns the open workout and the web never finishes a live session. The web now starts, logs and finishes a workout,
+  signed in or signed out ([the web as a device](../foundation/web-device-parity.md) §4, `finishWorkout` in
+  `web/src/products/gym/gymRuntime.js`). Correct the line.
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
   full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
   2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
@@ -2309,24 +2309,29 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
   Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
   allowance sections then.
-- **Who the pricing page says you pay.** `web/public/pricing.html` names Paddle as seller of record and
-  says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
-  says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
-  the page name the store a person will buy through.
 
 ## Marketing and email
 
-- **The public pages not yet rebuilt.** The front page is built in the Instrument look
-  ([marketing site](marketing-site-proposal.md#the-instrument-look)). Pricing and the three room
-  pages are drawn in it and ✅ Ready for dev (sections `284:2508`, `290:2508`, `294:2508`, `293:2508`),
-  and are still built in the older look: Baloo 2 and Nunito (the room landings through
-  `web/src/shell/marketing/landing.css`, pricing in `web/public/pricing.html`), with a live vignette as
-  each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
-  page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
-  Instrument look.
-- **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
-  (three product bands with per-room platform lines), describe the root the front page replaced. Archive
-  them (🗄 Archived prefix and tag).
+- **The public pages still in the family look.** The front page, pricing and the three room landings are built in the
+  Instrument look ([marketing site](marketing-site-proposal.md#the-instrument-look)). Connect, the legal pages, support,
+  the changelog, the gallery and 404 are not drawn in it and wear the family look (`web/scripts/staticPageChrome.css`).
+  Brand foundations' Fonts and Logo name both looks until each page is rebuilt.
+- **The family template's defects.** The static pages in the family look (`web/scripts/staticPageChrome.css`):
+  `connect.html`, `changelog.html`, `gallery.html`, `privacy.html`, `terms.html`, `refunds.html`, `support.html`,
+  `404.html` and `pause.html`. By day their footer links measure 3.52:1 against the ground. At 390 the appearance
+  switch's segments are 28 px tall, the header buttons 37 px and the footer links 19 px, under the 44 px the site's
+  pages give a control on a phone. With scripts off all four header buttons show at once (Sign in, Start your tree, My
+  account, My trees), because only a script stamps `data-auth`. Fix them in the template, or as each page moves to
+  the Instrument look.
+- **The static pages report nothing.** The pages in `web/public/` load no error reporting. On the pricing page a failed
+  `/instrument.css` leaves the text in the browser's default face with the header unlaid, a failed `/appearance.js` leaves
+  no switch and a failed `/events.js` tells nothing, and none of it reaches Sentry. Give the static pages a failure
+  report, or say which of these the site accepts.
+- **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
+  `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
+- **Superseded landing boards.** The Marketing file's superapp landing boards, among them `98:2538`
+  (three product bands with per-room platform lines), and its boards for the earlier `/roadmap`, `/journal` and `/gym`
+  landings describe pages the Instrument pages replaced. Archive them (🗄 Archived prefix and tag).
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
@@ -2336,9 +2341,5 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
-- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
-  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
-  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
-  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.

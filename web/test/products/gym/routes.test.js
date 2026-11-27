@@ -53,21 +53,22 @@ test('the registry answers for either state of the flag', () => {
   assert.equal(gymRoutes.shell.landingHref, gymRoutes.landing.href);
 });
 
-test('the landing offers the log itself, and no line on it is dated against the flag', () => {
-  assert.deepEqual(gymLandingHead.fallback.actions, [
-    { href: '#/gym', label: 'Open your training log →' },
-    { href: '#how', label: 'See how it works' },
+test('the landing opens on the log, which needs no account, then where it runs, and no line on it is dated against the flag', async () => {
+  const page = await gymRoutes.landing.page();
+  assert.deepEqual(page.first.links, [
+    { href: '#/gym', label: 'Open the log', to: 'room' },
+    { href: '#where', label: 'Where it runs', to: 'section' },
   ]);
+  assert.equal(page.first.trust, 'No account needed. Signed out, your log stays in this browser.');
+  assert.deepEqual(page.closing.link, page.first.links[0]);
 
   const words = [
     gymLandingHead.title,
     gymLandingHead.description,
     gymLandingHead.ogDescription,
-    gymLandingHead.fallback.badge,
-    gymLandingHead.fallback.h1,
-    gymLandingHead.fallback.sub,
-    gymLandingHead.fallback.trust,
-    ...gymLandingHead.fallback.notes,
+    page.first.heading,
+    page.first.line,
+    page.first.trust,
     gymRoutes.label,
     gymRoutes.landing.tagline,
     gymRoutes.landing.root.kind,
@@ -79,40 +80,41 @@ test('the landing offers the log itself, and no line on it is dated against the 
   for (const dated of ['when it opens', 'In design', 'in design', 'already open', 'coming soon', 'Coming soon']) {
     assert.equal(words.includes(dated), false, dated);
   }
-
-  assert.equal(gymLandingHead.fallback.trust.includes('account'), true);
 });
 
-test('the brand root is handed gym’s words and its picture, and its door is gym’s landing', () => {
+test('the brand root is handed gym’s words and its picture, and its door is the log', () => {
   const { root } = gymRoutes.landing;
   assert.deepEqual({ kind: root.kind, line: root.line, link: root.link, paragraph: root.paragraph, features: root.features, label: root.picture.label, stages: root.picture.stages }, {
     kind: 'workout log',
     line: 'A coach that answers from your log.',
-    link: { href: '/gym', label: 'See Windmill Gym', to: 'landing' },
+    link: { href: '#/gym', label: 'Open the log', to: 'room' },
     paragraph: 'Ask about your training and the answer comes from your own log, with a receipt of what it read. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill’s Coach, or connect your own assistant to the same log.',
     features: [
       { title: 'It remembers last time', text: 'Each set opens with your target, or last session’s weight and reps, already filled in.' },
       { title: 'Honest progress', text: 'Estimated one-rep max per lift over time, with no invented trend.' },
-      { title: 'On your phone', text: 'Sets are logged in the phone app. It is in beta on Android and iPhone, and not public\u00A0yet.' },
+      { title: 'In your browser', text: 'Log a workout in any browser, with no account. The phone apps are in beta and not public\u00A0yet.' },
     ],
     label: 'Composed session',
     stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
   });
-  assert.equal(root.link.href, gymRoutes.landing.href);
+  assert.equal(root.link.href, gymRoutes.switchHash);
   assert.equal(typeof root.picture.Picture, 'object');
   assert.equal(fs.existsSync(path.join(GYM, 'marketing', 'RootPicture.jsx')), true);
 });
 
-test('the /gym shell carries a complete no-JS body and asserts the application it is a page for', () => {
-  for (const field of ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes']) {
-    assert.equal(Boolean(gymLandingHead.fallback[field]), true, field);
-  }
-  assert.equal(gymLandingHead.schema.length, 1);
-  assert.equal(gymLandingHead.schema[0]['@type'], 'SoftwareApplication');
-  assert.equal(gymLandingHead.schema[0].url, `${SITE_ORIGIN}/gym`);
-  assert.equal(gymLandingHead.schema[0].isAccessibleForFree, true);
+test('the /gym shell names its page and asserts the application it is a page for, with no offer', () => {
+  assert.deepEqual(gymLandingHead.schema, [{
+    '@type': 'SoftwareApplication',
+    '@id': `${SITE_ORIGIN}/gym#app`,
+    'name': 'Windmill Gym',
+    'url': `${SITE_ORIGIN}/gym`,
+    'description': 'A workout log for lifters on a program. Each set opens with your target or last session’s numbers, and a Coach answers from your log.',
+    'applicationCategory': 'HealthApplication',
+    'operatingSystem': 'Web browser',
+    'publisher': { '@id': `${SITE_ORIGIN}/#organization` },
+  }]);
   assert.equal(gymLandingHead.path, '/gym');
-  assert.equal(gymLandingHead.module, 'src/products/gym/marketing/GymLanding.jsx');
+  assert.equal(gymLandingHead.module, 'src/products/gym/marketing/landingPage.js');
 });
 
 test('the share link is declared bare, so opening gym never drags it into the room', () => {

@@ -174,7 +174,7 @@
 		# The extensionless twin of every shelf page. /pricing is what people type and paste, and
 		# it used to answer 200 with the brand root — a second URL for a page that already has one.
 		# 301 onto the .html each page's own canonical names, so links land where the canonical is.
-		@shelfAlias path /pricing /privacy /terms /refunds /changelog /connect
+		@shelfAlias path /pricing /privacy /terms /refunds /changelog /connect /support
 		redir @shelfAlias {path}.html permanent
 
 		# The gallery is the one page whose file name is not its URL: the wall is server-rendered at

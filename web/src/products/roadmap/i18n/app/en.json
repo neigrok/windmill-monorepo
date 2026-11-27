@@ -1,4 +1,11 @@
 {
   "roadmap.home.resume": "Resume {name} →",
-  "roadmap.home.start": "Start your tree →"
+  "roadmap.home.start": "Start your tree →",
+  "roadmap.landing.firstTreeInBrowser": "No account needed — your first tree lives in your browser.",
+  "roadmap.ago.minutes": "{count, plural, one {# minute ago} other {# minutes ago}}",
+  "roadmap.ago.hours": "{count, plural, one {# hour ago} other {# hours ago}}",
+  "roadmap.ago.days": "{count, plural, one {# day ago} other {# days ago}}",
+  "roadmap.ago.weeks": "{count, plural, one {# week ago} other {# weeks ago}}",
+  "roadmap.resume.summary": "{name} · {progress} done",
+  "roadmap.resume.summaryTended": "{name} · {progress} done · last tended {tended}"
 }

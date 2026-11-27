@@ -1,0 +1,27 @@
+/* A still tree in the room's node vocabulary (ComposedTree.jsx). A node carries its kind as three custom properties
+   from theme.js's KIND_CSS: --fill and --ring are the kind's base and ring tokens, --g the base again, mixed down
+   for the halo. An open ring and a locked node are filled with the plate the tree stands on, --rm-plate. */
+.rmTree { position: relative; flex: none; --rm-plate: var(--look-panel); }
+.rmTree > svg { position: absolute; inset: 0; overflow: visible; }
+.rmTree-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5; }
+.rmTree-edge.is-lit { stroke: var(--connector-active); stroke-width: 2.2; }
+.rmTree-crown { position: absolute; z-index: 3; display: flex; transform: translate(-50%, -50%); color: var(--kind-gold); }
+.rmTree-crown svg { fill: currentColor; }
+
+.rmTree .nd { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; box-sizing: border-box; z-index: 2; }
+.rmTree .nd-dim { border: 2px solid color-mix(in srgb, var(--g) 32%, transparent); background: color-mix(in srgb, var(--g) 22%, var(--rm-plate)); }
+.rmTree .nd-avail { border: 2.5px solid var(--ring); background: var(--rm-plate); }
+.rmTree .nd-done { border: 2.5px solid var(--ring); background: var(--fill);
+                   box-shadow: 0 0 0 3px color-mix(in srgb, var(--g) 40%, transparent), 0 0 16px color-mix(in srgb, var(--g) 40%, transparent); }
+.rmTree .ndlabel { position: absolute; z-index: 3; transform: translate(-50%, 0); font-family: var(--font-body); font-weight: 700;
+                   font-size: 11px; line-height: 14px; color: var(--neutral-600); white-space: nowrap; }
+.rmTree .ndlabel--dim { font-weight: 600; color: var(--neutral-500); }
+
+.rmTree .plq { position: absolute; left: 17px; top: 15px; z-index: 6; display: flex; align-items: center; gap: 9px;
+               padding: 8px 14px 8px 11px; border: 1px solid var(--border-subtle); border-radius: var(--look-radius-inner);
+               background: var(--surface-card); box-shadow: var(--shadow-sm); }
+.rmTree .plq .kdot { width: 10px; height: 10px; border-radius: 50%; background: var(--kind-terracotta); }
+.rmTree .plq .tn { font-family: var(--font-display); font-size: 14.5px; font-weight: 700; line-height: 1.15; color: var(--text-primary); }
+.rmTree .plq .by { font-family: var(--font-body); font-size: 11px; line-height: 1.25; color: var(--text-tertiary); }
+.rmTree .plq .by b { color: var(--text-secondary); }
+.rmTree .plq .ct { font-family: var(--font-mono); }

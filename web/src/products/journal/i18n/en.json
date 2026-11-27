@@ -170,5 +170,12 @@
   "journal.zoom.title": "Zoom out",
   "journal.zoom.unread": "Couldn’t reach your journal — these are only the days on this device.",
   "journal.zoom.week": "This week",
-  "journal.zoom.weekCount": "{written} of 7 days · {count, plural, one {# word} other {# words}}"
+  "journal.zoom.weekCount": "{written} of 7 days · {count, plural, one {# word} other {# words}}",
+  "journal.date.weekdayInitial.mon": "M",
+  "journal.date.weekdayInitial.tue": "T",
+  "journal.date.weekdayInitial.wed": "W",
+  "journal.date.weekdayInitial.thu": "T",
+  "journal.date.weekdayInitial.fri": "F",
+  "journal.date.weekdayInitial.sat": "S",
+  "journal.date.weekdayInitial.sun": "S"
 }

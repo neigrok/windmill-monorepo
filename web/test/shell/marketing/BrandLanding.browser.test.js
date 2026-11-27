@@ -76,6 +76,13 @@ async function frames(width, { waitFor }) {
     }),
     captured: window.captured ?? [],
     alert: document.querySelector('[role="alert"]')?.textContent ?? null,
+    plaqueCovers: [...document.querySelectorAll('.rmPicture .plq')].flatMap((plaque) => {
+      const p = plaque.getBoundingClientRect();
+      return [...plaque.parentElement.querySelectorAll('.nd, .ndlabel, .rmTree-crown')].filter((node) => {
+        const b = node.getBoundingClientRect();
+        return b.left < p.right && b.right > p.left && b.top < p.bottom && b.bottom > p.top;
+      }).map((node) => node.textContent || node.className);
+    }),
   }));
   await page.close();
   return { ...seen, errors };
@@ -92,6 +99,7 @@ for (const width of [320, 390, 744, 1024, 1152, 1440]) {
     assert.deepEqual(held.frames.map((frame) => frame.drawn), [null, null, null], 'a picture was drawn while its chunk was held');
     assert.deepEqual(held.frames.map((frame) => frame.body), drawn.frames.map((frame) => frame.body));
     assert.equal(held.height, drawn.height);
+    assert.deepEqual(drawn.plaqueCovers, [], 'the sail tree\'s plaque covers a step or a label');
     for (const frame of drawn.frames) {
       const [, stageHeight] = frame.stage;
       const [, pictureHeight, pictureWidth, shownWidth] = frame.drawn;
