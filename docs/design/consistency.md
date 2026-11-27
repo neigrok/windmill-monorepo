@@ -807,8 +807,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
   nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
   10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
-  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
-  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  as the Shell's, for the Shell's owner to rule. 10.7's question names Coach's conversations made signed out that still
+  stand, after the roadmaps. 10.8 names unconfirmed conversations at sign-out, which the phone cannot make until Coach
+  is built, so its question does not name them. For the Shell's owner: with nothing unconfirmed, Sign
   out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
   person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
