@@ -335,7 +335,7 @@ The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) and each product's 
 (`src/shell/marketing/SiteChrome.jsx`) and tell one event for each link and control a person uses, through `track` in
 `src/telemetry/beacon.js`. Every event carries `page`: `front` for the brand root, the product's registry id for its
 landing. Properties are allowlisted, bounded labels: no address, link text, account or email enters them. `product` is a
-product's registry id. Nothing inside a picture frame is a control, so a picture tells nothing.
+product's registry id. One use of a link tells one event: the second click of a double click tells nothing. Nothing inside a picture frame is a control, so a picture tells nothing.
 `test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js` drive every link and
 control, signed out, signed in and with a link already sent, and hold the events to this table.
 
@@ -357,9 +357,12 @@ drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on t
 | A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
 
 A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
-`front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route: once on the
-brand root, and once per page load on a landing, whose pictures share one chunk (`BrandLanding.browser.test.js`,
-`ProductLanding.browser.test.js`). Any other render crash reaches `client_error` under the page's route family. The sign-in door and the feedback dialog it opens tell
+`front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route, once per page
+load for each page and picture, however often the page mounts (`BrandLanding.browser.test.js`,
+`ProductLanding.browser.test.js`). A landing whose own code cannot load (its chunk, its page's words, a stylesheet, or a
+session provider above it) keeps the first HTML the document arrived with, its whole page and links, and reports
+`landing-front`, `landing-roadmap`, `landing-journal` or `landing-gym` once, with kind `render`, no stack and the page's
+path as its route (`src/shell/arrival.jsx`). Any other render crash reaches `client_error` under the page's route family. The sign-in door and the feedback dialog it opens tell
 and report their own sends:
 
 | Step | Event | Allowlisted props |

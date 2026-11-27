@@ -4,7 +4,8 @@ import { DEV_OPT_IN_STORAGE, SESSION_KEY_STORAGE } from '../src/telemetry/beacon
 // scripts/staticPageAssets.js and linked deferred by those pages only. Plain ES5, no imports: the file is served raw.
 // It tells what src/shell/marketing/SiteChrome.jsx tells, through the same intake, under the same session key and with
 // the same localhost mute as src/telemetry/beacon.js: `front_open` once per load, `front_link` for a link that carries
-// `data-to` inside a `data-area`, and `front_control` for a pick /appearance.js announces as `wm-appearance`.
+// `data-to` inside a `data-area`, once per use (a double click's second click tells nothing), and `front_control` for a
+// pick /appearance.js announces as `wm-appearance`.
 
 // Every label the file can send. A page or link naming anything else tells nothing.
 export const LABELS = {
@@ -30,7 +31,7 @@ function tell(name,props){if(muted())return;var body=JSON.stringify({sessionKey:
 try{if(navigator.sendBeacon&&navigator.sendBeacon('/v1/events',new Blob([body],{type:'application/json'})))return}catch(e){}
 try{fetch('/v1/events',{method:'POST',credentials:'include',keepalive:true,headers:{'Content-Type':'application/json'},body:body}).catch(function(){})}catch(e){}}
 tell('front_open',{page:page});
-document.addEventListener('click',function(e){var link=e.target&&e.target.closest?e.target.closest('a[data-to]'):null,place=link?link.closest('[data-area]'):null;if(!place)return;
+document.addEventListener('click',function(e){if(e.detail>1)return;var link=e.target&&e.target.closest?e.target.closest('a[data-to]'):null,place=link?link.closest('[data-area]'):null;if(!place)return;
 var area=place.getAttribute('data-area'),to=link.getAttribute('data-to'),product=link.getAttribute('data-product');
 if(!known(L.area,area)||!known(L.to,to)||(product!==null&&!known(L.product,product)))return;
 var props={page:page,area:area,to:to};if(product!==null)props.product=product;tell('front_link',props)});

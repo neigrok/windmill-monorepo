@@ -101,6 +101,15 @@ test('a labelled link tells front_link with its area, where it goes and its prod
   ]);
 });
 
+test('one use of a link tells one event: the second click of a double click tells nothing', async () => {
+  const p = page();
+  await p.sent();
+  const target = link({ href: '/support.html', 'data-to': 'support' }, p.sitemap);
+  for (const fn of p.listeners.click) fn({ target, detail: 1 });
+  for (const fn of p.listeners.click) fn({ target, detail: 2 });
+  assert.deepEqual(await p.sent(), [beaconOf('stored-key', 'front_link', { page: 'pricing', area: 'sitemap', to: 'support' })]);
+});
+
 test('a link without labels, with a label outside the lists or outside any area tells nothing', async () => {
   const p = page();
   await p.sent();

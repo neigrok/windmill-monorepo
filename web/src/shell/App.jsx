@@ -9,6 +9,7 @@ import { PRODUCTS, activeProduct } from './products.js';
 import { ProductSessions } from './ProductSessions.jsx';
 import { PageFrame } from './PageFrame.jsx';
 import { navigate, readNavigation, subscribeNavigation, replaceLocation } from './navigation.js';
+import { arrivedPage } from './arrival.jsx';
 
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
@@ -98,7 +99,7 @@ function useOwnNavigation() {
 
 // mark={false} is bare ground, no logo.
 function RouteFallback({ mark = true }) {
-  return <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
+  return arrivedPage() ?? <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
 }
 
 function RouteFallbackContent({ mark = true }) {

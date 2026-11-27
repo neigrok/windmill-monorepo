@@ -158,12 +158,12 @@ const PAGES = {
 };
 
 for (const [id, expected] of Object.entries(PAGES)) {
-  test(`${id}: signed out, every link goes where its contract sends it and tells one front_link under the page ${id}`, async (t) => {
+  test(`${id}: signed out, every link goes where its contract sends it and tells one front_link under the page ${id}, a double click too`, async (t) => {
     const page = await landing(t, id);
     assert.deepEqual(told(), [{ name: 'front_open', props: { page: id } }]);
     const links = [...CHROME_BEFORE(id), ...expected.links.map(([href, label, props]) => [href, label, { page: id, ...props }]), ...CHROME_AFTER(id)];
     assert.deepEqual(page.links.map((link) => [link.props.href, link.props['aria-label'] ?? textOf(link)]), links.map(([href, label]) => [href, label]));
-    page.links.forEach((link) => link.props.onClick());
+    page.links.forEach((link) => { link.props.onClick({ detail: 1 }); link.props.onClick({ detail: 2 }); });
     assert.deepEqual(told(), links.map(([, , props]) => ({ name: 'front_link', props })));
     assert.deepEqual(page.links.filter((link) => link.props['aria-current']).map((link) => link.props.href), [`/${id}`]);
   });

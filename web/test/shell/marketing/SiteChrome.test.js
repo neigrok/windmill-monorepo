@@ -8,7 +8,7 @@ import { loadScreen, renderHook } from '../../products/gym/harness.mjs';
 
 function browser({ ground }) {
   const query = { matches: false, addEventListener() {}, removeEventListener() {} };
-  globalThis.window = { matchMedia: () => query, addEventListener() {}, removeEventListener() {} };
+  globalThis.window = { matchMedia: () => query, addEventListener() {}, removeEventListener() {}, location: { hash: '' } };
   const meta = (content) => ({
     content,
     dataset: {},

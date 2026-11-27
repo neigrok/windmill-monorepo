@@ -253,7 +253,8 @@ are never logged. This local verification tool sends no product events or Sentry
 JSX imports or browser globals. Each landing has its own head; a product's landing's no-JS body is its whole page, written
 by `scripts/productLandingBody.mjs` from the page `shell/marketing/ProductLanding.jsx` draws, with its questions as
 `FAQPage` beside its `SoftwareApplication`, and `test/shell/marketing/ProductLanding.browser.test.js` fails the build when the
-two say different things. Shelf pages live in `public/`.
+two say different things. A landing stands on the first HTML the document arrived with while its code loads, and keeps it, links
+and all, when that code cannot load (`shell/arrival.jsx`). Shelf pages live in `public/`.
 
 The build generates `sitemap.xml` from canonical URLs, excluding `noindex` pages; there is no
 source sitemap to edit. `staticPageAssets.js` checks canonical, Open Graph and Twitter metadata

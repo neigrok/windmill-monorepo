@@ -14,6 +14,7 @@ import { PageFrame } from '../PageFrame.jsx';
 import { PRODUCTS, homeHash } from '../products.js';
 import { useAppearance } from '../useAppearance.js';
 import { paintBrowserChrome, restoreBrowserChrome } from '../appearance.js';
+import { movedSinceArrival } from '../arrival.jsx';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
@@ -49,8 +50,20 @@ const APPEARANCES = [
 ];
 const APPEARANCE_LABEL = { system: 'auto', light: 'light', dark: 'dark' };
 
-export const followed = (page, area, to, product) => () => track('front_link', { page, area, to, ...(product ? { product } : {}) });
+// One use of a link tells one event: the second click of a double click is the same use.
+export const followed = (page, area, to, product) => (event) => {
+  if (event?.detail > 1) return;
+  track('front_link', { page, area, to, ...(product ? { product } : {}) });
+};
 const used = (page, control, props) => track('front_control', { page, control, ...props });
+
+// A picture whose chunk fails reports once per page load for each page and picture, however often the page mounts.
+const reportedPictures = new Set();
+function reportPicture(id, route) {
+  if (reportedPictures.has(`${route} ${id}`)) return;
+  reportedPictures.add(`${route} ${id}`);
+  captureError('render', `front-picture-${id}`, '', route);
+}
 
 // The frame every page of the site stands in: its own head while mounted, the night stamp on <html>, the skip link
 // and the main landmark. `path` names its row in LANDING_HEADS; `header` and `footer` are its chrome.
@@ -89,6 +102,21 @@ export function SiteFrame({ path, header, footer, children }) {
       });
     };
   }, [path]);
+
+  // A page opened at one of its sections (a shared /gym#where) lands that section at the top of the view once the page
+  // has drawn and again once its fonts have settled, unless the person has moved the page since it arrived: the browser
+  // scrolled the first HTML, which this page replaced.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id || id.startsWith('/')) return;
+    const land = () => {
+      const section = document.getElementById(id);
+      if (movedSinceArrival() || !section) return;
+      window.scrollTo({ top: window.scrollY + section.getBoundingClientRect().top, behavior: 'instant' });
+    };
+    land();
+    document.fonts?.ready.then(land);
+  }, []);
 
   // At night <html> is stamped the way scripts/appBoot.js stamps it — theme, brand, the ground and the browser's two
   // metas — so a page reached from a room without a document load is not left with the cream the Shell handed back
@@ -272,7 +300,7 @@ export function PictureFrame({ id, picture, theme, route, className }) {
         {fit && (
           <div className="front-picture-stage"
             style={{ width: fit.width / fit.scale, height: fit.stage.height, transform: fit.scale < 1 ? `scale(${fit.scale})` : undefined }}>
-            <ErrorBoundary fallback={null} onCrash={() => captureError('render', `front-picture-${id}`, '', route)}>
+            <ErrorBoundary fallback={null} onCrash={() => reportPicture(id, route)}>
               <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /></Suspense>
             </ErrorBoundary>
           </div>

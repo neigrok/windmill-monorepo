@@ -16,15 +16,18 @@
 }
 
 /* ---- the frame ---- */
-html { scroll-behavior: smooth; }
+/* In-page links glide on the site's pages alone, and only for a reader who welcomes motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.landing[data-look="instrument"]) { scroll-behavior: smooth; }
+}
 .landing[data-look="instrument"] {
   --front-gutter: clamp(24px, 4.445vw, 64px);
   min-height: 100vh; font-family: var(--look-font); background: var(--look-ground); color: var(--look-ink-1);
 }
-.skip-link { position: absolute; left: 8px; top: -48px; z-index: 1000; padding: 10px 16px; border-radius: var(--radius-md);
-             background: var(--surface-card); color: var(--text-primary); font-family: var(--font-body); font-weight: 700;
-             transition: top .15s ease; }
-.skip-link:focus { top: 8px; }
+.skip-link { position: absolute; left: 12px; top: -48px; z-index: 1000; padding: 10px 16px; border: 1px solid var(--look-line);
+             border-radius: 12px; background: var(--look-panel); color: var(--look-ink-1); font-family: var(--look-font);
+             font-weight: 500; font-size: 14px; transition: top .15s ease; }
+.skip-link:focus { top: 12px; }
 .front-wrap { box-sizing: border-box; width: min(1312px, 100% - 2 * var(--front-gutter)); margin: 0 auto; }
 .front-rule { border-top: 1px solid var(--look-line); }
 .landing[data-look="instrument"] :is(a, button):focus-visible { outline: 2px solid var(--look-accent); outline-offset: 3px; border-radius: 4px; }
@@ -149,6 +152,3 @@ html { scroll-behavior: smooth; }
   .front-pill { padding: 0 10px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-}
