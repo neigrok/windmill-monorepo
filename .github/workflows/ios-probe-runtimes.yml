@@ -1,7 +1,10 @@
 name: iOS probe runtimes
 
-# Evidence from runtimes this repo's Macs cannot run, built by CI's Xcode 26.3, on a branch that is never merged. A
-# failing test fails no step: each job's summary tables the outcomes and its artifact keeps them for 7 days.
+# Evidence from runtimes this repo's Macs cannot run, on a branch that is never merged. The app is built as TestFlight
+# builds it, with Xcode 27.1 and the iOS 27 SDK. Xcode 27.1 runs iOS 17 or later in Simulator, but the xcode-27 image
+# carries iOS 27 runtimes alone and `xcodebuild -downloadPlatform iOS -buildVersion 18.x` answers that none is available,
+# so the build travels to macos-15, whose Xcode 26.3 runs its iOS 18.6. A failing test fails no step: each job's summary
+# tables the outcomes and its artifact keeps them for 7 days.
 
 on:
   push:
@@ -15,15 +18,60 @@ defaults:
     shell: bash
 
 env:
-  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
   TZ: UTC
 
 jobs:
-  # The room's own captures on an iPhone on the newest iOS 18. The captures of section 12's boards run first; the rest
-  # of the class follows in runs of 20 while the job has time. testFiveThousandSteps needs a Release build, so it is left
-  # out.
+  # The Release app, as an archive builds it, and the Debug app with its UI tests and their xctestrun, for the simulator.
+  build-27:
+    name: Xcode 27.1 · the iOS 27 SDK build
+    runs-on: xcode-27
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/ios/App
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Build the Release app and the UI tests
+        timeout-minutes: 50
+        run: |
+          python3 Tools/generate_project.py
+          xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 -derivedDataPath "$RUNNER_TEMP/app-release"
+          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 -derivedDataPath "$RUNNER_TEMP/app-build"
+          mkdir -p "$RUNNER_TEMP/handoff"
+          tar -C "$RUNNER_TEMP/app-release/Build/Products" -czf "$RUNNER_TEMP/handoff/release.tgz" Release-iphonesimulator/Windmill.app
+          tar -C "$RUNNER_TEMP/app-build/Build/Products" -czf "$RUNNER_TEMP/handoff/tests.tgz" .
+
+      - name: Hand the builds to the iOS 18 job
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-27
+          path: ${{ runner.temp }}/handoff
+          retention-days: 1
+
+  # The 27 SDK build on an iPhone on the newest iOS 18: the Release app launched with no test around it, then sign-in and
+  # hello, a page written, a workout logged and saved, and the room's captures. The captures of section 12's boards run
+  # first; the rest of the class follows in runs of 20 while the job has time. testFiveThousandSteps needs a Release build,
+  # so it is left out.
   ios18-room:
-    name: iOS 18 · the room's captures
+    name: iOS 18 · the 27 SDK build
+    needs: build-27
     runs-on: macos-15
     timeout-minutes: 90
     defaults:
@@ -31,7 +79,7 @@ jobs:
         shell: bash
         working-directory: apps/ios/App
     env:
-      IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       ROOM_OUT: ${{ github.workspace }}/evidence/ios18-room
     steps:
       - uses: actions/checkout@v5
@@ -42,15 +90,24 @@ jobs:
           ls -d /Applications/Xcode*
           env -u DEVELOPER_DIR xcrun simctl list runtimes
 
-      - name: Select Xcode 26.3
+      - name: Select Xcode 26.3, which runs the iOS 18 runtime
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app
           xcodebuild -version
 
-      - name: Install XcodeGen
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: brew install xcodegen
+      - name: Take the 27 SDK builds
+        uses: actions/download-artifact@v4
+        with:
+          name: build-27
+          path: ${{ runner.temp }}/handoff
+
+      - name: Unpack the builds
+        run: |
+          mkdir -p "$RUNNER_TEMP/app-release" "$RUNNER_TEMP/app-build/Build/Products"
+          tar -C "$RUNNER_TEMP/app-release" -xzf "$RUNNER_TEMP/handoff/release.tgz"
+          tar -C "$RUNNER_TEMP/app-build/Build/Products" -xzf "$RUNNER_TEMP/handoff/tests.tgz"
+          plutil -extract DTSDKName raw "$RUNNER_TEMP/app-release/Release-iphonesimulator/Windmill.app/Info.plist"
+          plutil -extract MinimumOSVersion raw "$RUNNER_TEMP/app-release/Release-iphonesimulator/Windmill.app/Info.plist"
 
       - name: Stop Spotlight indexing
         run: |
@@ -69,12 +126,37 @@ jobs:
           echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
           python3 Tools/prepare_simulator.py "$SIMULATOR" || xcrun simctl bootstatus "$SIMULATOR" -b
 
-      - name: Build the App's UI tests
+      # The crash this probe looks for came at launch, before any test could drive the app: the Release app is installed
+      # and launched alone, and still running 20 seconds later is the evidence.
+      - name: Launch the Release app on iOS 18
+        timeout-minutes: 5
+        run: |
+          mkdir -p "$ROOM_OUT"
+          xcrun simctl install "$SIMULATOR" "$RUNNER_TEMP/app-release/Release-iphonesimulator/Windmill.app"
+          xcrun simctl launch "$SIMULATOR" works.windmill.app
+          sleep 20
+          xcrun simctl io "$SIMULATOR" screenshot "$ROOM_OUT/release-launch.png" || true
+          if xcrun simctl spawn "$SIMULATOR" launchctl list | grep -q "UIKitApplication:works.windmill.app"; then
+            outcome="running 20 s after launch"
+          else
+            outcome="NOT running 20 s after launch"
+          fi
+          echo "The Release app built with the iOS 27 SDK is $outcome on iOS 18." | tee -a "$GITHUB_STEP_SUMMARY"
+          xcrun simctl terminate "$SIMULATOR" works.windmill.app || true
+          xcrun simctl uninstall "$SIMULATOR" works.windmill.app
+
+      # Xcode 26.3 runs the UI tests Xcode 27.1 built: sign-in and hello, a page written, and a workout logged and saved.
+      - name: Run the app's flows
         timeout-minutes: 30
         run: |
-          python3 Tools/generate_project.py
-          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
-            -destination "platform=iOS Simulator,id=$SIMULATOR" -derivedDataPath "$RUNNER_TEMP/app-build"
+          mkdir -p "$ROOM_OUT/results"
+          perl -e 'alarm shift; exec @ARGV' 1700 xcodebuild test-without-building \
+            -xctestrun "$(ls "$RUNNER_TEMP"/app-build/Build/Products/*.xctestrun)" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR" -parallel-testing-enabled NO -testLanguage en -testRegion US \
+            -resultBundlePath "$ROOM_OUT/results/flows.xcresult" \
+            -only-testing:WindmillUITests/OfflineFlowTests -only-testing:WindmillUITests/JournalFlowTests \
+            -only-testing:WindmillUITests/GymRecoveryFlowTests -only-testing:WindmillUITests/GymWorkoutFlowTests/testPagerAndAssembly \
+            2>&1 | tee "$ROOM_OUT/flows.log" || true
 
       # Captures start until minute 78 of the job, which leaves its export and upload time before minute 90.
       - name: Run the room's captures
