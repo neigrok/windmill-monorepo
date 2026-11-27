@@ -425,7 +425,7 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
   assert.equal(/hasLog|hasNotes|hasWeighIns|api\.sessions|api\.notes|api\.bodyweight/.test(settings), false);
   const pricing = fs.readFileSync(path.join(GYM, '../../../public/pricing.html'), 'utf8');
   assert.equal(pricing.includes('CSV out'), false);
-  assert.equal(pricing.includes('<b>The gym log — all of it</b>Sets, sessions, routines, e1RM.'), true);
+  assert.equal(pricing.includes('Logging, routines and progress in Gym.'), true);
 });
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
