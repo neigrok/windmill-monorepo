@@ -50,6 +50,11 @@ struct RoadmapAct {
       let turn = OpenTurn.Turn(thread: try input.id("thread"), person: try input.id("person"), coach: try input.id("coach"))
       self.init(WithdrawTurn(turn: turn), result: { .strings($0) })
       return
+    case "MintProposal":
+      let act = MintProposal(proposal: try input.id("proposal"), treeId: try input.member("treeId").asString(), thread: try input.id("thread"),
+                             message: try input.id("message"), changes: try input.member("changes").asArray(), base: try input.member("base").asArray())
+      self.init(act, result: { $0.json })
+      return
     default: break
     }
     let tree: ID<RoadmapEntry> = try input.id("tree")

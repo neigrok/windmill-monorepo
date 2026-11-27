@@ -48,10 +48,13 @@ struct RoadmapRulesTests {
     let thread = CoachThread(id: ID("thread0001"), treeId: tree.record.description, stepId: "basics", title: "What should I do next?")
     try RegistryCheck.entity(CoachThread.self, sample: thread, book: book, registry: registry)
     let message = CoachMessage(id: ID("message0002"), threadId: thread.id, role: "coach", replica: "rp_00000000000000000000000000000001",
-                               text: "Start with the basics.", state: .failed, truncated: true, refusal: "host-fault",
+                               text: "Start with the basics.", state: .failed, truncated: true, refusal: "host-fault", proposalId: ID("proposal01"),
                                pictures: [CoachPicture(id: "picture1", mediaType: "image/png")], at: Instant(ms: 1_800_000_000_000))
     try RegistryCheck.entity(CoachMessage.self, sample: message, book: book, registry: registry)
-    try RegistryCheck.entity(CoachProposal.self, registry: registry)
+    let proposal = CoachProposal(id: ID("proposal01"), treeId: tree.record.description, threadId: thread.id, messageId: message.id,
+                                 changes: [["op": "rename", "nodeId": "basics", "label": "Start here"]],
+                                 base: [["t": "node", "id": "basics", "register": "label", "stamp": "1000:1:r_aaaaaaaaaaaa"]])
+    try RegistryCheck.entity(CoachProposal.self, sample: proposal, book: book, registry: registry)
     try RegistryCheck.entity(CoachWriteFate.self, registry: registry)
   }
 

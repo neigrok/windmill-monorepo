@@ -9,7 +9,7 @@ import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue } from '..
 import { RoadmapKind, RoadmapKindValue } from '../../../../src/products/roadmap/domain/kinds.js';
 import { StepMark, StepMarkValue, StepPointer, StepPointerValue } from '../../../../src/products/roadmap/domain/progress.js';
 import { StepLink, StepLinkValue, StepNote, StepNoteValue, Subtask, SubtaskValue } from '../../../../src/products/roadmap/domain/workspace.js';
-import { CoachMessage, CoachMessageValue, CoachProposal, CoachThread, CoachThreadValue, CoachWriteFate, CoachPicture } from '../../../../src/products/roadmap/domain/conversation.js';
+import { CoachMessage, CoachMessageValue, CoachProposal, CoachProposalValue, CoachThread, CoachThreadValue, CoachWriteFate, CoachPicture } from '../../../../src/products/roadmap/domain/conversation.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { GENESIS_KINDS, RoadmapRefusals, SAFE_URL } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
@@ -35,8 +35,10 @@ test('every roadmap entity agrees with the registry, its sample setting every fi
     [CoachThread, new CoachThreadValue(new Id('thread0001', CoachThread), { treeId: T, stepId: 'basics', title: 'What should I do next?' })],
     [CoachMessage, new CoachMessageValue({ id: new Id('message0002', CoachMessage), threadId: new Id('thread0001', CoachThread), role: 'coach',
       replica: 'rp_00000000000000000000000000000001', text: 'Start with the basics.', state: 'failed', truncated: true, refusal: 'host-fault',
-      pictures: [new CoachPicture('picture1', 'image/png')], at: new Instant(1800000000000) })],
-    [CoachProposal, null],
+      proposalId: new Id('proposal01', CoachProposal), pictures: [new CoachPicture('picture1', 'image/png')], at: new Instant(1800000000000) })],
+    [CoachProposal, new CoachProposalValue(new Id('proposal01', CoachProposal), { treeId: T, threadId: new Id('thread0001', CoachThread),
+      messageId: new Id('message0002', CoachMessage), changes: [{ op: 'rename', nodeId: 'basics', label: 'Start here' }],
+      base: [{ t: 'node', id: 'basics', register: 'label', stamp: '1000:1:r_aaaaaaaaaaaa' }], state: 'pending', undone: false })],
     [CoachWriteFate, null],
   ];
   for (const [type, sample] of /** @type {[any, any][]} */ (samples)) assert.doesNotThrow(() => RegistryCheck.entity(type, sample, book), type.type);

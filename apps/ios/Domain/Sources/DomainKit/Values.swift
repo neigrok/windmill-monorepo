@@ -276,4 +276,11 @@ public struct CountSpec: ValueSpec {
     guard let items else { return nil }
     return try apply(items, at: path) as [V]
   }
+
+  // §4.3 count of values no spec of their own holds, plain JSON: the count alone.
+  public func apply(_ items: [JSON], at path: Path) throws(Violation) -> [JSON] {
+    if items.count < min { throw Violation(rule: self.path, path: path, reason: .tooFew(min: min)) }
+    if items.count > max { throw Violation(rule: self.path, path: path, reason: .tooMany(max: max)) }
+    return items
+  }
 }

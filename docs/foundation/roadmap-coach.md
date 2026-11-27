@@ -17,8 +17,9 @@ the direct writes and the proposal's fold and ability are built, which claim eve
 the tool host's executor over the phone's copy, which runs no proposal yet, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
 Its records are built (§9): the four types in roadmap's registry, which the server stores and admits, a roadmap's death
 taking the conversations and proposals about it whatever made it, and, on the web and the iPhone, the records as
-roadmap's entities with a turn's opening, end and withdrawal, the read of a conversation, and a roadmap's delete taking
-its conversations, in `web/src/products/roadmap/domain/conversation.js` and
+roadmap's entities with a turn's opening, end and withdrawal, the read of a conversation, a proposal minted, which
+replaces the one pending about its roadmap, the read of that pending one, and a roadmap's delete taking its
+conversations, in `web/src/products/roadmap/domain/conversation.js` and
 `apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
 `packages/api-contract/roadmap/domain/conversation-actions.json`. No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person

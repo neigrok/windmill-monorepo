@@ -643,7 +643,8 @@ at construction.
 
 **Count.**
 1. Fewer than `min` items → `tooFew`; more than `max` → `tooMany`.
-2. Validate each item in order with `item.validated(at: path + index)`; the first violation throws.
+2. Validate each item in order with `item.validated(at: path + index)`; the first violation throws. Items that are
+   plain JSON, which no spec of their own holds (a proposal's changes), are counted alone.
 3. Return the validated items.
 
 Written values are compared by JCS (engine §3.2), never by Swift `String ==`, which equates

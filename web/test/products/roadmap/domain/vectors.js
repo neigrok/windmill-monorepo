@@ -20,7 +20,7 @@ import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink,
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Contract, VECTOR_REPLICA, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
-import { CoachMessage, CoachThread, Conversation, EndTurn, OpenTurn, CoachPicture, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, CoachPicture, WithdrawTurn, pendingProposal } from '../../../../src/products/roadmap/domain/conversation.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -88,6 +88,8 @@ function actOf(input) {
       refusal: given.refusal ?? null });
     case 'WithdrawTurn': return new WithdrawTurn({ thread: new Id(given.thread, CoachThread), person: new Id(given.person, CoachMessage),
       coach: new Id(given.coach, CoachMessage) });
+    case 'MintProposal': return new MintProposal({ proposal: new Id(given.proposal, CoachProposal), treeId: given.treeId, thread: new Id(given.thread, CoachThread),
+      message: new Id(given.message, CoachMessage), changes: given.changes, base: given.base });
     default: throw new Error(`no roadmap action ${action}`);
   }
 }
@@ -117,6 +119,9 @@ function readResult(vector) {
       return conversation === null ? null : { thread: conversation.thread.id.json, messages: conversation.messages.map((message) => message.id.json),
         fates: conversation.fates.map((fate) => fate.id.json) };
     });
+  }
+  if (input.read === 'pendingProposal') {
+    return corpus.read(vector, RoadmapScopes.account, (read) => pendingProposal(read, input.input.treeId)?.id.json ?? null);
   }
   if (input.read !== 'landing') throw new Error(`no roadmap read ${input.read}`);
   return corpus.read(vector, RoadmapScopes.tree(input.input.tree), (read) => {

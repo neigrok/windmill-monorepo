@@ -88,10 +88,12 @@ public enum RoadmapSpecs {
   public static let coachPictures = CountSpec("coachMessage.pictures", min: 0, max: 1)
   public static let coachPictureId = TextSpec("coachMessage.pictures.id", chars: 64, min: 8)
   public static let coachMediaType = TextSpec("coachMessage.pictures.mediaType", bytes: 255, min: 1)
+  public static let coachProposalId = TextSpec("coachMessage.proposalId", chars: 64, min: 8)
+  public static let coachProposalChanges = CountSpec("coachProposal.changes", min: 1, max: 100)
 
   static let all: [any ValueSpec] = [title, guide, visibility, label, icon, color, description, links, linkUrl, linkLabel, hue, recolourHue,
                                      kindLabel, kindDescription, mark, subtask, url, linkTitle, note, coachTreeId, coachTitle, coachStep, coachRole,
-                                     coachReplica, coachText, coachRefusal, coachPictures, coachPictureId, coachMediaType]
+                                     coachReplica, coachText, coachRefusal, coachProposalId, coachPictures, coachPictureId, coachMediaType, coachProposalChanges]
 }
 
 // The rules a gesture checks over the records it reads, named as their violations name them.
