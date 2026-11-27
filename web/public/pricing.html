@@ -111,8 +111,10 @@
 
     .price-table { --gap: 12px; margin-top: 28px; font-size: 14px; line-height: 20px; }
     .price-table tbody :is(th, td) { padding-top: 14px; padding-bottom: 14px; }
-    .price-table thead th:first-child { width: calc(152px + var(--gap)); }
-    .price-table thead th:nth-child(2) { width: calc(86px + var(--gap)); }
+    /* The 390 board's 152 and 86, each with its gap, as shares of the 370 the table spans there, so a narrower
+       phone narrows all three columns alike. */
+    .price-table thead th:first-child { width: 44.324%; }
+    .price-table thead th:nth-child(2) { width: 26.486%; }
     .price-table + .price-note { margin-top: 16px; }
 
     .price-split { margin-top: 40px; }
