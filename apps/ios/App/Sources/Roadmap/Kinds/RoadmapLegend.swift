@@ -3,10 +3,10 @@ import RoadmapDomain
 
 // A roadmap's legend as the room shows it (Roadmap · iOS 02.7, 02.11, 05.2, 06.1 to 06.6, 10.6b), read once with the open
 // roadmap, so the step form's Kind list, the Kinds sheet, the Board's filter, Recolor and Paste Steps all read this one
-// value. Its entries are the domain's legend shown, as the web room's are (`deriveLegend` over the kinds `ReplicaRoadmap`
-// takes from the same read): each kind that owns its hue, in the roadmap's order, then each hue steps wear that no kind
-// claims, called by the hue, in the rule book's order, each with how many steps wear it. One entry a hue, so at most six:
-// Add Kind takes the first hue no entry has, and a hue an entry has cannot be chosen for another.
+// value: the domain's `LegendRead`, as the web room's legend is (`model/Legend.js` over `readLegend`). Its entries are the
+// legend shown: each kind that owns its hue, in the roadmap's order, then each hue steps wear that no kind claims, called
+// by the hue, in the rule book's order, each with how many steps wear it. One entry a hue, so at most six: Add Kind takes
+// the hue the domain names free, and a hue an entry has cannot be chosen for another.
 struct RoadmapLegend {
   // What an entry is: a kind of the roadmap, by its id, or a hue steps wear that no kind names.
   enum Subject: Hashable {
@@ -39,14 +39,25 @@ struct RoadmapLegend {
   }
 
   let entries: [Entry]
+  // The hue Add Kind takes: the first of the rule book's that no entry has; none once all six are had.
+  let freeHue: String?
+  // The six kinds a step may wear: the kinds the roadmap names, each the one that owns its hue, in the roadmap's order,
+  // then the hues no named kind has, by the hue's own name in the rule book's order.
+  let choices: [Choice]
+  // The kinds the Board's filter offers: the entries steps wear, and none where steps wear one hue alone.
+  let inUse: [Entry]
 
-  // The domain's legend shown (`LegendRead.shown`), which a paste reads its text over, each entry with its steps.
+  // The domain's legend (`LegendRead`): its legend shown, which a paste reads its text over, each entry with its steps.
   init(_ tree: RoadmapTree) {
-    var worn: [[UInt8]: Int] = [:]
-    for step in tree.index.nodes { worn[Array(step.color.utf8), default: 0] += 1 }
-    entries = LegendRead(tree).shown.map { (shown: LegendRead.Shown) -> Entry in
-      Entry(hue: shown.hue, kind: shown.kind, steps: worn[Array(shown.hue.utf8)] ?? 0)
+    let read = LegendRead(tree)
+    let entry = { (shown: LegendRead.Shown) -> Entry in Entry(hue: shown.hue, kind: shown.kind, steps: shown.steps) }
+    entries = read.shown.map(entry)
+    freeHue = read.free
+    choices = read.choices.compactMap { (choice: LegendRead.Choice) -> Choice? in
+      guard let kind = choice.kind else { return RoadmapModel.Row.hue(choice.hue).map { Choice(hue: choice.hue, name: $0, description: "") } }
+      return Choice(hue: choice.hue, name: kind.label, description: kind.description)
     }
+    inUse = read.filters.map(entry)
   }
 
   func entry(_ subject: Subject) -> Entry? {
@@ -59,23 +70,4 @@ struct RoadmapLegend {
 
   // The entry that has a hue, which a kind's Color list names as the one wearing it.
   func wearer(of hue: String) -> Entry? { entries.first { $0.hue == hue } }
-
-  // The hue Add Kind takes: the first of the rule book's that no entry has; none once all six are had.
-  var freeHue: String? { RoadmapRules.hues.first { (hue: String) -> Bool in wearer(of: hue) == nil } }
-
-  // The six kinds a step may wear: the kinds the roadmap names, each the one that owns its hue, in the roadmap's order,
-  // then the hues no named kind has, by the hue's own name in the rule book's order.
-  var choices: [Choice] {
-    let named = entries.filter { $0.kind?.label.isEmpty == false }
-    let kinds = named.map { (entry: Entry) -> Choice in Choice(hue: entry.hue, name: entry.name, description: entry.description) }
-    let hues = RoadmapRules.hues.filter { (hue: String) -> Bool in !named.contains { $0.hue == hue } }
-      .compactMap { (hue: String) -> Choice? in RoadmapModel.Row.hue(hue).map { Choice(hue: hue, name: $0, description: "") } }
-    return kinds + hues
-  }
-
-  // The kinds the Board's filter offers (`kindOptions`): the entries steps wear, and none where steps wear one hue alone.
-  var inUse: [Entry] {
-    let worn = entries.filter { $0.steps > 0 }
-    return worn.count < 2 ? [] : worn
-  }
 }

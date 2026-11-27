@@ -18,8 +18,16 @@ public struct LegendRead: Sendable {
     public let others: [String]
   }
 
-  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims.
+  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims, with the
+  // present steps that wear it.
   public struct Shown: Sendable {
+    public let hue: String
+    public let kind: Kind?
+    public let steps: Int
+  }
+
+  // One of the hues a step may wear, and the named kind that owns it, none for a hue no named kind has.
+  public struct Choice: Sendable {
     public let hue: String
     public let kind: Kind?
   }
@@ -30,6 +38,12 @@ public struct LegendRead: Sendable {
   // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue a
   // present step wears that no kind claims, in the palette's order, with no kind.
   public let shown: [Shown]
+  // The six kinds a step may wear: the named ones in the legend's order, then each hue none of them has, in the palette's order.
+  public let choices: [Choice]
+  // The hue a kind added takes: the first of the palette no entry of the legend has; none once all six are had.
+  public let free: String?
+  // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
+  public let filters: [Shown]
   let claimed: Set<[UInt8]>
 
   public init(_ tree: RoadmapTree) {
@@ -45,9 +59,17 @@ public struct LegendRead: Sendable {
     self.hues = hues.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     claimed = Set(wearers.keys)
     let owners = Set(hues.map { Array($0.owner.utf8) })
-    let worn = Set(tree.index.nodes.map { Array($0.color.utf8) })
-    shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0) }
-      + RoadmapRules.hues.filter { worn.contains(Array($0.utf8)) && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil) }
+    var worn = ByText<Int>()
+    for node in tree.index.nodes { worn[node.color, default: 0] += 1 }
+    let shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0, steps: worn[$0.hue] ?? 0) }
+      + RoadmapRules.hues.filter { worn[$0] != nil && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil, steps: worn[$0] ?? 0) }
+    let named = shown.filter { $0.kind.map { !$0.label.isEmpty } == true }
+    let has = { (entries: [Shown], hue: String) -> Bool in entries.contains { $0.hue.utf8.elementsEqual(hue.utf8) } }
+    choices = named.map { Choice(hue: $0.hue, kind: $0.kind) } + RoadmapRules.hues.filter { !has(named, $0) }.map { Choice(hue: $0, kind: nil) }
+    free = RoadmapRules.hues.first { !has(shown, $0) }
+    let wearing = shown.filter { $0.steps > 0 }
+    filters = wearing.count < 2 ? [] : wearing
+    self.shown = shown
   }
 
   public func claims(_ hue: String) -> Bool { claimed.contains(Array(hue.utf8)) }

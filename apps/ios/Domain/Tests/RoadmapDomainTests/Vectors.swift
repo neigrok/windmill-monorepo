@@ -260,8 +260,11 @@ extension LegendRead {
     let collisions: [JSON] = hues.filter { !$0.others.isEmpty }.map {
       ["hue": .string($0.name), "owner": .string($0.owner), "others": .strings($0.others)]
     }
-    let shown: [JSON] = shown.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
-    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown)]
+    let shown: [JSON] = shown.map { ["hue": .string($0.hue), "id": .of($0.kind?.id), "steps": JSON($0.steps)] }
+    let choices: [JSON] = choices.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
+    let filters: [JSON] = filters.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
+    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown),
+            "choices": .array(choices), "free": .of(free), "filters": .array(filters)]
   }
 }
 

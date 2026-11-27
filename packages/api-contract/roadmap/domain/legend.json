@@ -25,7 +25,10 @@
       "ids": ["late", "unknown", "", "😀"],
       "owners": [{"hue": "olive", "id": "unknown"}],
       "collisions": [{"hue": "olive", "owner": "unknown", "others": ["late", "", "😀"]}],
-      "shown": [{"hue": "olive", "id": "unknown"}]
+      "shown": [{"hue": "olive", "id": "unknown", "steps": 0}],
+      "choices": [{"hue": "olive", "id": "unknown"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "sky", "id": null}, {"hue": "plum", "id": null}],
+      "free": "terracotta",
+      "filters": []
     }
   },
   {
@@ -52,7 +55,10 @@
       "ids": ["", "😀"],
       "owners": [{"hue": "olive", "id": ""}],
       "collisions": [{"hue": "olive", "owner": "", "others": ["😀"]}],
-      "shown": [{"hue": "olive", "id": ""}]
+      "shown": [{"hue": "olive", "id": "", "steps": 0}],
+      "choices": [{"hue": "olive", "id": ""}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "sky", "id": null}, {"hue": "plum", "id": null}],
+      "free": "terracotta",
+      "filters": []
     }
   },
   {
@@ -141,7 +147,72 @@
       "ids": ["sea", "wind", "sky"],
       "owners": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}],
       "collisions": [{"hue": "sky", "owner": "sky", "others": ["sea"]}],
-      "shown": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}]
+      "shown": [{"hue": "olive", "id": "wind", "steps": 0}, {"hue": "sky", "id": "sky", "steps": 1}, {"hue": "brick", "id": null, "steps": 1}, {"hue": "plum", "id": null, "steps": 1}],
+      "choices": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
+      "free": "terracotta",
+      "filters": [{"hue": "sky", "id": "sky"}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}]
+    }
+  },
+  {
+    "name": "Each entry counts the present steps wearing its hue; a step may wear the named kinds first, then each hue no named kind has; a kind added takes the first hue no entry has; the filter offers the entries steps wear",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "wind", "label": "wind", "color": "sky", "ord": "a0"},
+          {"id": "tide", "label": "tide", "color": "sky", "ord": "a1"},
+          {"id": "knot", "label": "knot", "color": "gold", "ord": "a2"},
+          {"id": "chart", "label": "chart", "color": "plum", "ord": "a3"},
+          {"id": "gone", "label": "gone", "color": "brick", "ord": "a4", "present": false}
+        ],
+        "kinds": [
+          {"id": "sailing", "hue": "sky", "label": "Sailing", "ord": "a0"},
+          {"id": "rope", "hue": "gold", "label": "", "ord": "a1"},
+          {"id": "rest", "hue": "olive", "label": "Rest", "ord": "a2"}
+        ]
+      }
+    },
+    "expect": {
+      "ids": ["sailing", "rope", "rest"],
+      "owners": [{"hue": "gold", "id": "rope"}, {"hue": "olive", "id": "rest"}, {"hue": "sky", "id": "sailing"}],
+      "collisions": [],
+      "shown": [{"hue": "sky", "id": "sailing", "steps": 2}, {"hue": "gold", "id": "rope", "steps": 1}, {"hue": "olive", "id": "rest", "steps": 0}, {"hue": "plum", "id": null, "steps": 1}],
+      "choices": [{"hue": "sky", "id": "sailing"}, {"hue": "olive", "id": "rest"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
+      "free": "terracotta",
+      "filters": [{"hue": "sky", "id": "sailing"}, {"hue": "gold", "id": "rope"}, {"hue": "plum", "id": null}]
+    }
+  },
+  {
+    "name": "A roadmap whose steps wear one hue offers no filter, and one whose legend holds every hue has none free",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "wind", "label": "wind", "color": "sky", "ord": "a0"},
+          {"id": "tide", "label": "tide", "color": "sky", "ord": "a1"}
+        ],
+        "kinds": [
+          {"id": "k0", "hue": "terracotta", "label": "Kind 0", "ord": "a0"},
+          {"id": "k1", "hue": "olive", "label": "Kind 1", "ord": "a1"},
+          {"id": "k2", "hue": "gold", "label": "Kind 2", "ord": "a2"},
+          {"id": "k3", "hue": "brick", "label": "Kind 3", "ord": "a3"},
+          {"id": "k4", "hue": "sky", "label": "Kind 4", "ord": "a4"},
+          {"id": "k5", "hue": "plum", "label": "Kind 5", "ord": "a5"}
+        ]
+      }
+    },
+    "expect": {
+      "ids": ["k0", "k1", "k2", "k3", "k4", "k5"],
+      "owners": [{"hue": "brick", "id": "k3"}, {"hue": "gold", "id": "k2"}, {"hue": "olive", "id": "k1"}, {"hue": "plum", "id": "k5"}, {"hue": "sky", "id": "k4"}, {"hue": "terracotta", "id": "k0"}],
+      "collisions": [],
+      "shown": [{"hue": "terracotta", "id": "k0", "steps": 0}, {"hue": "olive", "id": "k1", "steps": 0}, {"hue": "gold", "id": "k2", "steps": 0}, {"hue": "brick", "id": "k3", "steps": 0}, {"hue": "sky", "id": "k4", "steps": 2}, {"hue": "plum", "id": "k5", "steps": 0}],
+      "choices": [{"hue": "terracotta", "id": "k0"}, {"hue": "olive", "id": "k1"}, {"hue": "gold", "id": "k2"}, {"hue": "brick", "id": "k3"}, {"hue": "sky", "id": "k4"}, {"hue": "plum", "id": "k5"}],
+      "free": null,
+      "filters": []
     }
   }
 ]

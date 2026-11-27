@@ -1,7 +1,7 @@
 // A node's `color` field is its kind; the legend names and orders those hues, and legend order
 // is generation priority. Every op returns a new legend. Hue is unique, at most six.
 
-import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
+import { readLegend } from './domainReads.js';
 import { t } from '../i18n/settings/index.js';
 import { GENESIS_STAMP, DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 
@@ -12,30 +12,18 @@ const DESCRIPTION_MAX = 80;
 // the same stamp.
 export { GENESIS_STAMP, DEFAULT_KINDS };
 
+// The room's legend: the kinds it was given, in their order, then each hue a step wears that none claims, as the domain
+// shows its legend; with none given, the genesis kinds of an empty roadmap, or the hues its steps wear.
 export function deriveLegend(nodes, saved) {
-  const used = inUseHues(nodes);
-  if (saved) {
-    const kinds = saved.map((kind) => ({
-      id: kind.id,
-      hue: kind.hue,
-      label: kind.label ?? '',
-      description: kind.description ?? '',
-    }));
-    const present = new Set(kinds.map((kind) => kind.hue));
-    const appended = used.filter((hue) => !present.has(hue)).map((hue) => unlabeledKind(hue));
-    return [...kinds, ...appended];
-  }
-  if (nodes.length === 0) return DEFAULT_KINDS;
-  return used.map((hue) => unlabeledKind(hue));
+  if (!saved && nodes.length === 0) return DEFAULT_KINDS;
+  const kinds = (saved ?? []).map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '' }));
+  return [...kinds, ...readLegend(kinds, nodes).shown.filter((entry) => entry.kind === null).map((entry) => unlabeledKind(entry.hue))];
 }
 
+// Each kind with how many steps wear its hue, as the domain counts its legend.
 export function withCounts(legend, nodes) {
-  const tally = new Map();
-  for (const node of nodes) {
-    const hue = node.color ?? DEFAULT_NODE_COLOR;
-    tally.set(hue, (tally.get(hue) ?? 0) + 1);
-  }
-  return legend.map((kind) => ({ ...kind, count: tally.get(kind.hue) ?? 0 }));
+  const steps = new Map(readLegend(legend, nodes).shown.map((entry) => [entry.hue, entry.steps]));
+  return legend.map((kind) => ({ ...kind, count: steps.get(kind.hue) ?? 0 }));
 }
 
 export function inUseCount(legend, nodes) {
@@ -60,38 +48,23 @@ export function kindName(kind) {
   return kind.label || hueName(kind.hue);
 }
 
-// The kind filter's options. Hue is the key because hue is what a node stores: two legend kinds
-// sharing one hue are one option. A roadmap wearing one hue gets no options at all.
+// A hue the domain lists with the kind that owns it, as a control names it: the kind's name, or the hue's own.
+const asOption = ({ hue, kind }) => ({ id: kind?.id ?? hue, hue, label: kind?.label || hueName(hue) });
+
+// The kind filter's options: the domain's (`LegendRead.filters`), the hues steps wear, none where they wear one alone.
 export function kindOptions(tree, legend = []) {
-  const worn = new Set(tree.nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
-  if (worn.size < 2) return [];
-  return kindOptionsForHues(worn, legend);
+  return readLegend(legend ?? [], tree.nodes).filters.map(asOption);
 }
 
-export function kindOptionsForHues(available, legend = []) {
-  const worn = new Set(available);
-  const named = new Map();
-  for (const kind of legend ?? []) if (!named.has(kind.hue)) named.set(kind.hue, kind);
-  const hues = [
-    ...(legend ?? []).map((kind) => kind.hue).filter((hue) => worn.has(hue)),
-    ...NODE_COLOR_NAMES.filter((hue) => worn.has(hue) && !named.has(hue)),
-  ];
-  return [...new Set(hues)].map((hue) => ({
-    id: named.get(hue)?.id ?? hue,
-    hue,
-    label: named.get(hue)?.label || hueName(hue),
-  }));
-}
-
-// Every surface's six choices: what the legend names, then the unnamed hues in palette order, so a save never reorders them under the pointer.
+// Every surface's six choices: the domain's (`LegendRead.choices`), the named kinds, then the unnamed hues in palette
+// order, so a save never reorders them under the pointer.
 export function kindChoices(legend = []) {
-  return kindOptionsForHues(NODE_COLOR_NAMES, (legend ?? []).filter((kind) => kind.label));
+  return readLegend(legend ?? []).choices.map(asOption);
 }
 
-// null once all six palette hues are taken.
+// The domain's free hue: null once all six palette hues are taken.
 export function freeHue(legend) {
-  const taken = new Set(legend.map((kind) => kind.hue));
-  return NODE_COLOR_NAMES.find((hue) => !taken.has(hue)) ?? null;
+  return readLegend(legend).free;
 }
 
 export function renameKind(legend, id, label) {
@@ -124,11 +97,6 @@ export function recolorKind(legend, id, newHue) {
   }
   const next = legend.map((kind) => (kind.id === id ? { ...kind, hue: newHue } : kind));
   return { legend: next, oldHue: target.hue, newHue };
-}
-
-function inUseHues(nodes) {
-  const used = new Set(nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
-  return NODE_COLOR_NAMES.filter((hue) => used.has(hue));
 }
 
 function unlabeledKind(hue, id = newId()) {

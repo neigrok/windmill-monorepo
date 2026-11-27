@@ -843,7 +843,7 @@ branch in scope. It lasts the visit: leaving the roadmap or reloading starts it 
 `viewBranch` scopes the Board to a step, every ancestor and every descendant; availability and progress still
 read the whole roadmap.
 
-Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`), so a roadmap wearing
+Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`, the domain's `LegendRead.filters`), so a roadmap wearing
 one kind shows no filter. All also drops a kind no swatch offers any more, so it cannot come back on its own.
 The order is Roadmap order, or Created newest or oldest, for Locked and Up next; Done keeps its newest
 completions.
@@ -1075,7 +1075,7 @@ below that it replaces the form, as a page in the 600px dialog from 744px and a 
 `StepComposer` owns picker selection and query, so resizing keeps them. With zero candidates the Prerequisites
 row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots start in the first legend
 kind. `composerFocus.js` owns shared layer focus, viewport hooks and `coverBeneath`. The shared `KindChoice`
-lives in `BoardControls.jsx`, and every surface fills it from `kindChoices` in `model/Legend.js`, so the composer, the
+lives in `BoardControls.jsx`, and every surface fills it from `kindChoices` in `model/Legend.js` (the domain's `LegendRead.choices`), so the composer, the
 bulk bars, the Graph's dock and its tablet panel show one order and a choice never reorders the row. The dock and the
 tablet panel use it with `follow={false}`: arrow keys only move focus, a press saves at once and the kind in force writes
 nothing. The dock previews a hovered kind on the node and adds Manage kinds beside the heading, which opens the legend.

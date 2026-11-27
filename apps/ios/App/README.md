@@ -179,13 +179,12 @@ every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `Op
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
 blank roadmap starts with one step, named as the roadmap, in the first kind's colour: the empty plan, named
-(`NewRoadmapDraft.planting`, the web's `NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`): its legend is
-each kind that owns its hue in the roadmap's order, then each hue steps wear that no kind claims, called by the hue (the
-web's `deriveLegend` over the kinds `ReplicaRoadmap` keeps), each with how many steps wear it (`withCounts`); the six
-kinds a step may wear, the named ones
-first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
-(`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
-(`onRemoveKind`). And from the domain's `BoardRead`: a step the form made that the query hides is shown by clearing
+(`NewRoadmapDraft.planting`, the web's `NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`), from the
+domain's `LegendRead`, which the web's `model/Legend.js` reads too: its legend is each kind that owns its hue in the
+roadmap's order, then each hue steps wear that no kind claims, called by the hue, each with how many steps wear it
+(`steps`); the six kinds a step may wear, the named ones first (`choices`); the kinds the Board's filter offers, the
+ones steps wear, none where steps wear one hue alone (`filters`); the hue Add Kind takes, the first no entry has
+(`free`); and only a kind no step wears may be removed (`onRemoveKind`). And from the domain's `BoardRead`: a step the form made that the query hides is shown by clearing
 each part that alone hides it (`BoardReading.reveal`, the domain's `revealing`, which the web's `BoardQuery.revealing`
 reads too), once the phone's copy holds the step, whether the Board then shows a list or nothing left.
 

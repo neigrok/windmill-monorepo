@@ -6,7 +6,7 @@
 
 import { completedOf } from '../domain/account.js';
 import { FollowGraph } from '../domain/graph.js';
-import { BoardRead, EffectsRead } from '../domain/reads.js';
+import { BoardRead, EffectsRead, LegendRead } from '../domain/reads.js';
 import { RoadmapTree } from '../domain/records.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { SkillTree } from './SkillTree.js';
@@ -87,6 +87,21 @@ export function readEffects(tree, ids, progress = null, asked = {}) {
 // The domain's Board of the room's roadmap under `progress`, narrowed and ordered by `query`.
 export function readBoard(tree, progress, query) {
   return new BoardRead(domainReading(tree, progress).graph, query);
+}
+
+// The domain's legend of the room's kinds (`{id?, hue, label?, description?}`, in the room's order, each born in it, one
+// with no id known by its hue) and of the steps wearing their colours: what it shows, the kinds a step may wear, the
+// free hue and the Board's filter.
+export function readLegend(legend, nodes = []) {
+  const width = String(Math.max(legend.length, nodes.length)).length;
+  const ord = (place) => String(place).padStart(width, '0');
+  const idOf = (kind) => kind.id ?? kind.hue;
+  const kinds = legend.filter((kind, place) => legend.findIndex((other) => idOf(other) === idOf(kind)) === place);
+  return new LegendRead(new RoadmapTree({
+    id: '',
+    kinds: kinds.map((kind, place) => ({ id: idOf(kind), hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '', ord: ord(place), born: `${place + 1}:0:room` })),
+    nodes: nodes.map((step, place) => ({ id: step.id, color: step.color ?? DEFAULT_NODE_COLOR, ord: ord(place) })),
+  }));
 }
 
 // tree → the ids a hold names → the roadmap it leaves standing.

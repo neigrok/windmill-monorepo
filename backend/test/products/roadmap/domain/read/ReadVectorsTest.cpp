@@ -326,13 +326,22 @@ Json::Value legendJson(const LegendRead& legend) {
     entry["others"] = strings(collision.others);
     out["collisions"].append(entry);
   }
-  out["shown"] = Json::Value(Json::arrayValue);
-  for (const ShownHue& shown : legend.shown()) {
-    Json::Value entry(Json::objectValue);
-    entry["hue"] = shown.hue;
-    entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
-    out["shown"].append(entry);
-  }
+  const auto hues = [](const std::vector<ShownHue>& entries, bool counted) {
+    Json::Value list(Json::arrayValue);
+    for (const ShownHue& shown : entries) {
+      Json::Value entry(Json::objectValue);
+      entry["hue"] = shown.hue;
+      entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
+      if (counted) entry["steps"] = Json::UInt64(shown.steps);
+      list.append(entry);
+    }
+    return list;
+  };
+  out["shown"] = hues(legend.shown(), true);
+  out["choices"] = hues(legend.choices(), false);
+  const std::optional<std::string> free = legend.freeHue();
+  out["free"] = free ? Json::Value(*free) : Json::Value(Json::nullValue);
+  out["filters"] = hues(legend.filters(), false);
   return out;
 }
 

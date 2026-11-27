@@ -16,21 +16,37 @@ export class LegendRead {
       this.byHue.get(kind.hue)?.push(kind);
     }
     for (const kinds of this.byHue.values()) kinds.sort((a, b) => Stamp.compare(a.born, b.born) || compareText(a.id, b.id));
-    const worn = new Set(tree.nodes.filter((node) => node.present).map((node) => node.color));
+    /** @type {Map<string, number>} */
+    const worn = new Map();
+    for (const node of tree.nodes) if (node.present) worn.set(node.color, (worn.get(node.color) ?? 0) + 1);
     // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue
-    // a present step wears that no kind claims, in the palette's order, with no kind.
-    /** @type {{hue: string, kind: import('./records.js').Kind | null}[]} */
+    // a present step wears that no kind claims, in the palette's order, with no kind; each with the present steps that
+    // wear it.
+    /** @type {{hue: string, kind: import('./records.js').Kind | null, steps: number}[]} */
     this.shown = [
-      ...this.kinds.filter((kind) => this.byHue.get(kind.hue)?.[0] === kind).map((kind) => ({ hue: kind.hue, kind })),
-      ...HUES.filter((hue) => worn.has(hue) && !this.byHue.has(hue)).map((hue) => ({ hue, kind: null })),
+      ...this.kinds.filter((kind) => this.byHue.get(kind.hue)?.[0] === kind).map((kind) => ({ hue: kind.hue, kind, steps: worn.get(kind.hue) ?? 0 })),
+      ...HUES.filter((hue) => worn.has(hue) && !this.byHue.has(hue)).map((hue) => ({ hue, kind: null, steps: worn.get(hue) ?? 0 })),
     ];
+    const named = this.shown.filter(({ kind }) => kind !== null && kind.label !== '');
+    // The six kinds a step may wear: the named ones in the legend's order, then each hue none of them has, in the
+    // palette's order.
+    this.choices = [...named.map(({ hue, kind }) => ({ hue, kind })),
+      ...HUES.filter((hue) => !named.some((entry) => entry.hue === hue)).map((hue) => ({ hue, kind: null }))];
+    // The hue a kind added takes: the first of the palette no entry of the legend has.
+    this.free = HUES.find((hue) => !this.shown.some((entry) => entry.hue === hue)) ?? null;
+    // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
+    const wearing = this.shown.filter(({ steps }) => steps > 0);
+    this.filters = wearing.length < 2 ? [] : wearing;
   }
 
   result() {
     const hues = [...this.byHue].sort((a, b) => compareText(a[0], b[0]));
+    /** @param {{hue: string, kind: import('./records.js').Kind | null}} entry */
+    const named = ({ hue, kind }) => ({ hue, id: kind?.id ?? null });
     return { ids: this.kinds.map((kind) => kind.id), owners: hues.map(([hue, kinds]) => ({ hue, id: kinds[0]?.id ?? '' })),
       collisions: hues.filter(([, kinds]) => kinds.length > 1).map(([hue, kinds]) => ({ hue, owner: kinds[0]?.id ?? '', others: kinds.slice(1).map((kind) => kind.id).sort(compareText) })),
-      shown: this.shown.map(({ hue, kind }) => ({ hue, id: kind?.id ?? null })),
+      shown: this.shown.map((entry) => ({ ...named(entry), steps: entry.steps })), choices: this.choices.map(named), free: this.free,
+      filters: this.filters.map(named),
     };
   }
 }
