@@ -193,7 +193,7 @@ for (const [id, expected] of Object.entries(PAGES)) {
     const page = await landing(t, id);
     told();
     const words = page.main.filter((element) => ['h1', 'h2', 'h3', 'p', 'a', 'dt', 'dd'].includes(element.type)).map(textOf).join('  ');
-    for (const refused of ['works for you', 'does it for you', 'About', 'training log', 'direct download', 'two taps', 'ten questions', 'kept only for you']) {
+    for (const refused of ['works for you', 'does it for you', 'About', 'training log', 'direct download', 'two taps', 'ten questions', 'With an account, export', 'kept only for you']) {
       assert.equal(words.includes(refused), false, refused);
     }
     assert.doesNotMatch(words, /[$€£]\s?\d|\d+\s?(USD|dollars)/);

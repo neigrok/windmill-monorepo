@@ -61,7 +61,7 @@
   "gym.landing.limits.feedTitle": "No feed",
   "gym.landing.limits.feedText": "Sharing is one link to one workout, readable for 30 days and revocable.",
   "gym.landing.data.title": "What stays on your device, {break}and what does not",
-  "gym.landing.data.paragraph": "Signed out, the log stays on the device you made it on: this browser, or the phone app. Signed in, Windmill stores your sets, workouts, routines and your notes for Coach, so they follow your account.",
+  "gym.landing.data.paragraph": "Signed out, the log stays on the device you made it on: this browser, or the phone app. Signed in, Windmill stores your sets, workouts, routines, your notes for Coach, your Coach conversations and the pictures you attach, so they follow your account.",
   "gym.landing.data.coachTitle": "Asking Coach",
   "gym.landing.data.coachText": "Your question, your log and your notes go to Anthropic, only when you ask.",
   "gym.landing.data.shareTitle": "A share link",

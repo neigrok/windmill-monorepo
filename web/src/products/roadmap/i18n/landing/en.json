@@ -51,7 +51,7 @@
   "roadmap.landing.account.offlineTitle": "Works offline",
   "roadmap.landing.account.offlineText": "Edits made offline wait and sync.",
   "roadmap.landing.account.exportTitle": "Take it with you",
-  "roadmap.landing.account.exportText": "With an account, export every tree as Markdown.",
+  "roadmap.landing.account.exportText": "Export every tree as Markdown, signed in or signed out.",
   "roadmap.landing.account.freeTitle": "Free by hand",
   "roadmap.landing.account.freeText": "Everything you do by hand is free.",
   "roadmap.landing.limits.title": "What it {break}will not do",
