@@ -1,6 +1,6 @@
 // @ts-check
 // A proposal's rules beyond the corpus's cases: the ops' rows and the Shape rule held to the catalog, a name of a ref's
-// form, and a base past the 262,144 bytes the sync registry caps it at, too large to hold as a case.
+// form, and the caps too large to hold as a case: a roadmap's steps and links, and a base past its 262,144 bytes.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -76,6 +76,22 @@ test('a name of a ref\'s form is a ref, never a step\'s id, and a ref the roadma
   const holding = sailing({ nodes: [...sailing().trees[0].nodes, { id: 'new:tack', ord: 'a3', label: 'Tack' }] });
   assert.deepEqual(proposing(holding, [{ op: 'connect', nodeId: 'c', prerequisiteId: 'new:tack' }]), { refused: { code: 'unknown-step', id: 'new:tack', at: 0 } });
   assert.deepEqual(proposing(holding, [{ op: 'add_step', ref: 'new:tack', label: 'Tack again' }]), { refused: { code: 'invalid-input', id: 'new:tack', at: 0 } });
+});
+
+test('a roadmap whose steps or links are at the sync registry\'s cap takes no change that adds one, naming the roadmap', () => {
+  const steps = Array.from({ length: 10_000 }, (_, index) => ({ id: `s${index}`, ord: `a${String(index).padStart(5, '0')}`, label: `Step ${index}` }));
+  const full = sailing({ nodes: steps, edges: [], marks: [] });
+  assert.deepEqual(proposing(full, [{ op: 'rename', nodeId: 's0', label: 'First' }, { op: 'add_step', ref: 'new:more', label: 'One more' }]),
+    { refused: { code: 'over-limit', id: T, at: 1 } });
+  assert.ok('proposal' in proposing(sailing({ nodes: steps.slice(1), edges: [], marks: [] }), [{ op: 'add_step', ref: 'new:more', label: 'One more' }]),
+    'the ten thousandth step');
+  assert.ok('proposal' in proposing(full, [{ op: 'remove_step', nodeId: 's1' }, { op: 'add_step', ref: 'new:more', label: 'One more' }]),
+    'a step the set removes makes room for one it adds');
+  // Every link from a step to each step after it among 202, the first 20,000 of them: s200 to s201 is not among them.
+  const ids = Array.from({ length: 202 }, (_, index) => `s${index}`);
+  const woven = sailing({ nodes: ids.map((id, index) => ({ id, ord: `a${String(index).padStart(3, '0')}`, label: id })), marks: [],
+    edges: ids.flatMap((from, index) => ids.slice(index + 1).map((to) => ({ from, to, present: true }))).slice(0, 20_000) });
+  assert.deepEqual(proposing(woven, [{ op: 'connect', nodeId: 's201', prerequisiteId: 's200' }]), { refused: { code: 'over-limit', id: T, at: 0 } });
 });
 
 test('a base past the 262,144 bytes the sync registry caps it at refuses the whole set, though its changes are few', () => {

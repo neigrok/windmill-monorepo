@@ -563,9 +563,10 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
   room's recolour is one command, which repaints the steps that wear it. They are the stamps the
   turn's reads returned, read from the copy, so they exist for a roadmap that has never reached the
   server.
-- `state` is `pending`, then one of `applied`, `rejected`, `stale` or `replaced`, and never moves
-  again. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
-  field, and `applied` outranks the other three.
+- `state` is `pending`, then one of `applied`, `rejected`, `stale` or `replaced`, and never goes back
+  to `pending`. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
+  field, and `applied` outranks the other three. Of `rejected`, `stale` and `replaced`, written on two
+  devices before they sync, the later written stands, as the engine joins equal ranks.
 - `undone` is set once, when the person undoes an applied proposal.
 - A roadmap has one pending proposal. Minting another marks every earlier one `replaced`, in the
   write that makes it. Where two devices each mint one before they sync, the one born later stays

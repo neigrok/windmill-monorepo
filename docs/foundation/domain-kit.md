@@ -643,8 +643,10 @@ at construction.
 
 **Count.**
 1. Fewer than `min` items → `tooFew`; more than `max` → `tooMany`.
-2. Validate each item in order with `item.validated(at: path + index)`; the first violation throws. Items that are
-   plain JSON, which no spec of their own holds (a proposal's changes), are counted alone.
+2. Validate each item in order with `item.validated(at: path + index)`; the first violation throws. Items that hold no
+   spec of their own, plain JSON such as a proposal's changes, are counted alone, without validating each: the web and
+   Kotlin pass `apply` a validator that returns each item as it is, and Swift's `apply` over `[JSON]` checks the count
+   and nothing more.
 3. Return the validated items.
 
 Written values are compared by JCS (engine §3.2), never by Swift `String ==`, which equates

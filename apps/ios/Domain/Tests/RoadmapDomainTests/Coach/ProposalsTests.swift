@@ -5,7 +5,7 @@ import SyncCore
 import Testing
 
 // A proposal's rules beyond the corpus's cases: the ops' rows and the Shape rule held to the catalog, a name of a ref's form,
-// a base past the 262,144 bytes the sync registry caps it at, too large to hold as a case, and a large set's time.
+// the caps too large to hold as a case, a roadmap's steps and links and a base past its 262,144 bytes, and a large set's time.
 struct ProposalsTests {
   static let tree = "t_0000000000000001"
 
@@ -79,6 +79,22 @@ struct ProposalsTests {
     let holding = Self.sailing(nodes: [Step(id: "a", ord: "a0"), Step(id: "b", ord: "a1"), Step(id: "c", ord: "a2"), Step(id: "new:tack", label: "Tack", ord: "a3")])
     #expect(Self.proposing(holding, [["op": "connect", "nodeId": "c", "prerequisiteId": "new:tack"]]) == ["refused": ["code": "unknown-step", "id": "new:tack", "at": 0]])
     #expect(Self.proposing(holding, [["op": "add_step", "ref": "new:tack", "label": "Tack again"]]) == ["refused": ["code": "invalid-input", "id": "new:tack", "at": 0]])
+  }
+
+  @Test func aRoadmapWhoseStepsOrLinksAreAtTheSyncRegistrysCapTakesNoChangeThatAddsOneNamingTheRoadmap() {
+    let steps = (0..<10_000).map { Step(id: "s\($0)", label: "Step \($0)", ord: "a" + String(repeating: "0", count: 5 - String($0).count) + String($0)) }
+    let add: JSON = ["op": "add_step", "ref": "new:more", "label": "One more"]
+    #expect(Self.proposing(Self.sailing(nodes: steps, edges: []), [["op": "rename", "nodeId": "s0", "label": "First"], add])
+      == ["refused": ["code": "over-limit", "id": .string(Self.tree), "at": 1]])
+    #expect(Self.proposing(Self.sailing(nodes: Array(steps.dropFirst()), edges: []), [add])["base"] != nil, "the ten thousandth step")
+    #expect(Self.proposing(Self.sailing(nodes: steps, edges: []), [["op": "remove_step", "nodeId": "s1"], add])["base"] != nil,
+            "a step the set removes makes room for one it adds")
+    // Every link from a step to each step after it among 202, the first 20,000 of them: s200 to s201 is not among them.
+    let ids = (0..<202).map { "s\($0)" }
+    let links = ids.indices.flatMap { from in ids[(from + 1)...].map { RoadmapTree.Edge(from: ids[from], to: $0, present: true) } }.prefix(20_000)
+    let woven = Self.sailing(nodes: ids.enumerated().map { Step(id: $0.element, label: $0.element, ord: "a" + String(repeating: "0", count: 3 - String($0.offset).count) + String($0.offset)) },
+                             edges: Array(links))
+    #expect(Self.proposing(woven, [["op": "connect", "nodeId": "s201", "prerequisiteId": "s200"]]) == ["refused": ["code": "over-limit", "id": .string(Self.tree), "at": 0]])
   }
 
   @Test func aBasePastTheBytesTheSyncRegistryCapsItAtRefusesTheWholeSetThoughItsChangesAreFew() {
