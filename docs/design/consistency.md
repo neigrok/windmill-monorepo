@@ -2307,6 +2307,13 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
   page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
   Instrument look.
+- **The family template's defects.** The static pages in the family look (`web/scripts/staticPageChrome.css`):
+  `connect.html`, `changelog.html`, `gallery.html`, `privacy.html`, `terms.html`, `refunds.html`, `support.html`,
+  `404.html` and `pause.html`. By day their footer links measure 3.52:1 against the ground. At 390 the appearance
+  switch's segments are 28 px tall, the header buttons 37 px and the footer links 19 px, under the 44 px the site's
+  pages give a control on a phone. With scripts off all four header buttons show at once (Sign in, Start your tree, My
+  account, My trees), because only a script stamps `data-auth`. Fix them in the template, or as each page moves to
+  the Instrument look.
 - **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
   (three product bands with per-room platform lines), describe the root the front page replaced. Archive
   them (🗄 Archived prefix and tag).
