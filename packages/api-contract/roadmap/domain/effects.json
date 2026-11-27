@@ -602,5 +602,43 @@
       "links": {"requires": ["parts"], "opens": ["rig"]}
     },
     "expect": {"kept": "choose", "under": "choose", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": [], "setAside": null, "attachRelocks": null, "loops": {"requires": ["rig", "race"], "opens": ["choose", "parts"]}}
+  },
+  {
+    "name": "A drafted step the roadmap holds as deleted, still named by live links, is never walked through: what follows it past a step it would open is not barred",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "choose", "label": "Choose a course", "ord": "a0"},
+          {"id": "parts", "label": "Name the parts", "ord": "a1", "present": false},
+          {"id": "rig", "label": "Rig the boat", "ord": "a2"},
+          {"id": "knots", "label": "Tie the knots", "ord": "a3"}
+        ],
+        "edges": [{"from": "choose", "to": "parts", "present": true}, {"from": "parts", "to": "rig", "present": true}, {"from": "knots", "to": "parts", "present": true}]
+      },
+      "ids": ["parts"],
+      "links": {"requires": ["choose"], "opens": ["knots"]}
+    },
+    "expect": {"kept": null, "under": "choose", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": [], "setAside": null, "attachRelocks": null, "loops": {"requires": ["knots"], "opens": ["choose"]}}
+  },
+  {
+    "name": "A paste lands under the first step that follows nothing, a loop's steps following one another however the loop is drawn",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "tack", "label": "Tack", "ord": "a0"},
+          {"id": "gybe", "label": "Gybe", "ord": "a1"},
+          {"id": "wind", "label": "Read the wind", "ord": "a2"}
+        ],
+        "edges": [{"from": "gybe", "to": "tack", "present": true}, {"from": "tack", "to": "gybe", "present": true}]
+      },
+      "ids": []
+    },
+    "expect": {"kept": "wind", "under": "wind", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": [], "setAside": null, "attachRelocks": null, "loops": null}
   }
 ]

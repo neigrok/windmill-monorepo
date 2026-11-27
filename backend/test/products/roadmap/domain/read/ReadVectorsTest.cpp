@@ -342,6 +342,7 @@ Json::Value legendJson(const LegendRead& legend) {
   const std::optional<std::string> free = legend.freeHue();
   out["free"] = free ? Json::Value(*free) : Json::Value(Json::nullValue);
   out["filters"] = hues(legend.filters(), false);
+  out["removable"] = strings(legend.removable());
   return out;
 }
 

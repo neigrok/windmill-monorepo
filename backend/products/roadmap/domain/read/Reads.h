@@ -53,6 +53,8 @@ public:
   std::optional<std::string> freeHue() const;
   // The entries of the legend shown that present steps wear, none where they wear fewer than two hues.
   std::vector<ShownHue> filters() const;
+  // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+  std::vector<std::string> removable() const;
 
 private:
   std::vector<Kind> kinds_;

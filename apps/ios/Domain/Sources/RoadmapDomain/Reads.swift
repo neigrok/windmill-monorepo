@@ -44,6 +44,8 @@ public struct LegendRead: Sendable {
   public let free: String?
   // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
   public let filters: [Shown]
+  // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+  public let removable: [Kind]
   let claimed: Set<[UInt8]>
 
   public init(_ tree: RoadmapTree) {
@@ -69,6 +71,7 @@ public struct LegendRead: Sendable {
     free = RoadmapRules.hues.first { !has(shown, $0) }
     let wearing = shown.filter { $0.steps > 0 }
     filters = wearing.count < 2 ? [] : wearing
+    removable = kinds.filter { worn[$0.hue] == nil }
     self.shown = shown
   }
 
@@ -201,18 +204,27 @@ public struct BoardRead: Sendable {
   // The parts that alone hide the step the query reveals, in their order; nil where it reveals none or the step is not present.
   public let revealing: [Part]?
 
-  public init(_ graph: FollowGraph, _ query: BoardQuery = BoardQuery()) {
-    let index = graph.tree.index
-    let branch = query.branch.flatMap { graph.branch(of: $0) }
-    let words = query.search.unicodeScalars
-    var needle: [UInt8] = []
-    if let first = words.firstIndex(where: { !TextWhitespace.contains($0) }), let last = words.lastIndex(where: { !TextWhitespace.contains($0) }) {
-      needle = BoardRead.lowercase(String(words[first...last]))
+  // A query's parts over a graph, each as it keeps the step at a slot: the branch it stays in, the hues it keeps and the
+  // words it finds in a label or a description.
+  struct Parts {
+    let branch: [Bool]?
+    let hues: Set<[UInt8]>
+    let needle: [UInt8]
+    let index: TreeIndex
+
+    init(_ graph: FollowGraph, _ query: BoardQuery) {
+      index = graph.tree.index
+      branch = query.branch.flatMap { graph.branch(of: $0) }
+      let words = query.search.unicodeScalars
+      var needle: [UInt8] = []
+      if let first = words.firstIndex(where: { !TextWhitespace.contains($0) }), let last = words.lastIndex(where: { !TextWhitespace.contains($0) }) {
+        needle = BoardRead.lowercase(String(words[first...last]))
+      }
+      self.needle = needle
+      hues = Set(query.kinds.map { Array($0.utf8) })
     }
-    let hues = Set(query.kinds.map { Array($0.utf8) })
-    let toGo = graph.owedIndex().toGo
-    // Each part of the query, as it keeps a step.
-    let keeps = { (part: Part, slot: Int) -> Bool in
+
+    func keeps(_ part: Part, _ slot: Int) -> Bool {
       let node = index.nodes[slot]
       switch part {
       case .branch: return branch.map { $0[slot] } ?? true
@@ -221,12 +233,27 @@ public struct BoardRead: Sendable {
         return needle.isEmpty || BoardRead.lowercase(node.label).holds(needle) || BoardRead.lowercase(node.description).holds(needle)
       }
     }
-    revealing = query.reveal.flatMap(index.slot(of:)).map { revealed in Part.allCases.filter { !keeps($0, revealed) } }
+
+    // The parts that alone hide the step the query reveals; nil where it reveals none or the step is not present.
+    func revealing(_ query: BoardQuery) -> [Part]? {
+      query.reveal.flatMap(index.slot(of:)).map { revealed in Part.allCases.filter { !keeps($0, revealed) } }
+    }
+  }
+
+  // The parts of `query` that alone hide the step it reveals, read without the Board's cards.
+  public static func revealing(_ graph: FollowGraph, _ query: BoardQuery) -> [Part]? { Parts(graph, query).revealing(query) }
+
+  public init(_ graph: FollowGraph, _ query: BoardQuery = BoardQuery()) {
+    let index = graph.tree.index
+    let parts = Parts(graph, query)
+    let (branch, needle, hues) = (parts.branch, parts.needle, parts.hues)
+    let toGo = graph.owedIndex().toGo
+    revealing = parts.revealing(query)
     var cards: [Card] = []
     var slots: [Int] = []
     for slot in index.nodes.indices {
       let node = index.nodes[slot]
-      if !Part.allCases.allSatisfy({ keeps($0, slot) }) { continue }
+      if !Part.allCases.allSatisfy({ parts.keeps($0, slot) }) { continue }
       let state = graph.stateAt[slot]
       let unlocked = state == .complete ? [] : graph.opens[slot].map { index.ids[$0] }
       let needs = state == .locked ? graph.firstUnmet[slot].map { first in

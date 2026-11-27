@@ -5,10 +5,11 @@ import { RoadmapTree } from './records.js';
 import { FollowGraph } from './graph.js';
 import { HUES } from './roadmapRules.js';
 
+// A roadmap's legend, read from its kinds and the colours its steps wear: a RoadmapTree's, or any roadmap's held so.
 export class LegendRead {
-  /** @param {RoadmapTree} tree */
-  constructor(tree) {
-    this.kinds = tree.kinds.filter((kind) => kind.present);
+  /** @param {{kinds: import('./records.js').Kind[], nodes: {present: boolean, color: string}[]}} roadmap */
+  constructor(roadmap) {
+    this.kinds = roadmap.kinds.filter((kind) => kind.present);
     /** @type {Map<string,import('./records.js').Kind[]>} */
     this.byHue = new Map();
     for (const kind of this.kinds) {
@@ -18,7 +19,7 @@ export class LegendRead {
     for (const kinds of this.byHue.values()) kinds.sort((a, b) => Stamp.compare(a.born, b.born) || compareText(a.id, b.id));
     /** @type {Map<string, number>} */
     const worn = new Map();
-    for (const node of tree.nodes) if (node.present) worn.set(node.color, (worn.get(node.color) ?? 0) + 1);
+    for (const node of roadmap.nodes) if (node.present) worn.set(node.color, (worn.get(node.color) ?? 0) + 1);
     // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue
     // a present step wears that no kind claims, in the palette's order, with no kind; each with the present steps that
     // wear it.
@@ -37,6 +38,8 @@ export class LegendRead {
     // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
     const wearing = this.shown.filter(({ steps }) => steps > 0);
     this.filters = wearing.length < 2 ? [] : wearing;
+    // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+    this.removable = this.kinds.filter((kind) => !worn.has(kind.hue));
   }
 
   result() {
@@ -46,7 +49,7 @@ export class LegendRead {
     return { ids: this.kinds.map((kind) => kind.id), owners: hues.map(([hue, kinds]) => ({ hue, id: kinds[0]?.id ?? '' })),
       collisions: hues.filter(([, kinds]) => kinds.length > 1).map(([hue, kinds]) => ({ hue, owner: kinds[0]?.id ?? '', others: kinds.slice(1).map((kind) => kind.id).sort(compareText) })),
       shown: this.shown.map((entry) => ({ ...named(entry), steps: entry.steps })), choices: this.choices.map(named), free: this.free,
-      filters: this.filters.map(named),
+      filters: this.filters.map(named), removable: this.removable.map((kind) => kind.id),
     };
   }
 }
@@ -72,16 +75,41 @@ export function selectNodes(tree, filter = {}) {
 
 /** @typedef {{sort?:'roadmap'|'newest'|'oldest',kinds?:string[],search?:string,branch?:string|null,doneExpanded?:boolean,reveal?:string|null}} BoardQuery */
 
+// A Board query's parts over a graph, each as it keeps the step at a slot: the branch it stays in, the hues it keeps and
+// the words it finds in a label or a description.
+/** @param {FollowGraph} graph @param {BoardQuery} query */
+function queryParts(graph, query) {
+  const branch = graph.branch(query.branch ?? '');
+  const needle = (query.search ?? '').trim().toLowerCase();
+  const hues = new Set(query.kinds ?? []);
+  const nodeAt = (/** @type {number} */ slot) => /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
+  return { branch, needle, hues, keeps: {
+    kinds: (/** @type {number} */ slot) => !hues.size || hues.has(nodeAt(slot).color),
+    search: (/** @type {number} */ slot) => !needle || nodeAt(slot).label.toLowerCase().includes(needle) || nodeAt(slot).description.toLowerCase().includes(needle),
+    branch: (/** @type {number} */ slot) => branch === null || branch.has(nodeAt(slot).id),
+  } };
+}
+
+// The parts of a query that alone hide the step it reveals, each as it reads cleared; null where it reveals none or the
+// step is not present.
+/** @param {FollowGraph} graph @param {BoardQuery} query @param {ReturnType<typeof queryParts>} parts */
+function revealed(graph, query, parts) {
+  const slot = graph.slot.get(query.reveal ?? '');
+  if (slot === undefined) return null;
+  /** @type {Record<string, string[]|string|null>} */
+  const cleared = { kinds: [], search: '', branch: null };
+  return Object.fromEntries(Object.entries(parts.keeps).filter(([, keeps]) => !keeps(slot)).map(([part]) => [part, cleared[part] ?? null]));
+}
+
 export class BoardRead {
   /** @param {FollowGraph} graph @param {BoardQuery} query */
   constructor(graph, query = {}) {
     this.graph = graph;
     this.sort = query.sort ?? 'roadmap';
     if (!['roadmap', 'newest', 'oldest'].includes(this.sort)) throw new TypeError('Unknown Board sort');
-    const branch = graph.branch(query.branch ?? '');
+    const parts = queryParts(graph, query);
+    const { branch, needle, hues } = parts;
     this.branch = branch === null ? null : query.branch ?? null;
-    const needle = (query.search ?? '').trim().toLowerCase();
-    const hues = new Set(query.kinds ?? []);
     this.recovery = needle ? hues.size ? 'both' : 'search' : hues.size ? 'kinds' : null;
     this.expanded = query.doneExpanded ?? false;
     this.overall = { done: graph.stateAt.reduce((done, state) => done + (state === 2 ? 1 : 0), 0), total: graph.ids.length };
@@ -91,19 +119,10 @@ export class BoardRead {
     // Each card's slot in the graph, so a sort reads its keys by index.
     /** @type {number[]} */
     this.slots = [];
-    const nodeAt = (/** @type {number} */ slot) => /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
-    // Each part of the query, as it keeps a step.
-    const inBranch = (/** @type {number} */ slot) => branch === null || branch.has(nodeAt(slot).id);
-    const ofKind = (/** @type {number} */ slot) => !hues.size || hues.has(nodeAt(slot).color);
-    const found = (/** @type {number} */ slot) => !needle || nodeAt(slot).label.toLowerCase().includes(needle) || nodeAt(slot).description.toLowerCase().includes(needle);
-    // The parts that alone hide the step `reveal` names, each as it reads cleared.
-    const revealed = graph.slot.get(query.reveal ?? '');
-    /** @type {[string, string[]|string|null, (slot: number) => boolean][]} */
-    const parts = [['kinds', [], ofKind], ['search', '', found], ['branch', null, inBranch]];
-    this.revealing = revealed === undefined ? null
-      : Object.fromEntries(parts.filter(([, , keeps]) => !keeps(revealed)).map(([part, cleared]) => [part, cleared]));
+    this.revealing = revealed(graph, query, parts);
+    const { kinds: ofKind, search: found, branch: inBranch } = parts.keeps;
     for (let slot = 0; slot < graph.nodes.length; slot++) {
-      const node = nodeAt(slot);
+      const node = /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
       if (!inBranch(slot) || !ofKind(slot) || !found(slot)) continue;
       const state = graph.states.valueAt(slot);
       const unlocked = state === 'complete' ? [] : graph.unlocksAt(slot);
@@ -114,6 +133,10 @@ export class BoardRead {
       });
     }
   }
+
+  // The parts of `query` that alone hide the step it reveals, read without the Board's cards.
+  /** @param {FollowGraph} graph @param {BoardQuery} query */
+  static revealing(graph, query) { return revealed(graph, query, queryParts(graph, query)); }
 
   result() {
     const graph = this.graph;

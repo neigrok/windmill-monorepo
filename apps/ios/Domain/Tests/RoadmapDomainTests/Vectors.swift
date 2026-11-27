@@ -264,7 +264,7 @@ extension LegendRead {
     let choices: [JSON] = choices.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
     let filters: [JSON] = filters.map { ["hue": .string($0.hue), "id": .of($0.kind?.id)] }
     return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions), "shown": .array(shown),
-            "choices": .array(choices), "free": .of(free), "filters": .array(filters)]
+            "choices": .array(choices), "free": .of(free), "filters": .array(filters), "removable": .strings(removable.map(\.id))]
   }
 }
 

@@ -87,6 +87,13 @@ std::optional<std::string> LegendRead::freeHue() const {
   return std::nullopt;
 }
 
+std::vector<std::string> LegendRead::removable() const {
+  std::vector<std::string> removable;
+  for (const Kind& kind : kinds_)
+    if (std::find(worn_.begin(), worn_.end(), kind.hue) == worn_.end()) removable.push_back(kind.id);
+  return removable;
+}
+
 std::vector<ShownHue> LegendRead::filters() const {
   std::vector<ShownHue> wearing;
   for (const ShownHue& entry : shown())

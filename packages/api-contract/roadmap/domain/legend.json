@@ -28,7 +28,8 @@
       "shown": [{"hue": "olive", "id": "unknown", "steps": 0}],
       "choices": [{"hue": "olive", "id": "unknown"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "sky", "id": null}, {"hue": "plum", "id": null}],
       "free": "terracotta",
-      "filters": []
+      "filters": [],
+      "removable": ["late", "unknown", "", "😀"]
     }
   },
   {
@@ -58,7 +59,8 @@
       "shown": [{"hue": "olive", "id": "", "steps": 0}],
       "choices": [{"hue": "olive", "id": ""}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "sky", "id": null}, {"hue": "plum", "id": null}],
       "free": "terracotta",
-      "filters": []
+      "filters": [],
+      "removable": ["", "😀"]
     }
   },
   {
@@ -150,7 +152,8 @@
       "shown": [{"hue": "olive", "id": "wind", "steps": 0}, {"hue": "sky", "id": "sky", "steps": 1}, {"hue": "brick", "id": null, "steps": 1}, {"hue": "plum", "id": null, "steps": 1}],
       "choices": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
       "free": "terracotta",
-      "filters": [{"hue": "sky", "id": "sky"}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}]
+      "filters": [{"hue": "sky", "id": "sky"}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
+      "removable": ["wind"]
     }
   },
   {
@@ -181,7 +184,8 @@
       "shown": [{"hue": "sky", "id": "sailing", "steps": 2}, {"hue": "gold", "id": "rope", "steps": 1}, {"hue": "olive", "id": "rest", "steps": 0}, {"hue": "plum", "id": null, "steps": 1}],
       "choices": [{"hue": "sky", "id": "sailing"}, {"hue": "olive", "id": "rest"}, {"hue": "terracotta", "id": null}, {"hue": "gold", "id": null}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
       "free": "terracotta",
-      "filters": [{"hue": "sky", "id": "sailing"}, {"hue": "gold", "id": "rope"}, {"hue": "plum", "id": null}]
+      "filters": [{"hue": "sky", "id": "sailing"}, {"hue": "gold", "id": "rope"}, {"hue": "plum", "id": null}],
+      "removable": ["rest"]
     }
   },
   {
@@ -212,7 +216,37 @@
       "shown": [{"hue": "terracotta", "id": "k0", "steps": 0}, {"hue": "olive", "id": "k1", "steps": 0}, {"hue": "gold", "id": "k2", "steps": 0}, {"hue": "brick", "id": "k3", "steps": 0}, {"hue": "sky", "id": "k4", "steps": 2}, {"hue": "plum", "id": "k5", "steps": 0}],
       "choices": [{"hue": "terracotta", "id": "k0"}, {"hue": "olive", "id": "k1"}, {"hue": "gold", "id": "k2"}, {"hue": "brick", "id": "k3"}, {"hue": "sky", "id": "k4"}, {"hue": "plum", "id": "k5"}],
       "free": null,
-      "filters": []
+      "filters": [],
+      "removable": ["k0", "k1", "k2", "k3", "k5"]
+    }
+  },
+  {
+    "name": "A kind may be removed only while no present step wears its hue: a deleted step wearing it does not count",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "wind", "label": "wind", "color": "sky", "ord": "a0"},
+          {"id": "gone", "label": "gone", "color": "gold", "ord": "a1", "present": false}
+        ],
+        "kinds": [
+          {"id": "sailing", "hue": "sky", "label": "Sailing", "ord": "a0"},
+          {"id": "rope", "hue": "gold", "label": "Rope", "ord": "a1"},
+          {"id": "rest", "hue": "olive", "label": "Rest", "ord": "a2"}
+        ]
+      }
+    },
+    "expect": {
+      "ids": ["sailing", "rope", "rest"],
+      "owners": [{"hue": "gold", "id": "rope"}, {"hue": "olive", "id": "rest"}, {"hue": "sky", "id": "sailing"}],
+      "collisions": [],
+      "shown": [{"hue": "sky", "id": "sailing", "steps": 1}, {"hue": "gold", "id": "rope", "steps": 0}, {"hue": "olive", "id": "rest", "steps": 0}],
+      "choices": [{"hue": "sky", "id": "sailing"}, {"hue": "gold", "id": "rope"}, {"hue": "olive", "id": "rest"}, {"hue": "terracotta", "id": null}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}],
+      "free": "terracotta",
+      "filters": [],
+      "removable": ["rope", "rest"]
     }
   }
 ]
