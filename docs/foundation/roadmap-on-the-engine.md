@@ -178,7 +178,8 @@ product inverses, each all or nothing on the evidence the engine builds from the
   `reach` of every subtree of its branch: the visibility where it stands, `private` elsewhere.
 - A step's death that ends a subtree's standing writes `reach` `private` on every subtree under it,
   and the step's revival writes it back.
-- A roadmap's death kills every subtree under it. A root's also deletes each step of the owner's
+- A roadmap's death kills every subtree under it, and the Roadmap Coach conversations and proposals
+  about each ([Roadmap Coach](roadmap-coach.md) §9). A root's also deletes each step of the owner's
   other roadmaps whose pointer opened it.
 
 ## §5 Gestures and reading
@@ -207,8 +208,9 @@ Every gesture is an action on the domain kit, the same in each language.
   step follows what that step followed, with nothing written, on every device and on the server
   alike. Removing a followed link that is read through an absent step retires the link from that
   step.
-- **Delete a roadmap** is held, and writes the `tree` record's death. The server does the rest
-  (§4). Undo cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
+- **Delete a roadmap** is held, and writes the `tree` record's death and the death of each Coach
+  conversation and proposal about it or a subtree under it. The server does the rest (§4). Undo
+  cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
 - **Complete and Reset** write the step's `progress` mark. A step that owns a subtree, or whose
   pointer opens a standing roadmap, is complete exactly when that roadmap is, and the gesture
   refuses to mark it. Whether the pointer opens a standing roadmap is read first, from the scopes

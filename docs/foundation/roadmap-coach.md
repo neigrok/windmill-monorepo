@@ -15,7 +15,12 @@ the tool host that carries the abilities out through the room's doors, in
 `web/src/products/roadmap/coach/toolHost.js`. On the iPhone the standing roadmap, the read abilities
 and the direct writes are built, which claim every vector but the context's and the proposal's, with
 the tool host's executor over the phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
-No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+Its records are built (§9): the four types in roadmap's registry, which the server stores and admits, a roadmap's death
+taking the conversations and proposals about it whatever made it, and, on the web and the iPhone, the records as
+roadmap's entities with a turn's opening, end and withdrawal, the read of a conversation, and a roadmap's delete taking
+its conversations, in `web/src/products/roadmap/domain/conversation.js` and
+`apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
+`packages/api-contract/roadmap/domain/conversation-actions.json`. No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -626,9 +631,10 @@ picture's original, as gym keeps one.
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
 - History is one list of every conversation, each tagged with its roadmap or with "All roadmaps",
   the current roadmap's first, filtered by roadmap from the title.
-- Deleting a roadmap deletes the conversations and proposals about it, in the same gesture, on the
-  device that deletes it. A roadmap deleted through the backend's door has them deleted there.
-  Conversations about all roadmaps stay.
+- Deleting a roadmap deletes the conversations and proposals about it and about every subtree under
+  it, in the same gesture, on the device that deletes it. The server removes them, with their
+  messages and write fates, whatever deleted the roadmap: a device, the backend's door or an Undo
+  ([sync engine](engine.md) A.1). Conversations about all roadmaps stay.
 - The opening of a turn and its end are declared once in the domain kit and proven by shared
   vectors, as gym's are, so the iPhone writes the same records.
 
@@ -726,11 +732,6 @@ domain. Beyond what it lists, Coach needs of that domain:
 - diagnostics computed on the device and held to the server's by vectors, and a step's `unknown`
   state (§5);
 - the stamp of every register a read returned, for a proposal's `base` (§7).
-
-In the backend:
-
-- The backend stores and admits none of §9's types, and its door that deletes a roadmap deletes no
-  record that names it.
 
 Not read by Coach: the `outOfOrder` flag on a mark, which only an outside assistant's mark sets.
 
