@@ -85,3 +85,10 @@
   .product-closing > .front-wrap { padding: 56px 0; }
   .product-closing .product-lead-link { margin-top: 8px; }
 }
+
+/* The narrowest phones: a lead link's note stands under its label, its arrow beside the label, so neither breaks in two. */
+@media (max-width: 359px) {
+  .product-lead-link { flex-wrap: wrap; row-gap: 0; }
+  .product-lead-link svg { order: 1; }
+  .product-lead-note { order: 2; flex-basis: 100%; margin-left: 0; }
+}
