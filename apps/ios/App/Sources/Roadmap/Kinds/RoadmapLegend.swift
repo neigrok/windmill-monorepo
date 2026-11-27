@@ -19,13 +19,13 @@ struct RoadmapLegend {
     let kind: Kind?
     // How many of the roadmap's steps wear the entry's hue.
     let steps: Int
+    // Only a kind no step wears can be removed, as the domain reads it (`LegendRead.removable`).
+    let removable: Bool
 
     var id: Subject { kind.map { .kind($0.id) } ?? .hue(hue) }
     // A kind is called by its name, and one with none, like a hue no kind names, by the hue's own.
     var name: String { kind?.label.nilIfEmpty ?? RoadmapModel.Row.hue(hue) ?? hue }
     var description: String { kind?.description ?? "" }
-    // Only a kind no step wears can be removed.
-    var removable: Bool { kind != nil && steps == 0 }
   }
 
   // One of the six kinds a step may wear, as the web lists them (`kindChoices`): its hue, the name the roadmap gives it
@@ -50,7 +50,10 @@ struct RoadmapLegend {
   // The domain's legend (`LegendRead`): its legend shown, which a paste reads its text over, each entry with its steps.
   init(_ tree: RoadmapTree) {
     let read = LegendRead(tree)
-    let entry = { (shown: LegendRead.Shown) -> Entry in Entry(hue: shown.hue, kind: shown.kind, steps: shown.steps) }
+    let removable = Set(read.removable.map { Array($0.id.utf8) })
+    let entry = { (shown: LegendRead.Shown) -> Entry in
+      Entry(hue: shown.hue, kind: shown.kind, steps: shown.steps, removable: shown.kind.map { removable.contains(Array($0.id.utf8)) } ?? false)
+    }
     entries = read.shown.map(entry)
     freeHue = read.free
     choices = read.choices.compactMap { (choice: LegendRead.Choice) -> Choice? in

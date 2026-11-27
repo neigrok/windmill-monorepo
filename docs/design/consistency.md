@@ -910,6 +910,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
   draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
   board of section 09 draws it.
+- **Roadmap · a kind filter whose last step goes.** When the last step wearing a hue the Board's kind filter shows is
+  recoloured or deleted, the web drops that kind from the query (`BoardQuery.among` in `board/Board.js`, which
+  `board/BoardView.jsx` narrows to the hues the filter offers), so the Board shows every remaining step; the iPhone keeps
+  the kind shown and the Board shows nothing, saying so with *Clear Filters* (`Board/BoardReading.swift`, board 02.6b).
+  To draw or rule, for the owner: which the two surfaces do; the domain's Board read would then answer it as a case both
+  rooms read.
 - **Roadmap · the face of an opening the device holds no copy of.** The domain reads a pointer at a roadmap the device
   holds no copy of as `unknown`, not as one that dangles ([the corpus README](../../packages/api-contract/roadmap/domain/README.md):
   unknown trees stay unknown, never a known dangling pointer), and each room gives it a face of its own: the web reads it

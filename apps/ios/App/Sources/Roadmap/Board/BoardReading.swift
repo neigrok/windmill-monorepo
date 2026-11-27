@@ -142,7 +142,7 @@ final class BoardReading {
     self.lens = lens
     guard let step = made, open.step(step) != nil else { return }
     made = nil
-    for part in BoardRead(open.graph, BoardQuery(kinds: kinds, search: needle, branch: branch, reveal: step)).revealing ?? [] {
+    for part in BoardRead.revealing(open.graph, BoardQuery(kinds: kinds, search: needle, branch: branch, reveal: step)) ?? [] {
       switch part {
       case .kinds: kinds = []
       case .search: finding = ""
