@@ -394,6 +394,8 @@ import SyncTesting
     phone.credential = SessionToken("session-2")
     gallery.sessionChanged()
     #expect(gallery.copies.isEmpty && gallery.rows.isEmpty && gallery.state == .reading)
+    await settle(engine, model) { gallery.state != .reading }
+    #expect(gallery.rows == [makeover] && gallery.offer(for: makeover) == .fork)
   }
 
   // The gallery asks no account: a session the server no longer takes is told as its 401, and the page is asked again with

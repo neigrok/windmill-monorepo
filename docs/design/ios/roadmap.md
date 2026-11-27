@@ -86,10 +86,14 @@ One `NavigationStack`, no `TabView`.
   title, so the room has no large title. The bar has one trailing button because the system folds bar
   buttons into an overflow before it truncates a title: with two, any name wider than about 100 pt loses
   them. A longer name truncates in the bar and is whole in the title menu and in All Roadmaps.
-- **The title menu.** The roadmaps (three most recent, each with its progress, a checkmark on the
-  current), *All Roadmaps…*, *New Roadmap*, then this roadmap's *Guide*, *Kinds*, *Activity*, *Share…*,
-  *Export*, *Rename* and *Delete Roadmap*. Renaming is the system's: `.navigationTitle($name)` turns the
-  bar into one field.
+- **The title menu**, which fits every iPhone without scrolling (01.3): *N Set Aside* while changes are set
+  aside; the three most recent roadmaps by name, a checkmark on the current, with *All Roadmaps…* and *New
+  Roadmap*; a `ControlGroup` of the roadmap's own views, *Guide*, *Kinds* and *Activity* (*Guide* reads
+  *Guides* with `books.vertical` while guides from above apply, its VoiceOver label counting them); a second,
+  *Share*, *Export* and *Rename*; and *Delete Roadmap* last. Renaming is the system's: *Rename* is
+  `RenameButton()`, and `.navigationTitle($name)` turns the bar into one field, before iOS 26 beside the title in the
+  principal slot. A title menu gives `@Environment(\.rename)` no action, so a tile of the room's own renames
+  nothing, and the system's tile draws no symbol.
 - **The switch row**, pinned under the bar in `.safeAreaBar(edge: .top)`: a segmented `Picker` with the
   text segments *Board* and *Graph*, a Find button, and the view's one tool — the *Sort and filter* `Menu`
   on the Board, *Fit* on the Graph.
@@ -104,7 +108,7 @@ One `NavigationStack`, no `TabView`.
   a Coach circle beside it. While several steps are selected the foot is the bottom toolbar (*Recolor*,
   *Delete N Steps*). A reader's cover has *Fork Roadmap* there and no composer.
 - **A roadmap gone into** is pushed on the same stack: Back · its title and progress · a `…` `Menu` of its
-  own verbs (*Guide*, *Kinds*, *Activity*, *Export*).
+  own verbs, the same *Guide*, *Kinds* and *Activity* `ControlGroup` over *Export* (07.11b).
 
 `AppModel.Room` gains `.roadmap` (title *Roadmap*, symbol `map`). The Shell's *Where to start?* gains a
 Roadmap door, third after Journal and Gym: ✅ Ready for dev in the Shell file ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)).

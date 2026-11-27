@@ -110,10 +110,10 @@ final class GuideSheet: Identifiable {
   }
 
   // The title menu's item: the guide, and how many guides of the roadmaps above it apply here too.
-  static func menuTitle(above: Int) -> String {
-    guard above > 0 else { return String(localized: "Guide", comment: "The title menu's item that opens the roadmap's guide") }
-    return String(localized: "Guide · +\(above) from above", locale: .copy,
-                  comment: "The title menu's item that opens the roadmap's guide: how many guides of the roadmaps above it apply too")
+  // What VoiceOver reads of the title menu's Guides tile: how many guides of the roadmaps above apply too.
+  static func spoken(above count: Int) -> String {
+    String(localized: "Guides, +\(count) from above", locale: .copy,
+           comment: "VoiceOver's label of the title menu's Guides tile: how many guides of the roadmaps above the roadmap apply too")
   }
 }
 

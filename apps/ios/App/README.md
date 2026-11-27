@@ -198,15 +198,19 @@ bar alone, the room capsule and the account, and a large spinner shows once the 
 (`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
 couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's progress is joined by
 *Offline* while the engine's status says the phone has no connection (10.1). The title's menu (`RoadmapTitle`,
-`.toolbarTitleMenu`) leads with *N Set Aside* while a change is set aside (10.5a), then lists the three most recent
-roadmaps, each name over its progress and the open one checked, then
-*All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*, *Activity*, *Share…*, *Export*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
-becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
+`.toolbarTitleMenu`) fits the screen of every iPhone (01.3): it leads with *N Set Aside* while a change is set aside
+(10.5a), then lists the three most recent roadmaps by name, the open one checked, with *All Roadmaps…* and *New
+Roadmap*; then two rows of tiles (`ControlGroup`), the roadmap's views *Guide*, *Kinds* and *Activity*
+(`RoadmapViewTiles`, whose *Guide* reads *Guides* while guides from above apply and says how many to VoiceOver), and
+*Share*, *Export* and *Rename*; and *Delete Roadmap* last. *Rename* is the system's (`RenameButton` over a
+title that is a binding, before iOS 26 beside the principal title; a title menu gives `@Environment(\.rename)` no action): the bar becomes one field, and its return key
+commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
 roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
-the band holds *Undo* for the hold's nine seconds. *Share…* and *Export* are `Sharing/`'s. While several steps are
+the band holds *Undo* for the hold's nine seconds. *Share* and *Export* are `Sharing/`'s. While several steps are
 selected the title counts them, with no progress and no menu. Before iOS 26 the name and the progress stand in the bar's
-principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
+principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu's tiles or tried its
+rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
 checked. That order is by when a server last received each, or, for a roadmap no server has received, by the newest
@@ -304,7 +308,7 @@ the stack's one, kept by the root's room, so going in or back leaves its Undo st
 stack, raised by the room on top (`deepest`). `NestedScreens.swift` is the pill (`OpeningPill`), the page's section
 (`OpenedSection`), with the owner's … menu of *Change Roadmap* and *Detach Roadmap* over the row, the foot's control
 (`OpenedPrimary`), and a roadmap gone into (`RoadmapInside`): Back, its name over its progress and a … menu of *Guide*,
-*Kinds*, *Activity* and *Export*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
+*Kinds* and *Activity* as the title menu's tiles, over *Export*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
 connection*. `AttachRoadmap.swift` is the list a roadmap is attached from, pushed from the page as `Visit.attach` and
 from the step form's Roadmap row: the person's roadmaps found by name, the one the step stands in dimmed, the one it opens
 checked under *None*; a choice on the page runs `PointStep` at once (`attach(_:to:)`, `detach(_:)`), each with *Undo* for
@@ -488,10 +492,11 @@ lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try agai
 request and what it tells, its holder deciding what the copy does. `SharingRequests` makes the three requests over HTTP
 with the account's token; a 503 is the server busy, and a request given up is no failure.
 
-Share (`RoadmapShare.swift`, 09.1a to 09.2b) is a medium sheet the title menu's *Share…* raises over a root
+Share (`RoadmapShare.swift`, 09.1a to 09.2b) is a medium sheet the title menu's *Share* raises over a root
 (`ShareSheet`, which the room holds as `share` and lets go once another roadmap is open); a roadmap gone into has none.
 Its one switch, *Public link*, reads the roadmap's `visibility` from the phone's copy and writes it by the domain's
-`SetVisibility` through the room's write door, `public` on and `private` off, with no Undo and nothing to confirm; the
+`SetVisibility` through the room's write door, `public` on and `private` off, with no Undo and nothing to confirm, and
+shows the choice at once while the phone's copy is read again; the
 server then writes the reach of the roadmap and of every subtree under it. The switch needs an account and a connection:
 signed out it is dimmed, the footer says *Sign in to share a roadmap.* and *Sign In* at the sheet's foot opens the shell's
 sign-in over the sheet (`AppModel.RoomSignIn.share`); offline it is dimmed and the footer says *Sharing needs a
@@ -507,7 +512,11 @@ simulator launch that names `-roadmap-export` has Export write the file there in
 (`PublicGallery.swift`, 09.12a, 09.12b) is pushed from All Roadmaps as `Visit.gallery`, its `PublicGallery` held by its
 screen alone, so nothing of it outlives the screen: the backend's gallery (`RoadmapSharing.gallery`, `GET /v1/gallery`,
 an account's token where there is one, read again with none where the server no longer takes it), 24 rows a page in the
-server's order, the next page read as the last row comes on screen. A row shows its roadmap's title over its step count
+server's order, the next page read as the last row comes on screen. A later page whose cursor the server no longer knows
+is never asked for again: the gallery is read from its start, the rows on screen kept in their order. What a page says
+of the person is the session's it was read under, so a sign-in, a sign-out or another account reads the gallery again
+and drops the copies its forks answered; a fork a sign-in was for goes ahead only then, once the person's list has
+arrived, and a row that turns out to be theirs opens in the room. A row shows its roadmap's title over its step count
 alone and opens its roadmap as its link does, the person's own in the room and anyone else's on a cover; at its trailing
 edge it says *Listed by you* where the page says `mine`, offers *Open Your Copy* where the person's list holds a roadmap
 forked from it (the first in the list's order, by its `meta.forkedFrom`) or a fork from the row has answered one, which

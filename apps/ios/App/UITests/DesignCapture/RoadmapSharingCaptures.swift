@@ -18,7 +18,7 @@ final class RoadmapSharingCaptures: DesignCapture {
 
   // The Share sheet raised, its switch turned on where the board asks for the roadmap public.
   func share(on board: String, named roadmap: String = "Learn to sail", public turned: Bool, _ look: Look) -> XCUIApplication {
-    let app = titleMenu(of: board, named: roadmap, item: "Share…", look)
+    let app = titleMenu(of: board, named: roadmap, item: "Share", look)
     let toggle = app.switches["roadmap-share-public"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     guard turned else { return app }

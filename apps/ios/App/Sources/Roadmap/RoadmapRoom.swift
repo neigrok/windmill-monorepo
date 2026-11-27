@@ -274,9 +274,9 @@ struct GlassCircle: ViewModifier {
 
 // The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10, 10.1, 10.5a): the open roadmap's name over its progress,
 // with Offline joined to it while the phone has no connection. Its menu leads with Set Aside while a change is set aside,
-// then lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New
-// Roadmap, Guide, which counts the guides from above (08.5), Kinds, Activity, Share… (09.1a), Export (09.3), Rename and
-// Delete Roadmap. Rename is the system's:
+// then lists the three most recent roadmaps by name, the open one checked, with All Roadmaps… and New Roadmap; then a row
+// of tiles, Guide, which reads Guides while guides from above apply (08.5), Kinds and Activity; a second, Share (09.1a),
+// Export (09.3) and Rename; and Delete Roadmap. Rename is the system's:
 // it turns the bar into one field, whose return key commits a name and leaves the old one where the field was emptied.
 // Delete Roadmap asks under the title, on a view that stays on screen once the menu has closed. While several steps are
 // selected the title counts them, with no progress, no menu and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
@@ -290,7 +290,9 @@ struct RoadmapTitle: ViewModifier {
       .overlay(alignment: .top) { Color.clear.frame(width: 1, height: 1).modifier(DeleteRoadmapQuestion(roadmap: roadmap, row: nil)) }
   }
 
-  // The title's menu: Set Aside while it holds a change, the three most recent roadmaps, then this roadmap's verbs.
+  // The title's menu (01.3): Set Aside while it holds a change; the three most recent roadmaps by name, the open one checked,
+  // with All Roadmaps… and New Roadmap; the roadmap's own views as one row of tiles, giving it out and naming it as a
+  // second; and Delete Roadmap last.
   @ViewBuilder var menu: some View {
     if !roadmap.landed.setAside.groups.isEmpty {
       Button(String(localized: "\(roadmap.landed.setAside.changes.count) Set Aside", locale: .copy, comment: "The title menu's first row while changes are set aside: how many"),
@@ -298,21 +300,17 @@ struct RoadmapTitle: ViewModifier {
       Divider()
     }
     ForEach(roadmap.roadmaps.prefix(3), id: \.id) { listed in
-      Toggle(isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) })) {
-        Text(listed.name)
-        if let counts = listed.counts { Text(counts.tally) }
-      }
+      Toggle(listed.name, isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) }))
     }
     Button("All Roadmaps…") { roadmap.path = [.roadmaps] }
+    Button("New Roadmap") { roadmap.nameRoadmap(from: .menu) }
     Divider()
-    Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
-    Divider()
-    Button(GuideSheet.menuTitle(above: open.guidesAbove.count), systemImage: "book.closed") { roadmap.openGuide() }.tint(RoadmapPalette.ink)
-    Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
-    Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
-    Button("Share…", systemImage: "square.and.arrow.up") { roadmap.openShare() }.tint(RoadmapPalette.ink)
-    Button("Export", systemImage: "doc.text") { roadmap.export(from: .menu) }.tint(RoadmapPalette.ink)
-    RenameButton()
+    RoadmapViewTiles(roadmap: roadmap, open: open)
+    ControlGroup {
+      Button("Share", systemImage: "square.and.arrow.up") { roadmap.openShare() }
+      Button("Export", systemImage: "doc.text") { roadmap.export(from: .menu) }
+      RenameButton()
+    }.tint(RoadmapPalette.ink)
     Divider()
     Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
   }
@@ -328,7 +326,10 @@ struct RoadmapTitle: ViewModifier {
       Color.clear.navigationTitle(Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
         .navigationSubtitle(roadmap.subtitle(of: open)).toolbarTitleMenu { menu }
     } else {
-      Color.clear.roomTitle(name, subtitle: roadmap.subtitle(of: open)).toolbarTitleMenu { menu }
+      // Before iOS 26 the name stands in the principal slot; the title's binding beside it gives the menu Rename and the
+      // same field.
+      Color.clear.navigationTitle(Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
+        .roomTitle(name, subtitle: roadmap.subtitle(of: open)).toolbarTitleMenu { menu }
     }
   }
 
@@ -341,5 +342,28 @@ struct RoadmapTitle: ViewModifier {
       Color.clear.navigationTitle(String(localized: "\(selection.steps.count) Selected", locale: .copy,
                                          comment: "The bar while several steps are selected: how many"))
     }
+  }
+}
+
+// A roadmap's own views as one row of tiles, in the title menu and in a roadmap gone into's … menu (01.3, 07.11b): Guide,
+// which reads Guides with a stack of books while guides from above apply, its spoken label counting them, Kinds and
+// Activity.
+struct RoadmapViewTiles: View {
+  let roadmap: RoadmapModel
+  let open: RoadmapModel.OpenRoadmap
+
+  var body: some View {
+    let above = open.guidesAbove.count
+    ControlGroup {
+      Button { roadmap.openGuide() } label: {
+        if above > 0 {
+          Label { Text("Guides").accessibilityLabel(GuideSheet.spoken(above: above)) } icon: { Image(systemName: "books.vertical") }
+        } else {
+          Label("Guide", systemImage: "book.closed")
+        }
+      }
+      Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
+      Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }
+    }.tint(RoadmapPalette.ink)
   }
 }

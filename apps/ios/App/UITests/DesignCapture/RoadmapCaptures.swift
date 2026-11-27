@@ -1195,7 +1195,7 @@ final class RoadmapCaptures: DesignCapture {
   // 08.5: *Learn to sail* gone into from *Become a day skipper*, whose guide stands under its own.
   func testGuidesFromAbove() {
     captureBoard("08.5-roadmap-guides-from-above") { look in
-      let app = guide(of: "roadmap-guide-above", item: "Guide · +1 from above", look)
+      let app = guide(of: "roadmap-guide-above", item: "Guides, +1 from above", look)
       XCTAssertTrue(app.staticTexts["roadmap-guide-above"].waitForExistence(timeout: 10))
       return app
     }

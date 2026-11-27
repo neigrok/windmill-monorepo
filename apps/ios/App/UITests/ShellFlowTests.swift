@@ -668,8 +668,7 @@ import XCTest
     // The bar's field starts from the name, selected: what is typed takes its place.
     let field = app.navigationBars.textFields.firstMatch
     openTitleMenu("Learn to cook", in: app)
-    XCTAssertTrue(app.buttons["Guide"].exists)
-    for unbuilt in ["Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.buttons["Guide"].exists && app.buttons["Share"].exists && app.buttons["Export"].exists)
     app.buttons["Rename"].tap()
     XCTAssertTrue(field.waitForValue("Learn to cook"))
     field.typeText("Cook at home\n")
@@ -710,14 +709,13 @@ import XCTest
     assertLearnToSailBoard(app)
     openTitleMenu("Learn to sail", in: app)
     // The menu's items, in order, outside the bar, whose title the system may report as a button of the same name.
-    let listed = ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Guide", "Kinds", "Activity", "Rename",
-                  "Delete Roadmap"]
+    let listed = ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Guide", "Kinds", "Activity", "Share",
+                  "Export", "Rename", "Delete Roadmap"]
     let named = NSPredicate(format: "label IN %@", listed)
     let items = app.buttons.matching(named)
     let inBar = app.navigationBars.buttons.matching(named).count
     XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label }, listed)
     XCTAssertTrue(items.element(boundBy: inBar).isSelected && !items.element(boundBy: inBar + 1).isSelected)
-    for unbuilt in ["Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     app.buttons["Spanish B1"].tap()
     XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["2 of 7 done"].waitForExistence(timeout: 5))
@@ -736,7 +734,7 @@ import XCTest
     let rows = app.buttons.matching(identifier: "roadmap-listed")
     XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).isSelected }, [false, true, false])
     XCTAssertFalse(app.searchFields.firstMatch.exists, "The search field stands only past eight roadmaps")
-    XCTAssertFalse(app.staticTexts["Planted in Public"].exists || app.buttons["roadmap-new-step"].exists)
+    XCTAssertTrue(app.buttons["roadmap-gallery-open"].exists && !app.buttons["roadmap-new-step"].exists)
     app.buttons["roadmap-list-new"].tap()
     XCTAssertTrue(app.textFields["roadmap-new-name"].waitForExistence(timeout: 10))
     app.buttons["roadmap-new-cancel"].tap()

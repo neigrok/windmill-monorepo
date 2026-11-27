@@ -111,7 +111,7 @@ struct OpenedPrimary: View {
 
 // A roadmap gone into (Roadmap · iOS 07.3, 07.11b), pushed on the room's stack: its Board or its Graph under the switch
 // row and the stack's foot, in a room of its own. Its bar has the system's Back, which names the roadmap gone in from, the
-// roadmap's name over its progress, and its own verbs in a … menu: Guide, Kinds, Activity and Export. Switching, New
+// roadmap's name over its progress, and its own verbs in a … menu, Guide, Kinds and Activity as tiles over Export. Switching, New
 // Roadmap, Share, Rename and Delete Roadmap are the root's, and a subtree has none of them either. One the phone has yet to read waits
 // with a spinner, or with no connection says it is not on this iPhone, as a cover does (09.11); the room's first read is
 // the root's alone to tell.
@@ -160,9 +160,7 @@ struct InsideTitle: ViewModifier {
         if roadmap.selection == nil {
           ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis") {
-              Button(GuideSheet.menuTitle(above: open.guidesAbove.count), systemImage: "book.closed") { roadmap.openGuide() }.tint(RoadmapPalette.ink)
-              Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
-              Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
+              RoadmapViewTiles(roadmap: roadmap, open: open)
               Button("Export", systemImage: "doc.text") { roadmap.export(from: .more) }.tint(RoadmapPalette.ink)
             }.accessibilityIdentifier("roadmap-inside-more")
           }

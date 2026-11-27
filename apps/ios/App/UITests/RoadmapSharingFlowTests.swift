@@ -37,7 +37,7 @@ import XCTest
     let text = app.staticTexts["roadmap-guide-text"], field = app.textViews["roadmap-guide-field"], undo = app.buttons["roadmap-undo"]
     let guide = "Maya and I take the dinghy out on Sundays. This month I want to rig it, leave the dock and get us home without her taking the tiller.\n\nI mark a step done after I’ve tried it on the water. If the wind picks up, we practise reefing and leave docking for next time. Suggest one new step per sail."
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
-    titleMenu("Learn to sail", item: "Guide · +1 from above", in: app)
+    titleMenu("Learn to sail", item: "Guides, +1 from above", in: app)
     XCTAssertTrue(text.waitForExistence(timeout: 10))
     XCTAssertEqual(text.label, guide)
     XCTAssertTrue(app.navigationBars["Guide"].exists && app.buttons["roadmap-guide-close"].exists)
@@ -191,14 +191,14 @@ import XCTest
     XCTAssertTrue(app.roadmapStep("Choose a sailing course").exists)
   }
 
-  // 09.1a, 09.1b, through the model server: Share… raises the sheet on a private roadmap; its switch makes it public, and
+  // 09.1a, 09.1b, through the model server: Share raises the sheet on a private roadmap; its switch makes it public, and
   // the sheet hands its address to the system's share sheet and the pasteboard; turned off, it is private again and the
   // address is no longer offered.
   func testShareMakesTheRoadmapPublicHandsOutItsLinkAndMakesItPrivateAgain() {
     let app = launch("roadmap-learn-to-sail")
     let toggle = app.switches["roadmap-share-public"], footer = app.staticTexts["roadmap-share-footer"], copy = app.buttons["roadmap-share-copy"]
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
-    titleMenu("Learn to sail", item: "Share…", in: app)
+    titleMenu("Learn to sail", item: "Share", in: app)
     XCTAssertTrue(toggle.waitForExistence(timeout: 10) && toggle.isEnabled)
     XCTAssertEqual(footer.label, "Only you can view this roadmap.")
     XCTAssertFalse(copy.exists || app.buttons["roadmap-share-link"].exists)
@@ -232,7 +232,7 @@ import XCTest
     let app = launch("roadmap-many")
     let toggle = app.switches["roadmap-share-public"]
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
-    titleMenu("Learn to sail", item: "Share…", in: app)
+    titleMenu("Learn to sail", item: "Share", in: app)
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     XCTAssertFalse(toggle.isEnabled)
     XCTAssertEqual(app.staticTexts["roadmap-share-footer"].label, "Sign in to share a roadmap.")

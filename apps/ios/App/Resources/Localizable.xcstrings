@@ -2597,8 +2597,11 @@
     "Guide saved" : {
       "comment" : "The band after a roadmap's guide is saved"
     },
-    "Guide · +%lld from above" : {
-      "comment" : "The title menu's item that opens the roadmap's guide: how many guides of the roadmaps above it apply too"
+    "Guides" : {
+
+    },
+    "Guides, +%lld from above" : {
+      "comment" : "VoiceOver's label of the title menu's Guides tile: how many guides of the roadmaps above the roadmap apply too"
     },
     "Gym" : {
 
@@ -3709,6 +3712,9 @@
     "Removing…" : {
 
     },
+    "Rename" : {
+
+    },
     "Renamed" : {
       "comment" : "What a proposed change does to a movement or routine"
     },
@@ -4057,9 +4063,6 @@
     },
     "Shared roadmap · %@" : {
       "comment" : "A shared roadmap's cover: under its name, how far its owner is"
-    },
-    "Share…" : {
-
     },
     "Sharing needs a connection." : {
 

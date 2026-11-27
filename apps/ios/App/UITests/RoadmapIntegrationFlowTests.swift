@@ -36,7 +36,7 @@ import XCTest
     var app = launch(server, session: owner, scenario: "gym-e2e-roadmap-owner")
     let toggle = app.switches["roadmap-share-public"], footer = app.staticTexts["roadmap-share-footer"]
     title(roadmap, in: app).tap()
-    app.buttons["Share…"].tap()
+    app.buttons["Share"].tap()
     XCTAssertTrue(toggle.waitForExistence(timeout: 10) && toggle.isEnabled)
     toggle.switches.firstMatch.tap()
     XCTAssertTrue(footer.waitForLabel("Anyone with this link can view and fork this roadmap, and it can appear in the public gallery.", timeout: 10))
