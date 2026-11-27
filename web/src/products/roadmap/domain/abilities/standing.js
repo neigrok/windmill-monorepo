@@ -119,12 +119,33 @@ export class StandingRoadmaps {
     return reading;
   }
 
-  /** @param {Standing} standing */
-  constructor({ trees, held = [], subtasks = [], listRead = true }) {
-    this.account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)));
+  // `account` is the account the domain reads over the roadmaps, built of `trees` unless given.
+  /** @param {Standing} standing @param {RoadmapAccount} [account] */
+  constructor({ trees, held = [], subtasks = [], listRead = true }, account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)))) {
+    this.account = account;
     this.held = held;
     this.subtasks = subtasks;
     this.listRead = listRead;
+  }
+
+  // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading
+  // reaches: those above it and those its steps open, and theirs in turn. A proposal's fold reads its scratch copy so, at
+  // the cost of the roadmaps it reads rather than of every roadmap the device holds.
+  /** @param {RoadmapTree} tree */
+  replacing(tree) {
+    /** @type {Map<string, RoadmapTree>} */
+    const reached = new Map([[tree.id, tree]]);
+    for (const pending = [tree]; pending.length;) {
+      const next = /** @type {RoadmapTree} */ (pending.pop());
+      const named = [next.parent?.tree, next.meta?.root, ...next.nodes.map((node) => node.branch), ...[...next.pointers.values()].map((pointer) => pointer.opens)];
+      for (const id of named) {
+        const held = id == null || reached.has(id) ? undefined : this.account.trees.get(id);
+        if (held === undefined) continue;
+        reached.set(held.id, held);
+        pending.push(held);
+      }
+    }
+    return new StandingRoadmaps({ trees: [], held: this.held, subtasks: this.subtasks, listRead: this.listRead }, new RoadmapAccount([...reached.values()]));
   }
 
   // §10, §6 rule 1: the roadmap a call names, where it is the conversation's (`about`) or one of the person's own and

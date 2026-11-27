@@ -312,12 +312,11 @@ export class ProposalFold {
     return this.#tree;
   }
 
-  // The scratch copy as the room would show it, its steps' states and what each follows read among every roadmap the
-  // device holds, the scratch in place of the roadmap it copies.
+  // The scratch copy as the room would show it, its steps' states and what each follows read among the roadmaps its
+  // reading reaches, the scratch in place of the roadmap it copies.
   get roadmap() {
     if (this.#roadmap) return this.#roadmap;
-    const trees = this.standing.trees.map((tree) => (tree.id === this.id ? this.tree.json : tree));
-    const opened = new StandingRoadmaps({ ...this.standing, trees }).open(this.id, this.id);
+    const opened = StandingRoadmaps.of(this.standing).replacing(this.tree).open(this.id, this.id);
     precondition('roadmap' in opened, 'a scratch copy stands as the roadmap it copies');
     this.#roadmap = opened.roadmap;
     return this.#roadmap;

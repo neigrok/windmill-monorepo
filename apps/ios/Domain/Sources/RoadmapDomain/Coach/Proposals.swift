@@ -390,13 +390,13 @@ public final class ProposalFold {
     return built
   }
 
-  // The scratch copy as the room would show it, its steps' states and what each follows read among every roadmap the device
-  // holds, the scratch in place of the roadmap it copies.
+  // The scratch copy as the room would show it, its steps' states and what each follows read among the roadmaps its reading
+  // reaches, the scratch in place of the roadmap it copies.
   var roadmap: StandingRoadmap {
     if let cachedRoadmap { return cachedRoadmap }
-    let trees = standing.account.trees.map { $0.id.utf8.elementsEqual(original.id.utf8) ? tree : $0 }
-    let scratch = StandingRoadmaps(trees: trees, held: standing.held, subtasks: standing.subtasks, listRead: standing.listRead, stamps: standing.stamps)
-    guard let opened = try? scratch.open(original.id, about: original.id) else { preconditionFailure("a scratch copy stands as the roadmap it copies") }
+    guard let opened = try? standing.replacing(tree).open(original.id, about: original.id) else {
+      preconditionFailure("a scratch copy stands as the roadmap it copies")
+    }
     cachedRoadmap = opened
     return opened
   }
@@ -618,17 +618,16 @@ public final class ProposalFold {
   // §6 rule 4 over the scratch: whether what a change makes would pass the roadmap's caps of steps, links or kinds, which
   // count what it holds alive, a step under a delete the person can still undo among them.
   func passesCaps(_ writes: [ProposalWrite]) -> Bool {
-    let passes = { (t: String, was: (ProposalWrite) -> Bool, alive: Int, cap: Int) -> Bool in
+    let growth = { (t: String, was: (ProposalWrite) -> Bool) -> Int in
       let lives = writes.filter { $0.t == t && $0.register == "life" }
-      let growth = lives.filter { $0.value == true && !was($0) }.count - lives.filter { $0.value == false && was($0) }.count
-      return growth > 0 && alive + growth > cap
+      return lives.filter { $0.value == true && !was($0) }.count - lives.filter { $0.value == false && was($0) }.count
     }
-    let nodes = records.nodes.filter(\.present).count + held.count
-    let edges = records.edges.filter(\.present).count
-    let kinds = records.kinds.filter(\.present).count
-    return passes("node", { self.records.node($0.ids[0])?.present == true }, nodes, RoadmapCaps.steps)
-      || passes("edge", { self.records.edge($0.ids[0], $0.ids[1])?.present == true }, edges, RoadmapCaps.links)
-      || passes("kind", { self.records.kind($0.ids[0])?.present == true }, kinds, RoadmapCaps.kinds)
+    let steps = growth("node") { self.records.node($0.ids[0])?.present == true }
+    if steps > 0 && records.nodes.filter(\.present).count + held.count + steps > RoadmapCaps.steps { return true }
+    let links = growth("edge") { self.records.edge($0.ids[0], $0.ids[1])?.present == true }
+    if links > 0 && records.edges.filter(\.present).count + links > RoadmapCaps.links { return true }
+    let kinds = growth("kind") { self.records.kind($0.ids[0])?.present == true }
+    return kinds > 0 && records.kinds.filter(\.present).count + kinds > RoadmapCaps.kinds
   }
 
   // §7 The registers a change touches, each with the base entry it adds and whether the turn saw it at another stamp than the

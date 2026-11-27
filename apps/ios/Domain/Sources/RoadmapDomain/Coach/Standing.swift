@@ -146,6 +146,24 @@ public struct StandingRoadmaps: Sendable {
     self.init(trees: trees, held: held, subtasks: subtasks, listRead: listRead, stamps: stamps)
   }
 
+  // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading
+  // reaches: those above it and those its steps open, and theirs in turn. A proposal's fold reads its scratch copy so, at the
+  // cost of the roadmaps it reads rather than of every roadmap the device holds.
+  func replacing(_ tree: RoadmapTree) -> StandingRoadmaps {
+    var reached = ByText<RoadmapTree>()
+    reached[tree.id] = tree
+    var pending = [tree]
+    while let next = pending.popLast() {
+      let named = [next.parent?.tree, next.meta?.root] + next.nodes.map(\.branch) + next.pointers.map { Optional($0.opens) }
+      for case let id? in named where reached[id] == nil {
+        guard let opened = account.byId[id] else { continue }
+        reached[id] = opened
+        pending.append(opened)
+      }
+    }
+    return StandingRoadmaps(trees: Array(reached.values), held: held, subtasks: subtasks, listRead: listRead, stamps: stamps)
+  }
+
   // §10, §6 rule 1: the roadmap a call names, where it is the conversation's (`about`) or one of the person's own and the
   // device holds it whole; else the refusal of the call. A roadmap that is neither is unknown once the device holds the
   // person's whole list, and one the device has not finished bringing, or that stands under one it has not, is unavailable
