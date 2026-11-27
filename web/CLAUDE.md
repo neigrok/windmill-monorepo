@@ -370,6 +370,9 @@ cache generation before promoting it; a failed update retains the previous compl
 enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use; the worker
 keeps the runtime in its asset cache and the weights in `windmill-models-v1` after that use, neither in the shell.
 Inter stays out of the precache, so only the pages in the Instrument look fetch it.
+Outside a staged generation the worker keeps for good only content-hashed files under `/assets/` and fonts: any other
+script or style (`/appearance.js`, `/chrome.css`) is asked of the network each time and answers from its last copy only
+with no connection.
 API responses bypass the worker: its fetch handler declines them, and where the browser takes service
 worker routes the worker routes `/v1/` to the network at install, so a beacon or keepalive request a page sends
 as it hides never waits on the handler. Bounded network navigation falls back to the cached shell.

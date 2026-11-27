@@ -35,7 +35,7 @@ self.addEventListener('activate', (event) => {
     await primeShell().catch(() => {});
     await Promise.all(MARKS.map(async (url) => {
       if (await kept(ICON_CACHE, url)) return;
-      const response = await network(url, true, true).catch(() => null);
+      const response = await network(url, 'reload', true).catch(() => null);
       if (response?.ok && !response.redirected) await keep(ICON_CACHE, url, response);
     }));
     await self.clients.claim();
@@ -77,11 +77,11 @@ function primeShell(urls = []) {
 }
 
 async function stageShell(urls) {
-  const response = await network('/', true, true);
+  const response = await network('/', 'reload', true);
   if (!response.ok || response.redirected) throw new Error('offline-shell-response');
   const html = await response.clone().text();
   const development = html.includes('/@vite/client');
-  const manifestResponse = development ? null : await network('/offline-assets.json', true, true);
+  const manifestResponse = development ? null : await network('/offline-assets.json', 'reload', true);
   if (manifestResponse && (!manifestResponse.ok || manifestResponse.redirected)) throw new Error('offline-shell-manifest');
   const manifest = development ? urls.map(localAsset).filter(Boolean) : await manifestResponse.json();
   if (!Array.isArray(manifest) || manifest.length === 0 || manifest.some((url) => typeof url !== 'string' || localAsset(url) !== url)) {
@@ -100,7 +100,7 @@ async function stageShell(urls) {
   try {
     const cache = await caches.open(name);
     const writes = await Promise.allSettled(required.map(async (url) => {
-      const asset = await network(url, true, true);
+      const asset = await network(url, 'reload', true);
       if (!asset.ok || asset.redirected) throw new Error('offline-shell-asset');
       await cache.put(url, asset);
     }));
@@ -138,14 +138,14 @@ self.addEventListener('fetch', (event) => {
   }
   if (url.pathname.startsWith('/assets/') || ['script', 'style', 'font', 'worker'].includes(request.destination)
     || url.pathname.startsWith('/src/') || url.pathname.startsWith('/@') || url.pathname.startsWith('/node_modules/')) {
-    event.respondWith(hashedAsset(request));
+    event.respondWith(scriptStyleOrFont(request));
     return;
   }
   if (ICON_PATHS.includes(url.pathname)) event.respondWith(icon(request));
 });
 
 async function navigation(request) {
-  try { return await network(request, true); }
+  try { return await network(request, 'reload'); }
   catch (error) {
     const cached = await shell();
     if (cached) return cached;
@@ -153,17 +153,22 @@ async function navigation(request) {
   }
 }
 
-async function hashedAsset(request) {
+// A file a complete generation staged answers as staged. Past that, only a content-hashed name under /assets/ and a font
+// keep their bytes for good: any other script or style (/appearance.js, /chrome.css) is asked of the network each time,
+// revalidated past the HTTP cache, and answers from its last copy only with no connection.
+async function scriptStyleOrFont(request) {
   const url = new URL(typeof request === 'string' ? request : request.url, self.location.origin);
-  const mutable = /^\/(src|@|node_modules)\//.test(url.pathname);
+  const development = /^\/(src|@|node_modules)\//.test(url.pathname);
+  const fixed = url.pathname.startsWith('/assets/') || /\.woff2?$/.test(url.pathname);
   const { current, previous } = await generations();
-  let cached = mutable ? await kept(ASSET_CACHE, request) : null;
+  let cached = development ? await kept(ASSET_CACHE, request) : null;
   if (!cached && current) cached = await kept(current, request);
   if (!cached && previous) cached = await kept(previous, request);
+  if (cached && !development) return cached;
   if (!cached) cached = await kept(ASSET_CACHE, request);
-  if (cached && !mutable) return cached;
+  if (cached && fixed) return cached;
   try {
-    const response = await network(request);
+    const response = await network(request, fixed || development ? undefined : 'no-cache');
     if (response.ok) await keep(ASSET_CACHE, request, response.clone());
     return response;
   } catch (error) {
@@ -207,15 +212,15 @@ self.addEventListener('message', (event) => {
   }
   if (event.data?.type !== 'warm' || !Array.isArray(event.data.urls)) return;
   event.waitUntil(Promise.all([primeShell(event.data.urls).catch(() => {}), ...event.data.urls.map(localAsset)
-    .filter(Boolean).map((url) => hashedAsset(url).catch(() => {}))]));
+    .filter(Boolean).map((url) => scriptStyleOrFont(url).catch(() => {}))]));
 });
 
-async function network(request, reload = false, complete = false) {
+async function network(request, cache, complete = false) {
   const controller = new AbortController();
   let timer;
   try {
     return await Promise.race([
-      fetch(request, { signal: controller.signal, ...(reload ? { cache: 'reload' } : {}) }).then(async (response) => {
+      fetch(request, { signal: controller.signal, ...(cache ? { cache } : {}) }).then(async (response) => {
         if (complete) await response.clone().arrayBuffer();
         return response;
       }),
