@@ -12,9 +12,8 @@
 .product-lead-link { display: inline-flex; align-items: center; gap: 8px; min-height: 26px;
                      font-weight: 500; font-size: 17px; line-height: 26px; color: var(--look-ink-1); }
 .product-lead-link:hover { color: var(--look-ink-1); text-decoration: underline; text-underline-offset: 3px; }
-.product-lead-link svg { flex: none; order: 1; color: var(--look-accent); }
+.product-lead-link svg { flex: none; color: var(--look-accent); }
 .product-leads .product-lead-link + .product-lead-link { color: var(--look-ink-2); }
-.product-lead-note { order: 2; margin-left: 12px; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--look-ink-3); }
 .product-trust { margin-top: 16px; font-size: 14px; line-height: 22px; color: var(--look-ink-3); }
 
 /* ---- what follows a section's features ---- */
@@ -58,8 +57,7 @@
   .product-what { margin-top: 16px; font-size: 16px; line-height: 24px; letter-spacing: 0; }
   .product-leads { display: block; margin-top: 12px; }
   .product-lead-link { display: flex; min-height: 48px; font-size: 16px; line-height: 20px; }
-  .product-lead-link svg { order: 3; margin-left: auto; }
-  .product-lead-note { margin-left: 2px; }
+  .product-lead-link svg { margin-left: auto; }
   .product-trust { margin-top: 8px; }
 
   .product-feature-link { margin-top: 2px; }
@@ -84,11 +82,4 @@
 
   .product-closing > .front-wrap { padding: 56px 0; }
   .product-closing .product-lead-link { margin-top: 8px; }
-}
-
-/* The narrowest phones: a lead link's note stands under its label, its arrow beside the label, so neither breaks in two. */
-@media (max-width: 359px) {
-  .product-lead-link { flex-wrap: wrap; row-gap: 0; }
-  .product-lead-link svg { order: 1; }
-  .product-lead-note { order: 2; flex-basis: 100%; margin-left: 0; }
 }

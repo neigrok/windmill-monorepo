@@ -103,12 +103,12 @@ const PAGES = {
   gym: {
     title: 'Workout Log for Lifters on a Program | Windmill Gym',
     links: [
+      ['#/gym', 'Open the log', { area: 'first', to: 'room' }],
       ['#where', 'Where it runs', { area: 'first', to: 'section' }],
-      ['#/gym', 'Open the web log needs a free account', { area: 'first', to: 'room' }],
       ['/pricing.html', 'Pricing', { area: 'section', to: 'pricing' }],
       ['/connect.html', 'How to connect', { area: 'section', to: 'connect' }],
       ['/privacy.html', 'Privacy', { area: 'section', to: 'privacy' }],
-      ['#where', 'Where it runs', { area: 'closing', to: 'section' }],
+      ['#/gym', 'Open the log', { area: 'closing', to: 'room' }],
     ],
     outline: [
       ['h1', 'A workout log that remembers what you lifted'],
@@ -118,7 +118,7 @@ const PAGES = {
       ['h2', 'How to track progressive overload'], ['h3', 'Estimated 1RM'], ['h3', 'Gaps stay gaps'], ['h3', 'Records'],
       ['h2', 'For the program you already run'], ['h3', 'Your movements'], ['h3', 'Show Coach a picture'], ['h3', 'Bodyweight'],
       ['h2', 'What it will not do'], ['h3', 'No change behind your back'], ['h3', 'No verdict on your body'], ['h3', 'No feed'],
-      ['h2', 'What stays on your phone, and what does not'], ['h3', 'Asking Coach'], ['h3', 'A share link'], ['h3', 'Your own assistant'],
+      ['h2', 'What stays on your device, and what does not'], ['h3', 'Asking Coach'], ['h3', 'A share link'], ['h3', 'Your own assistant'],
       ['h2', 'Where it runs'], ['h3', 'Android'], ['h3', 'iPhone'], ['h3', 'Web'],
       ['h2', 'Questions'],
       ['h2', 'Bring the program you already run.'],

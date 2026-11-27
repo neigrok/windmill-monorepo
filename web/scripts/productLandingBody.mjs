@@ -8,7 +8,7 @@ export const htmlText = (value) => String(value).replace(/&(?=[#A-Za-z0-9])/g, '
 export const htmlAttribute = (value) => htmlText(value).replace(/"/g, '&quot;');
 
 const lines = (text) => String(text).split('\n').map(htmlText).join('<br>');
-const link = ({ href, label, note }) => `<a href="${htmlAttribute(href)}">${htmlText(label)}${note ? ` <span>${htmlText(note)}</span>` : ''}</a>`;
+const link = ({ href, label }) => `<a href="${htmlAttribute(href)}">${htmlText(label)}</a>`;
 
 function section(part) {
   const features = part.features.map((feature) => `<li><h3>${htmlText(feature.title)}</h3><p>${htmlText(feature.text)}</p>${feature.link ? link(feature.link) : ''}</li>`);

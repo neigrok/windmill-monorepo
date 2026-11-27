@@ -77,7 +77,6 @@ function LeadLink({ link, onFollow, area }) {
   return (
     <a className="product-lead-link" href={link.href} onClick={onFollow(area, link)}>
       {link.label}
-      {link.note && <>{' '}<span className="product-lead-note">{link.note}</span></>}
       <Icon name="arrow-right" size={16} strokeWidth={2.2} />
     </a>
   );

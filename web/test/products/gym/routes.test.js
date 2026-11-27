@@ -53,12 +53,14 @@ test('the registry answers for either state of the flag', () => {
   assert.equal(gymRoutes.shell.landingHref, gymRoutes.landing.href);
 });
 
-test('the landing opens on where sets are logged and offers the web log, and no line on it is dated against the flag', async () => {
+test('the landing opens on the log, which needs no account, then where it runs, and no line on it is dated against the flag', async () => {
   const page = await gymRoutes.landing.page();
-  assert.deepEqual(page.first.links.map(({ href, label, note }) => [href, label, note]), [
-    ['#where', 'Where it runs', undefined],
-    ['#/gym', 'Open the web log', 'needs a free account'],
+  assert.deepEqual(page.first.links, [
+    { href: '#/gym', label: 'Open the log', to: 'room' },
+    { href: '#where', label: 'Where it runs', to: 'section' },
   ]);
+  assert.equal(page.first.trust, 'No account needed. Signed out, your log stays in this browser.');
+  assert.deepEqual(page.closing.link, page.first.links[0]);
 
   const words = [
     gymLandingHead.title,
@@ -80,22 +82,22 @@ test('the landing opens on where sets are logged and offers the web log, and no 
   }
 });
 
-test('the brand root is handed gym’s words and its picture, and its door is gym’s landing', () => {
+test('the brand root is handed gym’s words and its picture, and its door is the log', () => {
   const { root } = gymRoutes.landing;
   assert.deepEqual({ kind: root.kind, line: root.line, link: root.link, paragraph: root.paragraph, features: root.features, label: root.picture.label, stages: root.picture.stages }, {
     kind: 'workout log',
     line: 'A coach that answers from your log.',
-    link: { href: '/gym', label: 'See Windmill Gym', to: 'landing' },
+    link: { href: '#/gym', label: 'Open the log', to: 'room' },
     paragraph: 'Ask about your training and the answer comes from your own log, with a receipt of what it read. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill’s Coach, or connect your own assistant to the same log.',
     features: [
       { title: 'It remembers last time', text: 'Each set opens with your target, or last session’s weight and reps, already filled in.' },
       { title: 'Honest progress', text: 'Estimated one-rep max per lift over time, with no invented trend.' },
-      { title: 'On your phone', text: 'Sets are logged in the phone app. It is in beta on Android and iPhone, and not public\u00A0yet.' },
+      { title: 'In your browser', text: 'Log a workout in any browser, with no account. The phone apps are in beta and not public\u00A0yet.' },
     ],
     label: 'Composed session',
     stages: [{ name: 'narrow', width: 356, height: 532 }, { name: 'wide', width: 552, height: 510 }],
   });
-  assert.equal(root.link.href, gymRoutes.landing.href);
+  assert.equal(root.link.href, gymRoutes.switchHash);
   assert.equal(typeof root.picture.Picture, 'object');
   assert.equal(fs.existsSync(path.join(GYM, 'marketing', 'RootPicture.jsx')), true);
 });

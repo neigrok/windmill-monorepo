@@ -56,10 +56,10 @@ const SIGNED_OUT_LINKS = [
   ['/app', 'Open Windmill', { area: 'header', to: 'app' }],
   ['#/app/start', 'Start a tree', { area: 'tools', to: 'room', product: 'roadmap' }],
   ['#/journal', 'Write tonight', { area: 'tools', to: 'room', product: 'journal' }],
-  ['/gym', 'See Windmill Gym', { area: 'tools', to: 'landing', product: 'gym' }],
+  ['#/gym', 'Open the log', { area: 'tools', to: 'room', product: 'gym' }],
   ['#/app/start', 'Start a tree', { area: 'room', to: 'room', product: 'roadmap' }],
   ['#/journal', 'Write tonight', { area: 'room', to: 'room', product: 'journal' }],
-  ['/gym', 'See Windmill Gym', { area: 'room', to: 'landing', product: 'gym' }],
+  ['#/gym', 'Open the log', { area: 'room', to: 'room', product: 'gym' }],
   ['/connect.html', 'How to connect', { area: 'ai', to: 'connect' }],
   ['/pricing.html', 'See pricing', { area: 'ai', to: 'pricing' }],
   ['/roadmap', 'Roadmap', { area: 'sitemap', to: 'landing', product: 'roadmap' }],
@@ -103,7 +103,7 @@ test('the page says what Windmill is under one h1, with its headings in order', 
     ['h2', 'A coach that answers from your log.'],
     ['h3', 'It remembers last time'],
     ['h3', 'Honest progress'],
-    ['h3', 'On your phone'],
+    ['h3', 'In your browser'],
     ['h2', 'Your AI, or ours.'],
     ['h3', 'Yours'],
     ['h3', 'Ours'],
@@ -132,7 +132,7 @@ test('the page says what Windmill is under one h1, with its headings in order', 
     'Ask about your training and the answer comes from your own log, with a receipt of what it read. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill’s Coach, or connect your own assistant to the same log.',
     'Each set opens with your target, or last session’s weight and reps, already filled in.',
     'Estimated one-rep max per lift over time, with no invented trend.',
-    'Sets are logged in the phone app. It is in beta on Android and iPhone, and not public yet.',
+    'Log a workout in any browser, with no account. The phone apps are in beta and not public yet.',
     'Either way the AI guides, and the work stays yours.',
     'Connect the assistant you already have to Roadmap and Gym. It asks for the access it needs, and you approve it.',
     'Windmill’s own AI is built in, and a free account includes some of it each month. Windmill One raises the ceiling for one price. It is not on sale yet.',
@@ -144,7 +144,7 @@ test('no line on the page promises what the product does not do, names a price o
   const page = await frontPage(t, { status: 'ghost', user: null });
   told();
   const words = page.elements.filter((element) => typeof element.type === 'string').map(textOf).join('  ');
-  for (const refused of ['works for you', 'working for you', 'does it for you', 'About', 'or Windmill’s, writes', 'As you write', 'has read every set', 'your whole log', 'the same rules', 'two taps', 'Android today', 'Open the log', 'free allowance', 'training log', 'direct download', 'Android: Gym']) {
+  for (const refused of ['works for you', 'working for you', 'does it for you', 'About', 'or Windmill’s, writes', 'As you write', 'has read every set', 'your whole log', 'the same rules', 'two taps', 'Android today', 'free allowance', 'training log', 'direct download', 'Android: Gym']) {
     assert.equal(words.includes(refused), false, refused);
   }
   assert.doesNotMatch(words, /[$€£]\s?\d|\d+\s?(USD|dollars)/);

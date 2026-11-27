@@ -96,7 +96,7 @@ The page runs in this order:
    account seat signed in; the pill "Open Windmill".
 2. **The first screen.** The heading and the two lines under it.
 3. **The three tools**, a row per open room with its full name, what it is ("skill-tree planner",
-   "daily journal", "workout log"), its line and a link: Start a tree · Write tonight · See Windmill Gym.
+   "daily journal", "workout log"), its line and a link: Start a tree · Write tonight · Open the log.
 4. **A section per open room**, Roadmap, Journal, Gym: a two-line heading, one paragraph and its
    link, the composed picture ("Composed tree", "Composed page", "Composed session") and three named
    features.

@@ -93,13 +93,13 @@ export const gymRoutes = {
     root: {
       kind: t('gym.root.kind'),
       line: t('gym.root.line'),
-      link: { href: '/gym', label: t('gym.root.link'), to: 'landing' },
+      link: { href: '#/gym', label: t('gym.root.link'), to: 'room' },
       title: t('gym.root.title', { break: createElement('br') }),
       paragraph: t('gym.root.paragraph'),
       features: [
         { title: t('gym.root.remembersTitle'), text: t('gym.root.remembersText') },
         { title: t('gym.root.progressTitle'), text: t('gym.root.progressText') },
-        { title: t('gym.root.phoneTitle'), text: t('gym.root.phoneText') },
+        { title: t('gym.root.browserTitle'), text: t('gym.root.browserText') },
       ],
       picture: frontPicture,
     },

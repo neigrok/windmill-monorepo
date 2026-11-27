@@ -9,6 +9,7 @@ import { t } from '../i18n/landing/index.js';
 const pictures = () => import('./LandingPictures.jsx');
 const picture = (name) => lazy(() => pictures().then((module) => ({ default: module[name] })));
 const where = { href: '#where', label: t('gym.landing.whereLink'), to: 'section' };
+const openLog = { href: '#/gym', label: t('gym.landing.openLog'), to: 'room' };
 // The room's night scenes, 328 × 190: twice that with 40 around on a wide stage, the frame's width on a phone.
 const SCENE_STAGES = [{ name: 'narrow', width: 356, height: 205 }, { name: 'wide', width: 736, height: 460 }];
 
@@ -17,7 +18,7 @@ export const gymLandingPage = {
     heading: t('gym.landing.heading', { break: '\n' }),
     headingBreaks: 'wide',
     line: t('gym.landing.line'),
-    links: [where, { href: '#/gym', label: t('gym.landing.webLog'), note: t('gym.landing.webLogNote'), to: 'room' }],
+    links: [openLog, where],
     trust: t('gym.landing.trust'),
     picture: { label: t('gym.landing.firstPicture'), stages: SCENE_STAGES, Picture: picture('SetLogger') },
   },
@@ -137,5 +138,5 @@ export const gymLandingPage = {
     { question: t('gym.landing.questions.browserQuestion'), answer: t('gym.landing.questions.browserAnswer') },
     { question: t('gym.landing.questions.freeQuestion'), answer: t('gym.landing.questions.freeAnswer') },
   ],
-  closing: { line: t('gym.landing.closing'), link: where },
+  closing: { line: t('gym.landing.closing'), link: openLog },
 };
