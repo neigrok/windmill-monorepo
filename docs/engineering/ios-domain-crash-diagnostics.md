@@ -2,9 +2,11 @@
 
 The complete Domain Swift test command remains the authoritative CI gate, with its existing
 parallel scheduling and no test filter. A failed gate triggers one 300-second LLDB reproduction
-of the already-built Domain bundle through the selected toolchain's Swift Testing helper. That bundle is
-SwiftPM's native `WindmillDomainPackageTests.xctest`; Xcode 27's Swift Build makes one bundle per test target
-instead, so on CI's Xcode 27.1 the reproduction reports `domain_bundle_missing`. A
+of the already-built Domain bundles through the selected toolchain's Swift Testing helper. SwiftPM's
+native build makes one bundle, `WindmillDomainPackageTests.xctest`; Swift Build, the default on CI's
+Xcode 27.1, makes one per test target under `.build/debug`. The reproduction runs each in name order
+within the one deadline and stops at the first that does not exit cleanly, so `debugger-<bundle>.json`
+holds that bundle's report and the summary lists every bundle it ran. A
 330-second outer watchdog and seven-minute workflow limit bound setup and debugger execution.
 A successful reproduction run does not turn the original failure green.
 
@@ -32,9 +34,10 @@ outcomes. The debugger terminates its owned process, numeric PID/PPID descendant
 capture. Descendant discovery is bounded to 8192 process rows, 512 children and 32 generations;
 an unavailable or excessive snapshot records incomplete cleanup instead of guessing identities.
 
-Eleven deterministic checks cover report filtering/privacy, bounded stacks, missing bundle behavior,
-bootstrap-to-exit/signal/exception transitions, the fixed deadline and failure-only wiring. All 54
-App Tools checks pass; the workflow wiring is unchanged.
+Fourteen deterministic checks in `Tools/tests/test_domain_ci_diagnostics.py` cover report
+filtering/privacy (Swift Build's per-target bundles included), bounded stacks, missing bundle behavior,
+both bundle layouts and the bundles' shared deadline, bootstrap-to-exit/signal/exception transitions,
+the fixed deadline and failure-only wiring.
 Local Xcode 27.1 / Swift 6.4 probes verify a complete passing Swift Testing
 entry point, synthetic SIGBUS stop data with stack capture, and bounded timeout. Printed synthetic
 content is absent from debugger artifacts. This validates the diagnostic mechanism. CI run 40669599594 captures an exception in
