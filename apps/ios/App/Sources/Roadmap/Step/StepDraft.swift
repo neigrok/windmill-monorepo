@@ -210,20 +210,12 @@ final class StepDraft: Identifiable {
 
   // The steps a link with the draft's step would close a loop through, over the roadmap as the draft would leave it: a
   // step cannot require what comes after the steps it opens, nor open what comes before the steps it requires. The
-  // web's editor reads the first (`blockedPrerequisites`), and has no Opens. Every link is followed, through a step
-  // that is gone too, as the domain follows them where it refuses a loop.
+  // domain reads them (`EffectsRead.loops`, over the draft's sides), as the web's editor does (`blockedPrerequisites`),
+  // which has no Opens.
   func blocked(_ side: Side) -> Set<StepID> {
-    guard let open else { return [] }
-    let index = open.tree.index
-    let onward = side == .requires ? index.children : index.parents
-    let own = index.slot(of: step.description)
-    var reached: Set<Int> = []
-    var pending = chosen(side == .requires ? .opens : .requires).compactMap { (other: StepID) -> Int? in index.slot(of: other.description) }
-    while let vertex = pending.popLast() {
-      guard vertex != own, reached.insert(vertex).inserted else { continue }
-      pending.append(contentsOf: onward[vertex])
-    }
-    return Set(reached.filter { $0 < index.ids.count }.map { StepID(RecordID(index.ids[$0])) })
+    let links = EffectsRead.Links(requires: chosen(.requires).map(\.description), opens: chosen(.opens).map(\.description))
+    guard let loops = open?.effects(of: [step.description], links: links).loops else { return [] }
+    return Set((side == .requires ? loops.requires : loops.opens).filter { !$0.utf8.elementsEqual(step.description.utf8) }.map { StepID(RecordID($0)) })
   }
 
   // A list as it groups its steps (05.3, 05.4): the ones chosen as it opened, which a search never hides; every other

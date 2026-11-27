@@ -174,6 +174,8 @@ export class EffectsRead {
   #chosen;
   /** @type {number} */
   #only;
+  /** @type {string|null} */
+  #drafted;
   /** @type {StepLinks|null} */
   #links;
   /** @type {{complete: boolean}|null} */
@@ -190,6 +192,7 @@ export class EffectsRead {
     this.#graph = graph;
     this.#chosen = [...chosen];
     this.#only = present && chosen.size === 1 ? this.#chosen[0] ?? -1 : -1;
+    this.#drafted = new Set(ids).size === 1 ? ids[0] ?? null : null;
     this.#links = links;
     this.#attach = attach;
     this.kept = graph.starting.length === 1 ? graph.starting[0] ?? null : null;
@@ -245,15 +248,15 @@ export class EffectsRead {
   // The present steps a new link of the one step would close a loop with: `requires`, the steps it may not come to
   // follow, are itself and every step reached onward from the steps it opens; `opens`, the steps it may not come to
   // lead to, are itself and every step reached back from the steps it requires. Live links are walked through absent
-  // steps, never through the step itself.
+  // steps, never through the step itself. A step the roadmap does not hold yet is read by a draft's sides alone.
   get loops() {
-    const only = this.#only;
-    if (only < 0) return null;
     const graph = this.#graph;
+    const own = graph.rawSlot.get(this.#drafted ?? '');
+    if (this.#only < 0 && (this.#links === null || this.#drafted === null)) return null;
     /** @param {string[]|undefined} sides @param {number[][]} onward */
     const reached = (sides, onward) => {
-      const passed = new Set([only]);
-      const pending = sides === undefined ? [...(onward[only] ?? [])] : sides.flatMap((side) => {
+      const passed = new Set(own === undefined ? [] : [own]);
+      const pending = sides === undefined ? [...(onward[own ?? -1] ?? [])] : sides.flatMap((side) => {
         const slot = graph.slot.get(side);
         return slot === undefined ? [] : [slot];
       });

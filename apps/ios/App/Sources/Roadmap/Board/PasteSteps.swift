@@ -87,7 +87,7 @@ extension RoadmapModel {
     let kinds = read.legend.entries.map { (entry: RoadmapLegend.Entry) -> RoadmapPlan.Kind in
       RoadmapPlan.Kind(id: entry.kind?.id ?? "hue:\(entry.hue)", hue: entry.hue, label: entry.kind?.label ?? "", description: entry.kind?.description ?? "")
     }
-    let under = read.graph.starting.first, held = read.tree.nodes.map(\.id)
+    let under = read.effects(of: []).under, held = read.tree.nodes.map(\.id)
     let parsed = await Task.detached { () -> (plan: RoadmapPlan, graft: RoadmapPlan.Graft?) in
       let plan = RoadmapPlan(reading: text, over: kinds, into: true)
       return (plan, plan.graft(under: under, held: held, liveKinds: kinds))

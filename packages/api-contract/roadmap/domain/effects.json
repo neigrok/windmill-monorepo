@@ -582,5 +582,25 @@
       "links": {"requires": ["choose"], "opens": ["knots"]}
     },
     "expect": {"kept": null, "under": "choose", "takesEveryStart": false, "deletable": true, "follow": ["rig"], "relocks": [], "setAside": null, "attachRelocks": null, "loops": {"requires": ["parts", "knots"], "opens": ["choose", "parts"]}}
+  },
+  {
+    "name": "A step the roadmap does not hold yet is read by its draft's sides: it may not require what follows a step it would open, nor open what comes before a step it would require",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "choose", "label": "Choose a course", "ord": "a0"},
+          {"id": "parts", "label": "Name the parts", "ord": "a1"},
+          {"id": "rig", "label": "Rig the boat", "ord": "a2"},
+          {"id": "race", "label": "Enter a race", "ord": "a3"}
+        ],
+        "edges": [{"from": "choose", "to": "parts", "present": true}, {"from": "parts", "to": "rig", "present": true}, {"from": "rig", "to": "race", "present": true}]
+      },
+      "ids": ["knots"],
+      "links": {"requires": ["parts"], "opens": ["rig"]}
+    },
+    "expect": {"kept": "choose", "under": "choose", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": [], "setAside": null, "attachRelocks": null, "loops": {"requires": ["rig", "race"], "opens": ["choose", "parts"]}}
   }
 ]

@@ -168,11 +168,13 @@ which the band keeps), puts in the receipt's place what could not come back (`Ba
 count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic and
 VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the boards
 word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From the
-domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `readEffects`), what a delete or
-a Reset would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step the
+domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `readEffects`), what a delete, a
+Reset, a paste or a new link would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step the
 roadmap starts from cannot be deleted; the steps outside them that follow one of them, which a step's page lists under
 *Opens* and the delete question counts; and what Reset would return to Locked (`OpenStep.relocks`), the steps a Done
-step opened that stand Up next. From the domain's read of
+step opened that stand Up next; where a paste lands (`under`); the steps a Done mark set aside while its step opens a
+roadmap holds Locked, which the step's Roadmap footer counts (`OpenRoadmap.setAside(of:)`); and the steps a new link
+of a step would close a loop with (`loops`), which the step form dims. From the domain's read of
 every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `OpenedTrees.openersOf` and `deleteCost`),
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
@@ -265,7 +267,7 @@ holds text, which raises no prompt, and says *No text to paste* in the band wher
 which the system may ask the person to allow, and says *Paste not allowed* with *Settings*, which opens Windmill's page
 in Settings, where they did not (02.16c); and otherwise reads it into the open roadmap by `RoadmapPlan` over the
 roadmap's legend, the domain's legend shown (`LegendRead.shown`), grafted under its starting step, the first in authored
-order of the steps that follow nothing, the grammar run off the main actor. A text that lands no step says *No text to
+order of the steps that follow nothing (the domain's `EffectsRead.under`), the grammar run off the main actor. A text that lands no step says *No text to
 paste* too. The read-back is a medium sheet of its counts and each step in the state it will land in
 (`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds as one act, and
 the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; an *Add* the domain
@@ -295,8 +297,8 @@ domain's `OpeningRead`): the roadmap, whether the step owns it as its subtree, t
 (open, complete, empty, loop, missing, unread; a pointer at a roadmap the phone holds no copy of, or one that is not the
 person's, reads as missing), its name and count, and the words the Board's pill, the Graph's line, the page's Roadmap
 row, its status row, its footer and its foot say of it. A step that opens a roadmap is complete as the roadmap is, so it
-takes no *Complete* or *Reset*, and a Done mark made by hand is set aside while it opens one, which its footer says with
-the steps that lock again. `RoomStack.swift` is the room's one stack: going in (`goIn(_:by:)`) pushes a `Visit.roadmap`
+takes no *Complete* or *Reset*, and a Done mark made by hand is set aside while it opens one that is not complete, which
+its footer says with the steps that lock again (`OpenRoadmap.setAside(of:)`, the domain's `EffectsRead.setAside`). `RoomStack.swift` is the room's one stack: going in (`goIn(_:by:)`) pushes a `Visit.roadmap`
 on the room's path, and the room makes the roadmap a room of its own (`inside`, in the role `.inside`, one deeper than the
 room it was gone into from, `outside`), which reads the phone's copy as that room last read it and holds its own Board,
 Graph, step pages and sheets. A roadmap a room on the stack already shows is gone into no deeper (`goesIn(to:)`), so a
@@ -542,9 +544,10 @@ on Sky (`DEFAULT_DRAFT_COLOR`); a step needs a name, written without the blanks 
 `CreateStepRequest`, `SaveFieldRequest`); a field stops at the domain's limit, 200 characters of a name and 16,000 of a
 description; the group the step would land in and the steps not done that keep it Locked (`StepDraft.placement`); the six
 kinds, the roadmap's named ones first (`kindChoices`); a list's order, done, up next, then locked, each in the roadmap's
-order, and its search by name (`PrerequisiteChoices`); and the steps that would close a loop (`blocked(_:)`, the web's
-`blockedPrerequisites`), read over the links the draft holds, so a step cannot require what comes after the steps it
-opens, nor open what comes before the steps it requires. The web's form has no *Opens*, and that half is the room's own.
+order, and its search by name (`PrerequisiteChoices`); and the steps that would close a loop (`blocked(_:)`, the
+domain's `EffectsRead.loops` over the links the draft holds, which the web's `blockedPrerequisites` reads too), so a step
+cannot require what comes after the steps it opens, nor open what comes before the steps it requires. The web's form has
+no *Opens*.
 The draft's two refusals of its own stand in a footer and are told as a refused write is: a name typed and then cleared,
 and a tap on a step that would close a loop. A loop the domain refuses at the save is named by the first step chosen that
 closes one.

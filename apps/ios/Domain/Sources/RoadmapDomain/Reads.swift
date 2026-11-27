@@ -300,6 +300,8 @@ public struct EffectsRead: Sendable {
   let graph: FollowGraph
   let chosen: [Int]
   let only: Int?
+  // The one step `ids` names, present or not.
+  let drafted: String?
   let links: Links?
   let attach: Bool?
 
@@ -311,6 +313,7 @@ public struct EffectsRead: Sendable {
     self.graph = graph
     self.chosen = Array(chosen)
     only = present && chosen.count == 1 ? chosen.first : nil
+    drafted = Set(ids.map { Array($0.utf8) }).count == 1 ? ids.first : nil
     self.links = links
     attach = complete
     kept = graph.starting.count == 1 ? graph.starting[0] : nil
@@ -360,13 +363,15 @@ public struct EffectsRead: Sendable {
   }
 
   // Live links are walked through absent steps, never through the step itself: onward from the steps it opens for the
-  // steps it may not require, back from the steps it requires for the steps it may not open.
+  // steps it may not require, back from the steps it requires for the steps it may not open. A step the roadmap does not
+  // hold yet is read by a draft's sides alone.
   public var loops: Loops? {
-    guard let only else { return nil }
     let index = graph.tree.index
+    guard only != nil || (links != nil && drafted != nil) else { return nil }
+    let own = drafted.flatMap { index.vertices[$0] }
     let reached = { (sides: [String]?, onward: [[Int]]) -> [String] in
-      var passed: Set<Int> = [only]
-      var pending = sides.map { $0.compactMap(index.slot(of:)) } ?? onward[only]
+      var passed = Set(own.map { [$0] } ?? [])
+      var pending = sides.map { $0.compactMap(index.slot(of:)) } ?? own.map { onward[$0] } ?? []
       while let vertex = pending.popLast() {
         guard passed.insert(vertex).inserted else { continue }
         pending.append(contentsOf: onward[vertex])
