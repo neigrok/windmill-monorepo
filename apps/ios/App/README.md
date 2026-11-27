@@ -192,8 +192,8 @@ the roadmap's name and progress, the switch row pinned under the bar, whose *Boa
 whose Find is the Board's and whose one tool is the Board's *Sort and filter* or the Graph's *Fit*, and at the foot the
 band over New step, which raises the step form. New step leaves the foot while Find is up and while several steps are
 selected. While Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
-and plays the band's haptic once, whichever screen stands over it. The foot's + is a menu whose tap is New step and whose
-long press offers *New Step* and *Paste Steps* (02.16). Before the phone's copy is first read the room is its
+and plays the band's haptic once, whichever screen stands over it. The foot's + is a button whose tap is New step and whose
+context menu, on a long press, offers *New Step* and *Paste Steps* (02.16). Before the phone's copy is first read the room is its
 bar alone, the room capsule and the account, and a large spinner shows once the read has run half a second
 (`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
 couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's progress is joined by

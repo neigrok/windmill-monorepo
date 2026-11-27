@@ -172,15 +172,15 @@ struct RoadmapViews: View {
         if footed {
           HStack {
             Spacer()
-            // 02.16: a tap is New Step, and a long press offers it above Paste Steps.
-            Menu {
-              Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
-              Button("Paste Steps", systemImage: "list.clipboard") { Task { await roadmap.pasteSteps() } }.accessibilityIdentifier("roadmap-paste-steps")
-            } label: {
-              Label("New Step", systemImage: "plus")
-            } primaryAction: {
-              roadmap.newStep(from: .foot)
-            }.menuOrder(.fixed).modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
+            // 02.16: a tap is New Step, and a long press offers it above Paste Steps. The tap is a Button's, since a Menu's
+            // primary action opens nothing on iOS 26.3 when the app is built with the iOS 27 SDK.
+            Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
+              .modifier(GlassCircle())
+              .contextMenu {
+                Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
+                Button("Paste Steps", systemImage: "list.clipboard") { Task { await roadmap.pasteSteps() } }.accessibilityIdentifier("roadmap-paste-steps")
+              }
+              .menuOrder(.fixed).accessibilityIdentifier("roadmap-new-step")
           }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         }
       }

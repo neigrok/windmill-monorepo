@@ -713,6 +713,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   holds text, so the system asks before it hands over another app's text (02.16c), where
   [Roadmap · iOS](ios/roadmap.md)'s stock parts name `PasteButton` for paste, as New Roadmap's *A Copied Plan* is; that
   question is SpringBoard's alert, which the room waits on with its main actor free.
+- **Roadmap · iOS · the foot's + is a button with a context menu.** 02.16 draws the + as a menu whose tap is New Step and
+  whose long press offers New Step above Paste Steps. Built with the iOS 27 SDK, a SwiftUI `Menu`'s primary action opened
+  no step form on iOS 26.3, so the + is built as a `Button` whose tap opens New Step, with both items in its context menu
+  on a long press (`RoadmapRoom.swift`). The flow is 02.16's; the long press lifts the + under the menu, as a context menu
+  does, where 02.16 draws the menu alone. To draw or rule: draw 02.16's long press as the context menu, or rule the lift
+  acceptable.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
   board of the form draws Coach's composer, and the form is built without it until its screen is; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
