@@ -46,12 +46,17 @@ import SyncTesting
     #expect(done(model))
   }
 
-  func row(_ label: String, in model: RoadmapModel) throws -> RoadmapModel.Row { try #require(find(label, in: model)) }
-
-  func arriving(_ label: String, in model: RoadmapModel) async throws -> RoadmapModel.Row {
-    for _ in 0..<800 where find(label, in: model) == nil { try await Task.sleep(for: .milliseconds(10)) }
-    return try row(label, in: model)
+  // The app's engine is the test bundle's copy as well, and syncs on its own, so each read is asked for a moment apart,
+  // until `done` holds.
+  func settle(_ model: RoadmapModel, until done: (RoadmapModel) -> Bool) async throws {
+    for _ in 0..<800 where !done(model) {
+      try await Task.sleep(for: .milliseconds(10))
+      model.observe()
+    }
+    #expect(done(model))
   }
+
+  func row(_ label: String, in model: RoadmapModel) throws -> RoadmapModel.Row { try #require(find(label, in: model)) }
 
   // A step's row while a read is awaited, which may not hold it yet.
   func find(_ label: String, in model: RoadmapModel) -> RoadmapModel.Row? { model.shown?.rows.values.first { $0.step.label == label } }
@@ -230,18 +235,17 @@ import SyncTesting
   }
 
   // Into *Learn to sail* from its step, and on into *Spanish B1* from *Read the wind*'s page, where *Order at a café*'s note
-  // stands open: the room two deep.
-  // A room gone into reads its roadmap at once on the stepped engine and a moment later on the app's live one.
-  func twoDeep(_ model: RoadmapModel) async throws -> (inside: RoadmapModel, deepest: RoadmapModel) {
+  // stands open: the room two deep. A room gone into reads its roadmap from the room it was gone into from, at once.
+  func twoDeep(_ model: RoadmapModel) throws -> (inside: RoadmapModel, deepest: RoadmapModel) {
     let learn = try row("Learn to sail", in: model)
     model.path = [.step(learn.id, by: .card)]
     model.goIn(learn, by: .foot)
     let inside = try #require(model.inside)
-    let wind = try await arriving("Read the wind", in: inside)
+    let wind = try row("Read the wind", in: inside)
     inside.path = [.step(wind.id, by: .card)]
     inside.goIn(wind, by: .foot)
     let deepest = try #require(inside.inside)
-    let order = try await arriving("Order at a café", in: deepest).id
+    let order = try row("Order at a café", in: deepest).id
     deepest.path = [.step(order, by: .card), .note(of: order)]
     return (inside, deepest)
   }
@@ -254,7 +258,7 @@ import SyncTesting
     let spanish = try spanish(under: sail, by: runner)
     engine.sync()
     await settle(model, on: engine) { $0.roadmaps.count == 3 && self.find("Learn to sail", in: $0)?.opening != nil }
-    let (inside, deepest) = try await twoDeep(model)
+    let (inside, deepest) = try twoDeep(model)
     #expect(deepest.depth == 2 && model.deepest === deepest && inside.deepest === deepest && deepest.root === model)
 
     // An act two rooms deep shows its band on the stack's one band, and the note's words wait in its draft.
@@ -292,8 +296,10 @@ import SyncTesting
     app.preferences.set(skipper.description, forKey: RoadmapModel.lastOpen)
     await app.runtime?.engine.start()
     model.roomOpened()
-    for _ in 0..<800 where model.roadmaps.count < 3 || find("Learn to sail", in: model)?.opening == nil { try await Task.sleep(for: .milliseconds(10)) }
-    let deepest = try await twoDeep(model).deepest
+    // A read made while a pull lands may hold a roadmap half pulled, which reads as not read yet: the room is read again
+    // until it holds every roadmap whole.
+    try await settle(model) { room in room.roadmaps.count == 3 && room.roadmaps.allSatisfy { room.account.graph($0.id) != nil } }
+    let deepest = try twoDeep(model).deepest
     let note = try #require(deepest.note)
     let saved = { () throws -> [String] in try runner.read(spanish.tree.overlay) { try $0.repository(StepNote.self).all(in: .drawn) }.map(\.text) }
 
