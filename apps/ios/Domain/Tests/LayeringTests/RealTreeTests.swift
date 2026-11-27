@@ -26,6 +26,10 @@ import Testing
     #expect(SourceRules.findings(in: try Self.world.get()).sorted().map(\.description) == [])
   }
 
+  @Test func userInterfaceKeepsDraftsOnTheMainActor() throws {
+    #expect(try MainActorDrafts.findings(in: try Self.world.get()).sorted().map(\.description) == [])
+  }
+
   @Test func parserMatchesTheCompiler() throws {
     let resolved = try String(contentsOf: Checkout.iosRoot.appending(path: "Domain/Package.resolved"), encoding: .utf8)
     let compiler = try RunningBuild.current.get().compilerVersion

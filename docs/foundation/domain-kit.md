@@ -219,8 +219,8 @@ manifest. A test target is in the test layer. Every other module is in the one r
 ### §2.3 What kit, domain and engine-API sources may contain
 
 **Swift.** `LayeringTests` parses each file `dump-package` assigns to a module (§2.4 item 5) with
-swift-syntax's `SwiftParser`, whose major version the test checks against the compiler's (602 for
-6.2), and applies these rules to its syntax and tokens. Comments and the text inside string and regex
+swift-syntax's `SwiftParser`, whose major version the test checks is at least the compiler's (604 for
+6.4), and applies these rules to its syntax and tokens. Comments and the text inside string and regex
 literals are not tokens.
 
 | Module | Imports allowed | Determinism lint |
@@ -1512,9 +1512,14 @@ field refuses `stale` against this device's write.
 - Swift: `Draft` is not `Sendable`, and every non-test target of `WindmillKit` and the app is
   main-actor code by default, in language mode 6 with warnings as errors (§2.4 item 3). So the held
   draft is saved only on the main actor: a task, queue or thread that captures it does not compile,
-  and a Dispatch block the SDK leaves unannotated traps when it runs off the main thread. A copy
-  rebuilt elsewhere from the draft's entities is the copy case. `nonisolated`, `@unchecked Sendable`
-  and `nonisolated(unsafe)` opt out deliberately, and are out of scope.
+  and a Dispatch block the SDK leaves unannotated traps when it runs off the main thread. Where a
+  `@preconcurrency` declaration or import downgrades that refusal, Swift only warns, and warnings as
+  errors leave the warning a warning: the SDK's `DispatchQueue.async` and `asyncAfter`, or a
+  `@preconcurrency import` of the kit. So the app and `WindmillKit`'s platform and product UI modules
+  reach no Dispatch queue but `DispatchQueue.main`, and the app imports §2.1's modules without an
+  attribute (§2.3 holds §2.1's packages to that); `LayeringTests` reads both. A copy rebuilt
+  elsewhere from the draft's entities is the copy case. `nonisolated`, `@unchecked Sendable` and
+  `nonisolated(unsafe)` opt out deliberately, and are out of scope.
 - Kotlin: `Draft` is immutable, and each edit returns a new draft, which Compose state or a
   `StateFlow` holds. `save` hands the draft after the save to a write-back the caller must pass, so it
   cannot be dropped by omission, and returns the result:
@@ -1828,7 +1833,8 @@ and a refused or failed save changes nothing in the draft; a failed one committe
 
 *Mechanism.* `save` is synchronous, takes the draft `inout` (Kotlin: hands it to a write-back the
 caller passes) and is a draft's only door, since no action returns a `Saved`; Swift UI code is
-main-actor code in language mode 6 with warnings as errors, and a Kotlin save traps off its draft's
+main-actor code in language mode 6 with warnings as errors, reaching no Dispatch queue but the main one
+and importing the kit without `@preconcurrency` (§10.1), and a Kotlin save traps off its draft's
 thread; `commit` throws only before its transaction commits, and the runner's dismissal only after a
 refusal (§10.1, §9.2 step 7, engine §7.1).
 

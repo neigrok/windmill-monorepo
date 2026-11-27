@@ -9,6 +9,15 @@ import Testing
     #expect(rules.findings(in: fixture.text, file: fixture.name).sorted().map(\.withoutFile) == fixture.expected)
   }
 
+  // Each file under Fixtures/UI judged as the app's source, its header naming each finding (`// expect: …`).
+  @Test(arguments: try Fixture.names(in: Checkout.fixtures.appending(path: "UI"), suffix: ".swift"))
+  func userInterfaceFixture(_ name: String) throws {
+    let text = try String(contentsOf: Checkout.fixtures.appending(path: "UI/\(name)"), encoding: .utf8)
+    let findings = MainActorDrafts.queueFindings(in: text, file: name)
+      + MainActorDrafts.importFindings(in: text, file: name, packageModules: ["DomainKit"])
+    #expect(findings.sorted().map(\.withoutFile) == Fixture.header(of: text)["expect"] ?? [])
+  }
+
   @Test(arguments: try WorldCase.all())
   func worldCase(_ worldCase: WorldCase) async throws {
     let findings = try await Shell.offThePool {
@@ -78,10 +87,12 @@ import Testing
   }
 
   @Test(arguments: [
-    ("602.0.0", "6.2.4", [String]()),
-    ("602.0.0", "6.2", []),
+    ("604.0.0", "6.4", [String]()),
+    ("602.0.0", "6.2.4", []),
+    ("604.0.0", "6.2.4", []),
     ("601.0.1", "6.2.4", ["Package.resolved: parser-version swift-syntax 601.0.1 for Swift 6.2.4 (602)"]),
-    ("603.0.0", "6.2.4", ["Package.resolved: parser-version swift-syntax 603.0.0 for Swift 6.2.4 (602)"]),
+    ("602.0.0", "6.4", ["Package.resolved: parser-version swift-syntax 602.0.0 for Swift 6.4 (604)"]),
+    ("602.0.0", "6", ["Package.resolved: parser-version swift-syntax 602.0.0 for Swift 6 (unread)"]),
   ])
   func parserVersion(pinned: String, compiler: String, expected: [String]) {
     let resolved = #"{"pins": [{"identity": "swift-syntax", "state": {"version": "\#(pinned)"}}]}"#

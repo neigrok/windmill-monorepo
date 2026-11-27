@@ -59,9 +59,11 @@ struct AttackError: Error, CustomStringConvertible {
 }
 
 // The build's modules, found beside the test bundle, and the probe domain module every attack imports, emitted once per
-// run into the build's own scratch directory.
+// run into the build's own scratch directory. SwiftPM's native build system keeps the modules in `Modules` beside the
+// bundle, Swift Build beside the bundle itself; either way they are built for this Mac at the package's macOS floor.
 final class Compiler: Sendable {
   static let shared = Compiler()
+  static let macOSFloor = "15.0"
 
   let modules: URL
   let workspace: URL
@@ -70,13 +72,17 @@ final class Compiler: Sendable {
 
   init() {
     let products = Bundle(for: Compiler.self).bundleURL.deletingLastPathComponent()
-    let (modules, workspace) = (products.appendingPathComponent("Modules"), products.appendingPathComponent("DomainKitAttacks"))
-    let target = "\(products.deletingLastPathComponent().lastPathComponent)15.0"
+    let modules = [products.appendingPathComponent("Modules"), products].first { directory in
+      FileManager.default.fileExists(atPath: directory.appendingPathComponent("DomainKit.swiftmodule").path)
+    } ?? products
+    let workspace = products.appendingPathComponent("DomainKitAttacks")
+    let target = Compiler.hostTriple.map { "\($0)\(Compiler.macOSFloor)" } ?? ""
     try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
     self.modules = modules
     self.workspace = workspace
     self.target = target
     probeDomain = Result { () throws(AttackError) in
+      guard !target.isEmpty else { throw AttackError("swiftc -print-target-info names no host") }
       let emitted = Compiler.swiftc(Compiler.common(modules: modules, workspace: workspace, target: target) + Attack.Mode.domain.flags + [
         "-emit-module", "-module-name", "ProbeDomain", "-emit-module-path", workspace.appendingPathComponent("ProbeDomain.swiftmodule").path,
         Attack.directory.appendingPathComponent("ProbeDomain.swift").path,
@@ -98,6 +104,13 @@ final class Compiler: Sendable {
   }
 
   static let sdk = run("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+
+  // The compiler's own host, e.g. `arm64-apple-macosx`, as `-print-target-info` names it.
+  static let hostTriple: String? = {
+    let info = run("/usr/bin/xcrun", ["swiftc", "-print-target-info"]).output
+    let target = (try? JSONSerialization.jsonObject(with: Data(info.utf8)) as? [String: Any])?["target"] as? [String: Any]
+    return target?["unversionedTriple"] as? String
+  }()
 
   static func swiftc(_ arguments: [String]) -> (status: Int32, output: String) {
     run("/usr/bin/xcrun", ["swiftc"] + arguments)

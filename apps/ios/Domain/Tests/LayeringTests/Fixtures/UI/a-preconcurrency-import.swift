@@ -1,12 +1,11 @@
-// expect: risks causing data races
+// expect: 3: import-modifier DomainKit
+@preconcurrency import ActivityKit
 @preconcurrency import DomainKit
-import ProbeDomain
 
-// INV-14: a @preconcurrency import does not let a copy of the draft cross to another thread.
+// INV-14: a @preconcurrency import of the kit, which lets a copy of the draft cross to another thread with only a warning.
 final class PreconcurrencyCopy {
   let runner: ActionRunner
   var draft: Draft<Card>
-  init(runner: ActionRunner, draft: Draft<Card>) { self.runner = runner; self.draft = draft }
   func paused() {
     let copy = draft
     Task.detached { [runner] in
