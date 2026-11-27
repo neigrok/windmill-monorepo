@@ -26,13 +26,31 @@ struct RoadmapAct {
     try RoadmapAct(try vector.input.member("action").asString(), try vector.input.member("input")).decide(vector)
   }
 
-  // Every act but a roadmap's creation names its roadmap.
+  // Every act but a roadmap's creation and a turn's names its roadmap.
   init(_ action: String, _ input: JSON) throws {
-    if action == "CreateRoadmap" {
+    switch action {
+    case "CreateRoadmap":
       let steps = try input["steps"].map(ImportedSteps.init(form:)) ?? ImportedSteps()
       let kinds = try input.optional("kinds") { try $0.asArray().map(NewKind.init(form:)) }
       self.init(CreateRoadmap(title: try input.member("title").asString(), steps: steps, kinds: kinds), result: \.form)
       return
+    case "OpenTurn":
+      let pictures = try (input["pictures"]?.asArray() ?? []).map(CoachPicture.init(form:))
+      let question = try input.member("question").asString()
+      let act = try input.optionalID("thread").map { (thread: ID<CoachThread>) in OpenTurn(thread: thread, question: question, pictures: pictures) }
+        ?? OpenTurn(about: try OpenTurn.About(form: input.member("about")), question: question, pictures: pictures)
+      self.init(act, result: { ["thread": $0.thread.json, "person": $0.person.json, "coach": $0.coach.json] })
+      return
+    case "EndTurn":
+      guard let state = CoachMessageState(rawValue: try input.member("state").asString()) else { throw ContractError("no message state in \(input)") }
+      self.init(EndTurn(try input.id("message"), state: state, text: try input.optionalString("text"), truncated: try input.optionalBool("truncated") ?? false,
+                        refusal: try input.optionalString("refusal")), result: { .null })
+      return
+    case "WithdrawTurn":
+      let turn = OpenTurn.Turn(thread: try input.id("thread"), person: try input.id("person"), coach: try input.id("coach"))
+      self.init(WithdrawTurn(turn: turn), result: { .strings($0) })
+      return
+    default: break
     }
     let tree: ID<RoadmapEntry> = try input.id("tree")
     switch action {

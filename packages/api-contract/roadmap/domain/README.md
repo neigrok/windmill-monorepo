@@ -7,7 +7,7 @@ the table marks as the server's, by JCS, in `backend/test/products/roadmap/domai
 which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
 claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `effects`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
-`*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
+`*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace`, `landing` and `conversation`), each action case with its records
 reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
 The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
@@ -174,7 +174,8 @@ legacy Board's `SkillTree` does. Other size timings are reported, not assigned n
 
 Every gesture of the spec's §5 is an act on the kit (§9.5) in `web/src/products/roadmap/domain/`:
 `roadmaps.js` (`tree`, `meta`), `steps.js` (`node`, `edge`, and the import), `kinds.js`, `progress.js`
-(`progress`, `pointer`), `workspace.js` (`subtask`, `stepLink`, `stepNote`) and `landing.js` (§6), with
+(`progress`, `pointer`), `workspace.js` (`subtask`, `stepLink`, `stepNote`), `landing.js` (§6) and
+`conversation.js` (Roadmap Coach's `coachThread`, `coachMessage`, `coachProposal` and `coachWriteFate`, roadmap-coach.md §9), with
 `roadmapRules.js` (specs, limits, the genesis kinds, `RoadmapRefusals`) and `ruleBook.js` (the book over
 the registry its caller composes). Files:
 
@@ -188,6 +189,7 @@ the registry its caller composes). Files:
 | `progress-actions.json` | Complete and Reset; a step that opens or owns a roadmap takes no mark; pointers |
 | `workspace-actions.json` | Subtasks and links in their step's order; the note saved as text |
 | `landing-actions.json` | The landing read and its clearing, by the server's order of a link and a delete; the one list of what cannot land |
+| `conversation-actions.json` | A Coach turn's records: its opening, its end and its withdrawal, and the read of one conversation |
 | `undo.json` | Each gesture's Undo and Redo on the kit's harness over the reference server with roadmap's binding (K-3) |
 
 **Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?, confirmed?, spent?}}, device?, ids?, now,
@@ -233,6 +235,10 @@ Before the tree scope's first pull completes nothing has landed.
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
 | `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; written in `self/roadmap`: the note less what was told and less what has landed and says nothing, or no row; no row at all where the roadmap is gone from the person's list (its `tree` record dead or absent in `drawn` once `self/roadmap`'s first pull completes) |
 | read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the links whose lines the note says, each with `removed` (`[{id, name}]`, the absent steps it is linked from) and each `followed` entry with its `name`; a step the device holds is named by its label, one deleted elsewhere by the note's name, and by `null` where the note holds none; and its revived steps now present |
+| `OpenTurn` | `{thread?, about?: {treeId, stepId?}, question, pictures?: [{id, mediaType, localOnly?}]}` | `{thread, person, coach}`; in `self/roadmap`, a new `coachThread` where `about` names what it is about (`treeId` null for every roadmap), titled by the question or `Photo`, the person's `coachMessage` and Coach's running one with the replica, and the device row `runningTurn:<coach>` `{callId: null, bytesBefore: 0}`; a named conversation the device does not draw is `gone`; a question past 8,000 UTF-8 bytes, or blank with no picture, is `coachMessage.question` |
+| `EndTurn` | `{message, state, text?, truncated?, refusal?}` | `null`; Coach's message takes `state`, `text` (its own where none is given), `truncated` and `refusal`, and its `runningTurn:<message>` row goes where the device holds one; a message its writer ended is `unchanged`; a person's or unknown message is `gone` |
+| `WithdrawTurn` | `{thread, person, coach}` | the ids of the pictures forgotten; held; the turn's two messages, its conversation where it held nothing else, the `picture:<id>` rows of their pictures kept on the device, and the turn's `runningTurn` row |
+| read `conversation` | `{thread}` | `{thread, messages, fates}`: the ids of the conversation's messages in the order they were said (by `at`, the person's before Coach's, then by id) and of each message's write fates, by `receipt` then id; `null` where the device does not draw the conversation, its own delete still held included, whatever messages and fates it still holds |
 | read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, made, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note); `made` where the refused content, or a dependent folded into it, creates its subject (its life made alive at its own `born`) |
 
 Limits refuse before anything is written, in this order where a case meets several: the bounds of

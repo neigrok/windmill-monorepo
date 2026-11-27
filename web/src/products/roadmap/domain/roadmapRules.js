@@ -24,6 +24,8 @@ export const RoadmapLimits = Object.freeze({
   importChunk: 500,
   importChunkBytes: CONSTANTS.PUSH_MAX_BYTES / 2,
   maxDepth: 8,
+  // A question to Coach keeps gym's bound (roadmap-coach.md §8).
+  questionBytes: 8_000,
 });
 
 export const GENESIS_KINDS = Object.freeze([
@@ -47,6 +49,11 @@ function chars(path, max, { min = 0, trim = false } = {}) {
   return new TextSpec(path, { unit: 'chars', min, max, trim, nfc: false });
 }
 
+/** @param {string} path @param {number} max @param {{ min?: number }} [rule] */
+function bytes(path, max, { min = 0 } = {}) {
+  return new TextSpec(path, { unit: 'bytes', min, max, trim: false, nfc: false });
+}
+
 export const RoadmapSpecs = Object.freeze({
   title: chars('meta.title', 200),
   guide: chars('meta.guide', 5000),
@@ -67,6 +74,16 @@ export const RoadmapSpecs = Object.freeze({
   url: chars('stepLink.url', 2048, { min: 1, trim: true }),
   linkTitle: chars('stepLink.title', 200, { trim: true }),
   note: chars('stepNote.text', 16000),
+  coachTreeId: chars('coachThread.treeId', 18, { min: 18 }),
+  coachTitle: bytes('coachThread.title', 8000, { min: 1 }),
+  coachStep: chars('coachThread.stepId', 128, { min: 1 }),
+  coachRole: new ChoiceSpec('coachMessage.role', ['person', 'coach']),
+  coachReplica: chars('coachMessage.replica', 35, { min: 35 }),
+  coachText: bytes('coachMessage.text', 131072),
+  coachRefusal: chars('coachMessage.refusal', 64, { min: 1 }),
+  coachPictures: new CountSpec('coachMessage.pictures', { min: 0, max: 1 }),
+  coachPictureId: chars('coachMessage.pictures.id', 64, { min: 8 }),
+  coachMediaType: bytes('coachMessage.pictures.mediaType', 255, { min: 1 }),
 });
 
 // The web links a person is shown and the server takes (packages/api-contract/roadmap-link-urls.json): an address that
@@ -77,6 +94,7 @@ export const RoadmapChecks = Object.freeze({
   cycle: 'edge.cycle',
   wornHue: 'kind.hue.worn',
   opening: 'progress.opening',
+  question: 'coachMessage.question',
 });
 
 /** @type {import('../../../platform/domain-kit/refusals.js').Refusals<RoadmapRefusal>} */

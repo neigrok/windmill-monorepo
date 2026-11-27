@@ -3505,8 +3505,8 @@ owner's overlays and declares those that hold one, with their trees, and the sub
 a subtree (reading prefers the subtree). A device checks each before the gesture
 (Roadmap on the sync engine §5).
 
-**Gestures:** **Held** (9 s): delete a step, delete a roadmap; a roadmap's deletion is not undone once its
-hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
+**Gestures:** **Held** (9 s): delete a step, delete a roadmap, and remove a Coach record (`coachThread`,
+`coachMessage`, `coachProposal`, `coachWriteFate`); a roadmap's deletion is not undone once its hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
 parent's steps or one roadmap's kinds.
 
 **Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),

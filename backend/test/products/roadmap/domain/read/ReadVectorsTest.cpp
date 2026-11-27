@@ -364,12 +364,13 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
 }
 
 // The files a device claims alone: its Board, landing, replica, Activity and effects reads, its gestures and their Undo
-// scenes, and the pinned rule book and values.
+// scenes, a Coach turn's records, and the pinned rule book and values.
 const std::set<std::string> kDevices{"board.json",             "landing.json",           "replica.json",
                                      "activity.json",          "effects.json",           "roadmaps-actions.json",
                                      "steps-actions.json",     "kinds-actions.json",     "progress-actions.json",
                                      "workspace-actions.json", "landing-actions.json",   "undo.json",
-                                     "rules.json",             "values.json"};
+                                     "conversation-actions.json",                        "rules.json",
+                                     "values.json"};
 
 }
 
