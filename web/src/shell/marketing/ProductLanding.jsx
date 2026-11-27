@@ -12,9 +12,7 @@ import { ArrowLink, PictureFrame, SiteFooter, SiteFrame, SiteHeader, followed } 
 import './productLanding.css';
 
 // A heading's break is a newline in the product's words; the first HTML draws the same <br>.
-function Lines({ text }) {
-  return text.split('\n').map((line, index) => (index ? <React.Fragment key={index}><br />{line}</React.Fragment> : line));
-}
+const lines = (text) => text.split('\n').map((line, index) => (index ? <React.Fragment key={index}><br />{line}</React.Fragment> : line));
 
 function Features({ section, onFollow }) {
   return (
@@ -45,7 +43,7 @@ function Section({ product, section, theme, onFollow }) {
     <section id={section.id} className="front-room product-section" aria-labelledby={`${product.id}-${section.key}`}>
       <div className="front-wrap front-rule">
         <div className="front-room-head">
-          <h2 className="front-title" id={`${product.id}-${section.key}`}><Lines text={section.title} /></h2>
+          <h2 className="front-title" id={`${product.id}-${section.key}`}>{lines(section.title)}</h2>
           <p className="front-text">{section.paragraph}</p>
         </div>
         {section.picture && <PictureFrame id={product.id} picture={section.picture} theme={theme} route={product.landing.href} />}
@@ -63,7 +61,7 @@ function Pair({ product, pair, onFollow }) {
       <div className="front-wrap front-rule product-pair-row">
         {pair.map((section) => (
           <section key={section.key} id={section.id} className="product-pair-column" aria-labelledby={`${product.id}-${section.key}`}>
-            <h2 className="front-title" id={`${product.id}-${section.key}`}><Lines text={section.title} /></h2>
+            <h2 className="front-title" id={`${product.id}-${section.key}`}>{lines(section.title)}</h2>
             <p className="front-text">{section.paragraph}</p>
             <Features section={section} onFollow={onFollow} />
             <Tail section={section} onFollow={onFollow} />
@@ -97,7 +95,7 @@ export function ProductLanding({ product, page }) {
     <SiteFrame path={product.landing.href} header={<SiteHeader page={product.id} night={night} />} footer={<SiteFooter page={product.id} night={night} />}>
       <section className="product-first">
         <div className="front-wrap">
-          <h1 className="product-heading" data-breaks={first.headingBreaks}><Lines text={first.heading} /></h1>
+          <h1 className="product-heading" data-breaks={first.headingBreaks}>{lines(first.heading)}</h1>
           <p className="product-what">{first.line}</p>
           <div className="product-leads">
             {first.links.map((link) => <LeadLink key={link.href} link={link} area="first" onFollow={onFollow} />)}

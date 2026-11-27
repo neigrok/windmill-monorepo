@@ -1,9 +1,8 @@
-// The newest roadmap as the home card and the landing offer it back: the person's roadmaps it is the first of, its name,
-// a short name for a button, how long ago it was tended, and the sentence that says so around a progress figure each
-// surface draws its own way.
+// The newest roadmap as the home card offers it back: the person's roadmaps it is the first of, its name, a short name for
+// a button, how long ago it was tended, and the sentence that says so around a progress figure.
 
 import { useEffect, useState } from 'react';
-import { t } from './i18n/entry/index.js';
+import { t } from './i18n/app/index.js';
 import { listTrees } from './persistence/TreeRegistry.js';
 import { ROOM_READS_REPLICA } from './replicaRoom.js';
 

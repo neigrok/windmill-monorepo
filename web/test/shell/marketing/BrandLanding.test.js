@@ -24,7 +24,7 @@ globalThis.fetch = async (url, request) => {
 };
 const told = () => { flush?.(); flush = null; return sent.splice(0); };
 
-const OWN = ['Header', 'Footer', 'ArrowLink', 'Brand'];
+const OWN = ['SiteHeader', 'SiteFooter', 'ArrowLink', 'Brand'];
 
 async function frontPage(t, { status, user }) {
   const { BrandLanding } = await loadScreen('shell/marketing/BrandLanding.jsx');
@@ -69,6 +69,7 @@ const SIGNED_OUT_LINKS = [
   ['/pricing.html', 'Pricing', { area: 'sitemap', to: 'pricing' }],
   ['/changelog.html', 'Changelog', { area: 'sitemap', to: 'changelog' }],
   ['/gallery', 'Gallery', { area: 'sitemap', to: 'gallery' }],
+  ['/support.html', 'Support', { area: 'sitemap', to: 'support' }],
   ['/privacy.html', 'Privacy', { area: 'sitemap', to: 'privacy' }],
   ['/terms.html', 'Terms', { area: 'sitemap', to: 'terms' }],
   ['/refunds.html', 'Refunds', { area: 'sitemap', to: 'refunds' }],
@@ -76,16 +77,16 @@ const SIGNED_OUT_LINKS = [
 
 test('signed out, every link goes where the contract sends it and tells one front_link', async (t) => {
   const page = await frontPage(t, { status: 'ghost', user: null });
-  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
+  assert.deepEqual(told(), [{ name: 'front_open', props: { page: 'front' } }]);
   assert.deepEqual(page.links.map((link) => [link.props.href, link.props['aria-label'] ?? textOf(link)]), SIGNED_OUT_LINKS.map(([href, label]) => [href, label]));
   page.links.forEach((link) => link.props.onClick());
-  assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props })));
+  assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props: { page: 'front', ...props } })));
 });
 
 test('the page says what Windmill is under one h1, with its headings in order', async (t) => {
   const page = await frontPage(t, { status: 'ghost', user: null });
   told();
-  assert.deepEqual([page.frame.props.path, page.frame.props.look], ['/', 'instrument']);
+  assert.deepEqual([page.frame.type.name, page.frame.props.path], ['SiteFrame', '/']);
   assert.deepEqual(page.headings.map((heading) => [heading.type, textOf(heading)]), [
     ['h1', 'Windmill is where a person keeps growing in body, skill and mind.'],
     ['h2', 'Windmill Roadmap'],
@@ -162,7 +163,7 @@ test('each room hands the frame its picture, labelled as composed, with the stag
 
 test('while auth is unanswered a stranger already sees Sign in and the pill, and the page has told its opening', async (t) => {
   const page = await frontPage(t, { status: 'loading', user: null });
-  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
+  assert.deepEqual(told(), [{ name: 'front_open', props: { page: 'front' } }]);
   assert.deepEqual(page.buttons.map(textOf), ['Sign in', 'Feedback']);
   assert.equal(page.named('AccountSeat'), undefined);
   assert.equal(page.links.find((link) => textOf(link) === 'Open Windmill').props.href, '/app');
@@ -177,7 +178,7 @@ test('a link already sent is a reminder that reopens the door on its wait, and t
   assert.deepEqual(page.buttons.map(textOf), ['Link sent — check your emailLink sent', 'Feedback']);
   page.buttons[0].props.onClick();
   assert.equal(page.doors[0].resume.email, 'ada@example.com');
-  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'link_sent' } }]);
+  assert.deepEqual(told(), [{ name: 'front_control', props: { page: 'front', control: 'link_sent' } }]);
   delete globalThis.sessionStorage;
 });
 
@@ -191,8 +192,8 @@ test('signed out, Sign in opens the door in place, and each control tells one fr
   assert.equal(page.doors.length, 1);
   page.buttons[1].props.onClick();
   assert.deepEqual(told(), [
-    { name: 'front_control', props: { control: 'sign_in' } },
-    { name: 'front_control', props: { control: 'feedback' } },
+    { name: 'front_control', props: { page: 'front', control: 'sign_in' } },
+    { name: 'front_control', props: { page: 'front', control: 'feedback' } },
   ]);
 });
 
@@ -213,7 +214,7 @@ test('the switch offers Auto, Light and Dark, starts on Auto and stores what is 
   assert.deepEqual(told(), [], 'the segment already in use tells nothing');
   bar.props.onChange('dark');
   assert.equal(disk.get('windmill:appearance'), 'dark');
-  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'appearance', choice: 'dark' } }]);
+  assert.deepEqual(told(), [{ name: 'front_control', props: { page: 'front', control: 'appearance', choice: 'dark' } }]);
   delete globalThis.localStorage;
 });
 
@@ -221,19 +222,19 @@ test('signed in, the seat stands where Sign in stood and the pill opens the last
   const { homeHash } = await loadScreen('shell/products.js');
   const user = { name: 'Ada', email: 'ada@example.com' };
   const page = await frontPage(t, { status: 'signed-in', user });
-  assert.deepEqual(told(), [{ name: 'front_open', props: undefined }]);
+  assert.deepEqual(told(), [{ name: 'front_open', props: { page: 'front' } }]);
   assert.deepEqual(page.buttons.map(textOf), ['Feedback']);
   const seat = page.named('AccountSeat');
   assert.deepEqual([seat.props.user, seat.props.size, seat.props.display, seat.props.appearance], [user, 28, 'glyph', false]);
   const signedInLinks = SIGNED_OUT_LINKS.map(([href, label]) => [label === 'Open Windmill' ? homeHash() : href, label]);
   assert.deepEqual(page.links.map((link) => [link.props.href, link.props['aria-label'] ?? textOf(link)]), signedInLinks);
   page.links.forEach((link) => link.props.onClick());
-  assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props })));
+  assert.deepEqual(told(), SIGNED_OUT_LINKS.map(([, , props]) => ({ name: 'front_link', props: { page: 'front', ...props } })));
 
   seat.props.onSettings();
   assert.equal(window.location.hash, '#/settings');
   seat.props.onSignOut();
   assert.deepEqual(page.doors, ['sign-out']);
-  assert.deepEqual(told(), [{ name: 'front_control', props: { control: 'settings' } }, { name: 'front_control', props: { control: 'sign_out' } }]);
+  assert.deepEqual(told(), [{ name: 'front_control', props: { page: 'front', control: 'settings' } }, { name: 'front_control', props: { page: 'front', control: 'sign_out' } }]);
   window.location.hash = '';
 });

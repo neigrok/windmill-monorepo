@@ -44,7 +44,7 @@ export const journalLandingPage = {
       paragraph: t('journal.landing.search.paragraph'),
       picture: {
         label: t('journal.root.composed'),
-        stages: [{ name: 'narrow', width: 356, height: 344 }, { name: 'wide', width: 752, height: 362 }],
+        stages: [{ name: 'narrow', width: 356, height: 348 }, { name: 'wide', width: 752, height: 362 }],
         Picture: picture('SearchSheet'),
       },
       features: [

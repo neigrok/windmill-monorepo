@@ -1,11 +1,12 @@
-// Writes one shell per landing: dist/index.html with the head, structured data and no-JS body
-// swapped for that landing's own, out of landingHeads.js.
+// Writes one shell per landing: dist/index.html with the head, structured data and no-JS body swapped for that
+// landing's own, out of landingHeads.js and, for a product's landing, the whole page its product supplies.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { LANDING_HEADS, SITE_ORIGIN, SITE_SCHEMA } from '../src/shell/marketing/landingHeads.js';
+import { LANDING_HEADS, PRODUCT_LANDING_MODULE, SITE_ORIGIN, SITE_SCHEMA } from '../src/shell/marketing/landingHeads.js';
 import { LEGAL_LINKS, LEGAL_SHELF_LABEL, PRODUCT_SHELF_LABEL, SURFACE_LINKS } from '../src/shell/marketing/siteIdentity.js';
 import { PRODUCTS } from '../src/shell/products.js';
+import { htmlAttribute, htmlText, productLandingMain, questionsSchema } from './productLandingBody.mjs';
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const built = readFileSync(join(dist, 'index.html'), 'utf8');
@@ -18,11 +19,6 @@ const PRODUCT_SHELF = [
   ...PRODUCTS.map((product) => [product.landing.href, product.label]),
   ...SURFACE_LINKS.map((link) => [link.href, link.label]),
 ];
-
-// Catalog text is escaped for where it lands; an & that cannot open a character reference stays itself,
-// and a no-break space is written as its reference so the source shows it.
-const htmlText = (value) => String(value).replace(/&(?=[#A-Za-z0-9])/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\u00A0/g, '&nbsp;');
-const htmlAttribute = (value) => htmlText(value).replace(/"/g, '&quot;');
 
 function swapOnce(text, from, to, where) {
   const first = text.indexOf(from);
@@ -39,10 +35,10 @@ function swapInTag(html, marker, from, to) {
   return swapOnce(html, tags[0], swapOnce(tags[0], from, to, `the ${marker} tag`), `dist/index.html at ${marker}`);
 }
 
-function renderSchema(head) {
+function renderSchema(head, page = null) {
   if (!head.schema) throw new Error(`build-landing-shells: the ${head.path} row declares no schema — a shell that reuses the brand root's would assert the wrong url from this one`);
   const url = `${SITE_ORIGIN}${head.path}`;
-  const page = {
+  const webPage = {
     '@type': 'WebPage',
     '@id': `${url}#webpage`,
     'url': url,
@@ -51,40 +47,23 @@ function renderSchema(head) {
     'isPartOf': { '@id': `${SITE_ORIGIN}/#website` },
     'inLanguage': 'en',
   };
-  const graph = { '@context': 'https://schema.org', '@graph': [...SITE_SCHEMA, page, ...head.schema] };
+  const graph = { '@context': 'https://schema.org', '@graph': [...SITE_SCHEMA, webPage, ...head.schema, ...(page ? [questionsSchema(page, url)] : [])] };
   const json = JSON.stringify(graph, null, 2).replace(/</g, '\\u003c').split('\n').map((line) => `      ${line}`).join('\n');
   return `<script type="application/ld+json">\n${json}\n    </script>`;
 }
 
 const shelf = (rows) => rows.map(([href, label]) => `<a href="${htmlAttribute(href)}" style="color: #6B5D4A; margin: 0 10px;">${htmlText(label)}</a>`).join('\n          ');
 
-// A product landing's body. Replaced on mount; inline-styled so it reads before the CSS bundle.
-function renderFallback(head) {
-  const page = head.fallback;
-  const missing = ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes'].filter((field) => !page?.[field]);
-  if (missing.length) throw new Error(`build-landing-shells: the ${head.path} row is missing its fallback ${missing.join(', ')} — a shell without a body of its own says the brand root's words to the one visitor who never runs the page`);
-  const actions = page.actions.map((action, index) => (index === 0
-    ? `<a href="${htmlAttribute(action.href)}" style="display: inline-block; background: ${htmlAttribute(page.accent)}; color: #F9F5EB; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none;">${htmlText(action.label)}</a>`
-    : `<a href="${htmlAttribute(action.href)}" style="display: inline-block; color: #211B13; font-weight: 700; padding: 12px 22px; text-decoration: none;">${htmlText(action.label)}</a>`));
-  const notes = page.notes.map((note) => `        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 20px;">${htmlText(note)}</p>`);
-
+// A product landing's body: the whole page in its product's words, then the site's links. Replaced on mount.
+function renderProductBody(page) {
   return `<div id="root">
-      <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; text-align: center; font-family: system-ui, -apple-system, 'Nunito', sans-serif; color: #211B13;">
-        <p style="font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6B5D4A; margin: 0 0 14px;">${htmlText(page.badge)}</p>
-        <h1 style="font-family: 'Baloo 2', system-ui, sans-serif; font-weight: 700; font-size: 44px; line-height: 1.07; margin: 0 0 16px;">${htmlText(page.h1)}</h1>
-        <p style="font-size: 19px; line-height: 1.5; color: #4A4034; margin: 0 auto 28px; max-width: 560px;">${htmlText(page.sub)}</p>
-        <p style="margin: 0 0 28px;">
-          ${actions.join('\n          &nbsp;\n          ')}
-        </p>
-        <p style="font-size: 14px; color: #6B5D4A; margin: 0 0 28px;">${htmlText(page.trust)}</p>
-${notes.join('\n')}
-        <nav aria-label="${htmlAttribute(LEGAL_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A;">
-          ${shelf(LEGAL_SHELF)}
-        </nav>
-        <nav aria-label="${htmlAttribute(PRODUCT_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A; margin-top: 8px;">
-          ${shelf(PRODUCT_SHELF)}
-        </nav>
-      </main>
+      ${productLandingMain(page).split('\n').join('\n      ')}
+      <nav aria-label="${htmlAttribute(LEGAL_SHELF_LABEL)}">
+        ${shelf(LEGAL_SHELF)}
+      </nav>
+      <nav aria-label="${htmlAttribute(PRODUCT_SHELF_LABEL)}">
+        ${shelf(PRODUCT_SHELF)}
+      </nav>
     </div>`;
 }
 
@@ -118,11 +97,13 @@ const UNFURL_SENTINELS = ['<!-- meta:unfurl:start -->', '<!-- meta:unfurl:end --
 
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'));
 
+// The shell's product landing and the product's page, each with its stylesheets.
 function preloadTags(head) {
-  const entry = manifest[head.module];
-  if (!entry) throw new Error(`build-landing-shells: ${head.path} names the module ${head.module}, which is not in the Vite manifest — rename it in landingHeads.js or the shell preloads nothing`);
-  const tags = [`<link rel="modulepreload" crossorigin href="/${entry.file}">`];
-  for (const css of entry.css ?? []) tags.push(`<link rel="stylesheet" crossorigin href="/${css}">`);
+  const tags = [PRODUCT_LANDING_MODULE, head.module].flatMap((module) => {
+    const entry = manifest[module];
+    if (!entry) throw new Error(`build-landing-shells: ${head.path} needs the module ${module}, which is not in the Vite manifest — rename it where it is named or the shell preloads nothing`);
+    return [`<link rel="modulepreload" crossorigin href="/${entry.file}">`, ...(entry.css ?? []).map((css) => `<link rel="stylesheet" crossorigin href="/${css}">`)];
+  });
   return `${tags.join('\n    ')}\n  </head>`;
 }
 
@@ -130,9 +111,9 @@ const rootSchema = renderSchema(root);
 const rootFallback = renderRootFallback(root);
 
 const shells = [];
-for (const head of LANDING_HEADS) {
-  if (head.path === '/') continue;
-
+for (const product of PRODUCTS) {
+  const head = product.landing.head;
+  const page = await product.landing.page();
   const canonical = `${SITE_ORIGIN}${head.path}`;
   let html = swapOnce(built, `<title>${htmlText(root.title)}</title>`, `<title>${htmlText(head.title)}</title>`, 'dist/index.html');
   html = swapInTag(html, 'name="description"', htmlAttribute(root.description), htmlAttribute(head.description));
@@ -144,8 +125,8 @@ for (const head of LANDING_HEADS) {
   html = swapInTag(html, 'name="twitter:title"', htmlAttribute(root.twitterTitle), htmlAttribute(head.twitterTitle));
   html = swapInTag(html, 'name="twitter:description"', htmlAttribute(root.twitterDescription), htmlAttribute(head.twitterDescription));
   html = swapInTag(html, 'name="twitter:image:alt"', htmlAttribute(root.imageAlt), htmlAttribute(head.imageAlt));
-  html = swapOnce(html, rootSchema, renderSchema(head), 'dist/index.html at the JSON-LD block');
-  html = swapOnce(html, rootFallback, renderFallback(head), 'dist/index.html at the no-JS fallback body');
+  html = swapOnce(html, rootSchema, renderSchema(head, page), 'dist/index.html at the JSON-LD block');
+  html = swapOnce(html, rootFallback, renderProductBody(page), 'dist/index.html at the no-JS fallback body');
   html = swapOnce(html, '</head>', preloadTags(head), 'dist/index.html at </head>');
 
   for (const sentinel of UNFURL_SENTINELS) {
@@ -158,7 +139,7 @@ for (const head of LANDING_HEADS) {
   shells.push(`dist${head.path}/index.html`);
 }
 
-console.log(`build-landing-shells: ${shells.length} shells written — head, structured data and no-JS body asserted and swapped in each — ${shells.join(', ')}`);
+console.log(`build-landing-shells: ${shells.length} shells written — head, structured data with the page's questions and the whole page as the no-JS body in each — ${shells.join(', ')}`);
 
 const sitemap = new Set(LANDING_HEADS.map((head) => `${SITE_ORIGIN}${head.path}`));
 for (const file of readdirSync(dist).filter((name) => name.endsWith('.html'))) {

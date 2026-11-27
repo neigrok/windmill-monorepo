@@ -713,5 +713,6 @@
   "roadmap.accountChoice.keepTitle": "Keep unsent changes?",
   "roadmap.accountChoice.keepLead": "{count, plural, one {{shown} change hasn’t reached your account.} other {{shown} changes haven’t reached your account.}}",
   "roadmap.accountChoice.changedRoadmap": "{name} · {count, plural, one {{shown} change} other {{shown} changes}}",
-  "roadmap.accountChoice.keepNote": "{count, plural, one {Keep it for your next sign-in. Discard removes it from this browser.} other {Keep them for your next sign-in. Discard removes them from this browser.}}"
+  "roadmap.accountChoice.keepNote": "{count, plural, one {Keep it for your next sign-in. Discard removes it from this browser.} other {Keep them for your next sign-in. Discard removes them from this browser.}}",
+  "roadmap.quests.attribution": "Three of the dev paths adapted from the roadmap.sh community maps (CC BY-SA)."
 }
