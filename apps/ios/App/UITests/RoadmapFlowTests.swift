@@ -16,10 +16,11 @@ import XCTest
   override func setUp() { continueAfterFailure = false }
 
   // A flow that takes a band's Undo launches with every band standing ten minutes (`-band-stands`), so a slow runner
-  // cannot outlast one.
-  func launch(_ board: String, takingUndo: Bool = false, asking more: [String] = []) -> XCUIApplication {
+  // cannot outlast one. Text `copying` names, the app copies itself at launch (`WM_COPIED_STEPS`).
+  func launch(_ board: String, takingUndo: Bool = false, asking more: [String] = [], copying copied: String? = nil) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", board] + (takingUndo ? ["-band-stands", "600"] : []) + more
+    app.launchEnvironment["WM_COPIED_STEPS"] = copied
     app.launch()
     return app
   }
@@ -727,21 +728,25 @@ import XCTest
   // Roadmap · iOS 02.16 to 02.18, 02.16b and 02.16c, R-15: Paste Steps in the +'s long press says when the clipboard
   // holds no text and when the system was not allowed to hand it over; allowed, it reads the copied list back under the
   // roadmap's starting step in the states its steps will land in; Cancel writes nothing, Add writes them with the mark
-  // the list brings done, and Undo takes the paste back whole. Settings leads to Windmill's page in Settings.
+  // the list brings done, and Undo takes the paste back whole. Settings leads to Windmill's page in Settings. Another
+  // app's list is refused; the list the app copied itself is read without the system's question.
   func testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack() {
+    let daySail = "## Day sail\n- [x] Check the forecast\n- Plan the passage\n- Brief the crew\n- Pack the boat"
     UIPasteboard.general.items = []
-    let app = launch("roadmap-learn-to-sail", takingUndo: true)
+    var app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 30))
     app.pasteSteps()
     XCTAssertTrue(app.staticTexts["No text to paste"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["roadmap-undo"].exists || app.navigationBars["Paste Steps"].exists)
 
-    UIPasteboard.general.string = "## Day sail\n- [x] Check the forecast\n- Plan the passage\n- Brief the crew\n- Pack the boat"
-    app.pasteSteps(allowing: false)
+    UIPasteboard.general.string = daySail
+    app.pasteSteps(refusing: true)
     XCTAssertTrue(app.staticTexts["Paste not allowed"].waitForExistence(timeout: 5) && app.buttons["roadmap-settings"].exists)
     XCTAssertFalse(app.navigationBars["Paste Steps"].exists)
 
-    app.pasteSteps(allowing: true)
+    app = launch("roadmap-learn-to-sail", takingUndo: true, copying: daySail)
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 30))
+    app.pasteSteps()
     XCTAssertTrue(app.navigationBars["Paste Steps"].waitForExistence(timeout: 10))
     // The medium sheet's list draws the rows on screen alone.
     XCTAssertEqual(Array(planned(app).prefix(4)), ["Up next, Day sail", "Done, Check the forecast", "Locked, Plan the passage", "Locked, Brief the crew"])
@@ -749,7 +754,7 @@ import XCTest
     app.buttons["roadmap-paste-cancel"].tap()
     XCTAssertTrue(app.navigationBars["Paste Steps"].waitForNonExistence(timeout: 5) && app.staticTexts["3 of 8 done"].exists)
 
-    app.pasteSteps(allowing: true)
+    app.pasteSteps()
     XCTAssertTrue(app.buttons["roadmap-paste-add"].waitForExistence(timeout: 10))
     app.buttons["roadmap-paste-add"].tap()
     XCTAssertTrue(app.staticTexts["Added 5 steps"].waitForExistence(timeout: 10) && app.buttons["roadmap-undo"].exists)
@@ -759,7 +764,7 @@ import XCTest
     XCTAssertFalse(app.roadmapStep("Day sail").exists)
 
     UIPasteboard.general.string = "- Rig the boat"
-    app.pasteSteps(allowing: false)
+    app.pasteSteps(refusing: true)
     XCTAssertTrue(app.buttons["roadmap-settings"].waitForExistence(timeout: 5))
     app.buttons["roadmap-settings"].tap()
     XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.Preferences").wait(for: .runningForeground, timeout: 10))

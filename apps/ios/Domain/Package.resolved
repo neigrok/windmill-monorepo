@@ -1,5 +1,5 @@
 {
-  "originHash" : "98fa2d92ce9c9c12a86e0cc151ffb7da42b8d24e493b2dda693062c5cbcf263f",
+  "originHash" : "39607bd6e4e426c77f535e87c910c3a53e59fd8ab1571ca38a4daf81e9f39be7",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-syntax.git",
       "state" : {
-        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
-        "version" : "602.0.0"
+        "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
+        "version" : "604.0.0"
       }
     }
   ],

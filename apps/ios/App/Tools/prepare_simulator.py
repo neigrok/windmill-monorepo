@@ -17,7 +17,7 @@ def first_boot_preferences(now):
             "KeyboardAutocorrection": False, "KeyboardPrediction": False, "KeyboardContinuousPathEnabled": False,
         },
         "com.apple.Accessibility": {setting: True for setting in AUTOMATION},
-        # iOS 26.5 keeps Live Activity consent outside simctl privacy's services.
+        # The simulator keeps Live Activity consent outside simctl privacy's services.
         "com.apple.liveactivitiesd": {
             "AppAuthorizationRecords": {APP: True}, "FirstResponseRecords": [APP], "SecondResponseRecords": [APP],
         },

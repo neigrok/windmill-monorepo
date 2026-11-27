@@ -117,14 +117,51 @@ def capture(debugger, executable, arguments, directory, platform, output, second
         Path(output).write_bytes(data)
 
 
+# The Domain package's test bundles: SwiftPM's native build makes one, Swift Build one per test target, under .build/debug.
+def domain_bundles(package):
+    built = package / ".build/debug"
+    native = built / "WindmillDomainPackageTests.xctest"
+    bundles = [native] if native.is_dir() else sorted(built.glob("*.xctest"))
+    return [bundle / "Contents/MacOS" / bundle.stem for bundle in bundles if (bundle / "Contents/MacOS" / bundle.stem).is_file()]
+
+
+def reproduce_bundle(binary, helper, platform, package, result_path, seconds):
+    result_path.unlink(missing_ok=True)
+    summary = {"bundle": binary.name[:256], "seconds": round(seconds)}
+    arguments = ["--test-bundle-path", str(binary.resolve()), "--testing-library", "swift-testing"]
+    script = Path(__file__).resolve()
+    invocation = (f"script domain_ci_debugger.capture(lldb.debugger, {str(helper)!r}, {arguments!r}, "
+                  f"{str(package.resolve())!r}, {platform!r}, {str(result_path.resolve())!r}, {round(seconds)})")
+    command = ["xcrun", "lldb", "--no-lldbinit", "--batch", "--no-use-colors",
+               "-o", "command script import " + json.dumps(str(script)), "-o", invocation]
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True) as runner:
+        try:
+            summary["debuggerExit"] = runner.wait(timeout=seconds + 30)
+        except subprocess.TimeoutExpired:
+            summary["watchdogChildCleanup"] = terminate_children(runner.pid)
+            os.killpg(runner.pid, signal.SIGKILL)
+            runner.wait()
+            summary["outcome"] = "watchdog_timeout"
+        finally:
+            summary["debuggerChildCleanup"] = terminate_children(runner.pid)
+            try:
+                os.killpg(runner.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    if result_path.is_file() and result_path.stat().st_size <= 8 * 1024 * 1024:
+        summary["outcome"] = json.loads(result_path.read_text())["outcome"]
+    elif "outcome" not in summary:
+        summary["outcome"] = "no_report"
+    return summary
+
+
+# Each bundle in turn, within the one deadline, until one stops, crashes or times out; its report is that bundle's.
 def reproduce(package, output, seconds=300):
     output.mkdir(parents=True, exist_ok=True)
-    result_path = output / "debugger.json"
-    result_path.unlink(missing_ok=True)
     summary = {"outcome": "unavailable", "seconds": seconds, "entryPoint": "swift-testing",
                "maximumThreads": 128, "maximumFramesPerThread": 64, "maximumImages": 512}
-    binary = package / ".build/debug/WindmillDomainPackageTests.xctest/Contents/MacOS/WindmillDomainPackageTests"
-    if not binary.is_file():
+    binaries = domain_bundles(package)
+    if not binaries:
         summary["reason"] = "domain_bundle_missing"
     else:
         try:
@@ -138,30 +175,18 @@ def reproduce(package, output, seconds=300):
                     summary[name] = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15).stdout[:2048].strip()
                 platform = subprocess.run(["xcrun", "--sdk", "macosx", "--show-sdk-platform-path"],
                                           check=True, capture_output=True, text=True, timeout=15).stdout.strip()
-                arguments = ["--test-bundle-path", str(binary.resolve()), "--testing-library", "swift-testing"]
-                script = Path(__file__).resolve()
-                invocation = (f"script domain_ci_debugger.capture(lldb.debugger, {str(helper)!r}, {arguments!r}, "
-                              f"{str(package.resolve())!r}, {platform!r}, {str(result_path.resolve())!r}, {seconds})")
-                command = ["xcrun", "lldb", "--no-lldbinit", "--batch", "--no-use-colors",
-                           "-o", "command script import " + json.dumps(str(script)), "-o", invocation]
-                with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True) as runner:
-                    try:
-                        summary["debuggerExit"] = runner.wait(timeout=seconds + 30)
-                    except subprocess.TimeoutExpired:
-                        summary["watchdogChildCleanup"] = terminate_children(runner.pid)
-                        os.killpg(runner.pid, signal.SIGKILL)
-                        runner.wait()
-                        summary["outcome"] = "watchdog_timeout"
-                    finally:
-                        summary["debuggerChildCleanup"] = terminate_children(runner.pid)
-                        try:
-                            os.killpg(runner.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                if result_path.is_file() and result_path.stat().st_size <= 8 * 1024 * 1024:
-                    summary["outcome"] = json.loads(result_path.read_text())["outcome"]
-                elif summary["outcome"] != "watchdog_timeout":
-                    summary["outcome"] = "no_report"
+                deadline = time.monotonic() + seconds
+                summary["bundles"] = []
+                for binary in binaries:
+                    left = deadline - time.monotonic()
+                    if left < 1:
+                        summary["outcome"] = "timed_out"
+                        break
+                    result = reproduce_bundle(binary, helper, platform, package, output / f"debugger-{binary.name}.json", left)
+                    summary["bundles"].append(result)
+                    summary["outcome"] = result["outcome"]
+                    if result["outcome"] != "exited":
+                        break
         except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             summary["outcome"] = "setup_failed"
     (output / "debugger-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

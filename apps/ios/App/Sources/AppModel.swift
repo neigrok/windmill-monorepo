@@ -181,7 +181,7 @@ final class AppModel {
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
                           wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
                           role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), sync: sync,
-                          handedFile: RoadmapFixture.chosenFile, exportFile: RoadmapFixture.exportFile)
+                          clipboard: RoadmapFixture.clipboard(), handedFile: RoadmapFixture.chosenFile, exportFile: RoadmapFixture.exportFile)
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom

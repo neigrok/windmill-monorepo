@@ -84,6 +84,16 @@ class DomainDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(result))
         sleep.assert_not_called()
 
+    def test_swift_build_bundles_of_the_domain_package_count(self):
+        domain = "/work/apps/ios/Domain/.build/out/Products/Debug/LayeringTests.xctest/Contents/MacOS/LayeringTests"
+        other = "/work/apps/ios/Sync/.build/out/Products/Debug/SyncCoreTests.xctest/Contents/MacOS/SyncCoreTests"
+        self.report("swiftpm-testing-helper-domain.ips", process="swiftpm-testing-helper", usedImages=[{"path": domain}])
+        self.report("swiftpm-testing-helper-sync.ips", process="swiftpm-testing-helper", usedImages=[{"path": other}])
+        summary, sleep = self.collect()
+        self.assertEqual(["domain-crash-1.json"], summary["reports"])
+        self.assertEqual([{"path": domain}], json.loads((self.output / "domain-crash-1.json").read_text())["usedImages"])
+        sleep.assert_not_called()
+
     def test_missing_or_partial_reports_wait_only_the_bounded_window(self):
         (self.reports / "WindmillDomainPackageTests-partial.ips").write_text('{"bug_type":"309"}\n{')
         (self.reports / "WindmillDomainPackageTests-invalid.ips").write_text('[]\n{}')
@@ -221,6 +231,47 @@ class DomainDebuggerTests(unittest.TestCase):
                               "reason": "domain_bundle_missing"}, summary)
             self.assertEqual(summary, json.loads((root / "output/debugger-summary.json").read_text()))
             run.assert_not_called()
+
+    def test_bundles_are_the_native_build_one_or_swift_builds_per_target(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            def bundle(package, name):
+                binary = root / package / ".build/debug" / f"{name}.xctest/Contents/MacOS" / name
+                binary.parent.mkdir(parents=True)
+                binary.touch()
+                return binary
+            native = bundle("native", "WindmillDomainPackageTests")
+            layering, kit = bundle("swift-build", "LayeringTests"), bundle("swift-build", "DomainKitTests")
+            self.assertEqual([native], self.debugger.domain_bundles(root / "native"))
+            self.assertEqual([kit, layering], self.debugger.domain_bundles(root / "swift-build"))
+
+    def test_bundles_run_in_turn_within_one_deadline_until_one_stops(self):
+        from types import SimpleNamespace
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            helper = root / "toolchain/libexec/swift/pm/swiftpm-testing-helper"
+            helper.parent.mkdir(parents=True)
+            helper.touch()
+            for name in ("CatalogGenTests", "DomainKitTests", "LayeringTests"):
+                binary = root / "Domain/.build/debug" / f"{name}.xctest/Contents/MacOS" / name
+                binary.parent.mkdir(parents=True)
+                binary.touch()
+            answers = {"--find": str(root / "toolchain/bin/swift"), "--show-sdk-platform-path": "/platform"}
+            run = lambda command, **_: SimpleNamespace(stdout=next((v for k, v in answers.items() if k in command), "version"))
+            outcomes = iter([{"outcome": "exited"}, {"outcome": "stopped"}])
+            calls = []
+            def bundle(binary, helper, platform, package, result_path, seconds):
+                calls.append((binary.name, result_path.name, seconds))
+                return {"bundle": binary.name, **next(outcomes)}
+            with patch("subprocess.run", side_effect=run), patch.object(self.debugger, "reproduce_bundle", side_effect=bundle), \
+                 patch.object(self.debugger.time, "monotonic", side_effect=[0, 0, 120]):
+                summary = self.debugger.reproduce(root / "Domain", root / "output")
+            self.assertEqual([("CatalogGenTests", "debugger-CatalogGenTests.json", 300),
+                              ("DomainKitTests", "debugger-DomainKitTests.json", 180)], calls)
+            self.assertEqual("stopped", summary["outcome"])
+            self.assertEqual([{"bundle": "CatalogGenTests", "outcome": "exited"}, {"bundle": "DomainKitTests", "outcome": "stopped"}],
+                             summary["bundles"])
 
     def test_original_full_gate_remains_authoritative_and_reproduction_is_failure_only(self):
         workflow = DomainDiagnosticsTests.workflow.read_text()

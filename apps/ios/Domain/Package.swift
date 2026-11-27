@@ -21,7 +21,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../Sync"),
-    .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
   ],
   targets: [
     .target(name: "DomainKitNFC"),
