@@ -174,6 +174,5 @@ prerequisites and unlock count, a cursor's digest or where a page is cut, what a
 which steps lie around the frontier and in what order they are taken, or which guides lie above a roadmap. Those are
 the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's runner,
 `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims every file, `context.json` among them, and the
-iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, the read abilities' files and
-the direct writes'. Each draws new ids from the case's `ids`, folds a minted proposal's record again over the case's
+iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, every file but `context.json`. Each draws new ids from the case's `ids`, folds a minted proposal's record again over the case's
 roadmaps for `folded`, and compares each answer whole by canonical text.

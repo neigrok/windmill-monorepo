@@ -12,9 +12,9 @@ its contract is built: the catalog, its limits and the format of its vectors (§
 the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5), the direct writes
 (§6) and the proposal's fold and ability (§7), in `web/src/products/roadmap/domain/abilities/`, which claim every
 vector; and the tool host that carries the reads and the direct writes out, the writes through the room's doors, in
-`web/src/products/roadmap/coach/toolHost.js`, which runs no proposal yet. On the iPhone the standing roadmap, the read abilities
-and the direct writes are built, which claim every vector but the context's and the proposal's, with
-the tool host's executor over the phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
+`web/src/products/roadmap/coach/toolHost.js`, which runs no proposal yet. On the iPhone the standing roadmap, the read abilities,
+the direct writes and the proposal's fold and ability are built, which claim every vector but the context's, with
+the tool host's executor over the phone's copy, which runs no proposal yet, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
 Its records are built (§9): the four types in roadmap's registry, which the server stores and admits, a roadmap's death
 taking the conversations and proposals about it whatever made it, and, on the web and the iPhone, the records as
 roadmap's entities with a turn's opening, end and withdrawal, the read of a conversation, and a roadmap's delete taking
