@@ -6,6 +6,7 @@
 
 import { compareText } from '../../../../platform/domain-kit/entities.js';
 import { precondition } from '../../../../platform/domain-kit/values.js';
+import { registry } from '../../../../platform/sync/schema.js';
 import { RoadmapAccount } from '../account.js';
 import { diagnose, pointerDiagnostics } from '../diagnostics.js';
 import { FollowGraph } from '../graph.js';
@@ -13,7 +14,8 @@ import { RoadmapTree } from '../records.js';
 import { LegendRead } from '../reads.js';
 import { readRoadmap } from '../roadmaps.js';
 import { RoadmapScopes } from '../roadmapRules.js';
-import { RoadmapStep } from '../steps.js';
+import { RoadmapKind } from '../kinds.js';
+import { RoadmapLink, RoadmapStep } from '../steps.js';
 import { StepMark, StepPointer } from '../progress.js';
 import { Subtask } from '../workspace.js';
 import { AbilityCodes, refusal } from './answers.js';
@@ -225,6 +227,15 @@ export class StandingRoadmaps {
   }
 }
 
+// §6 rule 4: the sync registry's caps of a roadmap's steps, links and kinds, and of the subtasks of its owner's checklists.
+/** @param {{ type: string }} entity */
+function capOf(entity) {
+  const cap = registry.type(entity.type)?.cap;
+  precondition(cap !== undefined, `the sync registry caps ${entity.type}`);
+  return cap;
+}
+export const RoadmapCaps = Object.freeze({ steps: capOf(RoadmapStep), links: capOf(RoadmapLink), kinds: capOf(RoadmapKind), subtasks: capOf(Subtask) });
+
 // §5.1 The fields a step comes with where a call names none: the context's line.
 export const STEP_LINE = Object.freeze(['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary']);
 // §5.1 A summary is the description's first 160 Unicode scalars, `…` added where it is longer.
@@ -304,6 +315,15 @@ export class StandingRoadmap {
     const waiting = this.graph.ids.map(() => []);
     for (const [slot, prerequisites] of this.follows().entries()) for (const prerequisite of prerequisites) waiting[prerequisite]?.push(slot);
     return waiting;
+  }
+
+  // §6 rule 4: whether more steps, links or subtasks would pass the caps of the roadmap, which counts what it holds alive
+  // as the engine does: each step the room shows and each under a delete the person can still undo, until its hold ends,
+  // each link, and each subtask of its checklists, a removed step's included.
+  /** @param {{ steps?: number, links?: number, subtasks?: number }} adding */
+  passesCaps({ steps = 0, links = 0, subtasks = 0 }) {
+    return this.graph.ids.length + this.held.size + steps > RoadmapCaps.steps || this.graph.edges.length + links > RoadmapCaps.links
+      || this.subtaskCount + subtasks > RoadmapCaps.subtasks;
   }
 
   // The step the room shows under `id`, undefined where it shows none: a step removed, or under a delete the person can

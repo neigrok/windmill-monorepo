@@ -1,12 +1,14 @@
 // @ts-check
 // Roadmap Coach §5.2 at the steps cap: a roadmap of 10,000 steps read page by page through get_tree and find_nodes, no
 // page past 16,384 bytes of canonical text, and the pages joined again into the whole; and told as the context (§5).
+// And §7: a proposal of 100 changes folded over a roadmap of 5,000 steps, its time told.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { jcsBytes } from '../../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ContextBounds, readContext } from '../../../../../src/products/roadmap/domain/abilities/context.js';
 import { MAX_BYTES } from '../../../../../src/products/roadmap/domain/abilities/pages.js';
+import { ProposalAbilities } from '../../../../../src/products/roadmap/domain/abilities/proposals.js';
 import { ReadAbilities } from '../../../../../src/products/roadmap/domain/abilities/reads.js';
 import { STEP_LINE } from '../../../../../src/products/roadmap/domain/abilities/standing.js';
 
@@ -148,4 +150,29 @@ test('the device\'s roadmaps are read once a standing roadmap: 50 roadmaps of 2,
   assert.deepEqual(listAgain.answer, list.answer);
   t.diagnostic(`50 roadmaps of 2,000 steps: get_tree page 1 ${first.ms.toFixed(1)} ms, then list_trees page 1 ${list.ms.toFixed(1)} ms; `
     + `read again, ${again.ms.toFixed(1)} ms and ${listAgain.ms.toFixed(1)} ms`);
+});
+
+test('a proposal of 100 changes of every common kind folds over a roadmap of 5,000 steps, and its time is told', (t) => {
+  const treeId = 't_00000000000000bb';
+  const id = (/** @type {number} */ step) => `s${String(step).padStart(5, '0')}`;
+  const nodes = Array.from({ length: 5_000 }, (_, step) => ({ id: id(step), label: `Step ${step}`, ord: String(step).padStart(5, '0') }));
+  const standing = { trees: [{ id: treeId, own: true, meta: { title: 'Five thousand steps' }, nodes,
+    edges: nodes.slice(1).map((node, step) => ({ from: id(step), to: node.id, present: true })),
+    kinds: [{ id: 'learn', hue: 'olive', label: 'Learn', ord: 'a0' }], marks: [] }] };
+  const changes = [
+    ...Array.from({ length: 10 }, (_, step) => ({ op: 'set_progress', nodeId: id(step), status: 'complete' })),
+    ...Array.from({ length: 25 }, (_, index) => ({ op: 'add_step', ref: `new:s${index}`, label: `New ${index}`, kind: 'learn', prerequisites: [id(index * 10)] })),
+    ...Array.from({ length: 25 }, (_, index) => ({ op: 'rename', nodeId: id(1_000 + index), label: `Renamed ${index}` })),
+    ...Array.from({ length: 10 }, (_, index) => ({ op: 'describe', nodeId: id(2_000 + index), description: `Described ${index}` })),
+    ...Array.from({ length: 20 }, (_, index) => ({ op: 'connect', nodeId: id(2_500 + index * 10), prerequisiteId: id(2_495 + index * 10) })),
+    ...Array.from({ length: 5 }, (_, index) => ({ op: 'merge', nodeId: id(3_000 + index * 10), removeId: id(3_001 + index * 10) })),
+    ...Array.from({ length: 5 }, (_, index) => ({ op: 'remove_step', nodeId: id(4_000 + index * 10) })),
+  ];
+  const minted = ['Pq7Rk2Xw9Lm4Nb6T', ...Array.from({ length: 25 }, (_, index) => `m${String(index).padStart(15, '0')}`)];
+  const start = performance.now();
+  const answer = ProposalAbilities.propose_roadmap_change(standing, { treeId, changes }, treeId, () => minted.shift() ?? '');
+  const elapsed = performance.now() - start;
+  assert.ok('proposal' in answer, JSON.stringify(answer));
+  assert.equal(answer.proposal.changes.length, 100);
+  t.diagnostic(`propose_roadmap_change: 100 changes over 5,000 steps in ${elapsed.toFixed(0)} ms, a base of ${answer.proposal.base.length} registers`);
 });

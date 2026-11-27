@@ -9,10 +9,10 @@ roadmap nodes can cite them.
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
-the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5) and the direct writes
-(§6), in `web/src/products/roadmap/domain/abilities/`, which claim every vector but the proposal's; and
-the tool host that carries the abilities out through the room's doors, in
-`web/src/products/roadmap/coach/toolHost.js`. On the iPhone the standing roadmap, the read abilities
+the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5), the direct writes
+(§6) and the proposal's fold and ability (§7), in `web/src/products/roadmap/domain/abilities/`, which claim every
+vector; and the tool host that carries the reads and the direct writes out, the writes through the room's doors, in
+`web/src/products/roadmap/coach/toolHost.js`, which runs no proposal yet. On the iPhone the standing roadmap, the read abilities
 and the direct writes are built, which claim every vector but the context's and the proposal's, with
 the tool host's executor over the phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
 Its records are built (§9): the four types in roadmap's registry, which the server stores and admits, a roadmap's death

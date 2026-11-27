@@ -173,7 +173,7 @@ It does not run an ability, so it does not check what only running one shows: th
 prerequisites and unlock count, a cursor's digest or where a page is cut, what a fold leaves, which code a refusal is,
 which steps lie around the frontier and in what order they are taken, or which guides lie above a roadmap. Those are
 the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's runner,
-`web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files, the direct writes' and
-`context.json`, and the iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, the read
-abilities' files and the direct writes'. Each draws a write's new ids from the case's `ids` and compares each answer whole
-by canonical text; no executor claims the proposal's yet.
+`web/test/products/roadmap/domain/abilities/corpus.test.js`, claims every file, `context.json` among them, and the
+iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, the read abilities' files and
+the direct writes'. Each draws new ids from the case's `ids`, folds a minted proposal's record again over the case's
+roadmaps for `folded`, and compares each answer whole by canonical text.
