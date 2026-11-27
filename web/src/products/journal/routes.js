@@ -16,10 +16,6 @@ const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.H
 // chrome renders it behind its own Suspense boundary, because a fallback may not itself suspend.
 const CanvasGhost = lazy(() => import('./CanvasGhost.jsx').then((m) => ({ default: m.CanvasGhost })));
 
-// React rather than a static page: a visitor already signed in is recognised on the first frame.
-const importJournalLanding = () => import('./marketing/JournalLanding.jsx').then((m) => ({ default: m.JournalLanding }));
-const JournalLanding = lazy(importJournalLanding);
-
 // Registered here so the neutral settings page composes it without naming the journal.
 const YourJournalSection = lazy(() => import('./settings/YourJournalSection.jsx').then((m) => ({ default: m.YourJournalSection })));
 
@@ -90,8 +86,7 @@ export const journalRoutes = {
   landing: {
     head: journalLandingHead,
     href: '/journal',
-    Component: JournalLanding,
-    preload: importJournalLanding,
+    page: () => import('./marketing/landingPage.js').then((m) => m.journalLandingPage),
     tagline: t('journal.product.tagline'),
     // What the brand root shows of the journal: its row among the three tools and its section.
     root: {

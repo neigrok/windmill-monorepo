@@ -1,17 +1,4 @@
 {
-  "journal.landing.hero.badge": "Now open",
-  "journal.landing.hero.sub": "One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.",
-  "journal.landing.hero.title": "A place to notice what happened.",
-  "journal.landing.hero.trust": "And there is no share button — not switched off, just not there.",
-  "journal.landing.seeHow": "See how it works",
-  "journal.landing.startWriting": "Start writing",
-  "journal.landingHead.appName": "Windmill Journal",
-  "journal.landingHead.description": "A place to notice what happened. One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.",
-  "journal.landingHead.howItWorks": "How it works: Write → Look back → Hear it back.",
-  "journal.landingHead.searchOnDevice": "Search by meaning without your pages leaving your device.",
-  "journal.landingHead.shareDescription": "One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.",
-  "journal.landingHead.shareTitle": "Windmill Journal — a place to notice what happened",
-  "journal.landingHead.title": "Windmill Journal — a daily journal for noticing what happened",
   "journal.product.name": "Journal",
   "journal.root.kind": "daily journal",
   "journal.root.line": "Your own words, echoed back.",
@@ -49,5 +36,8 @@
   "journal.date.weekdayInitial.tue": "T",
   "journal.date.weekdayInitial.wed": "W",
   "journal.talk.act.download": "Download recording",
-  "journal.talk.signOutDiscards": "A recording waiting in Talk will be discarded."
+  "journal.talk.signOutDiscards": "A recording waiting in Talk will be discarded.",
+  "journal.landingHead.title": "Journal App With Search by Meaning | Windmill Journal",
+  "journal.landingHead.description": "One continuous page a night. Search finds what you wrote by meaning, on your device. No streaks, no scores, no sharing.",
+  "journal.landingHead.operatingSystem": "Web browser"
 }

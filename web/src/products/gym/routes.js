@@ -16,9 +16,6 @@ const RoutinesGhost = lazy(() => import('./RoutinesGhost.jsx').then((m) => ({ de
 
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
-const importGymLanding = () => import('./marketing/GymLanding.jsx').then((m) => ({ default: m.GymLanding }));
-const GymLanding = lazy(importGymLanding);
-
 const GymSettingsSection = lazy(() => import('./settings/GymSettingsSection.jsx').then((m) => ({ default: m.GymSettingsSection })));
 
 // Whether the account's replica holds a row of Coach's the sign-out must act on; with none, Coach's module stays unloaded.
@@ -89,8 +86,7 @@ export const gymRoutes = {
   landing: {
     head: gymLandingHead,
     href: '/gym',
-    Component: GymLanding,
-    preload: importGymLanding,
+    page: () => import('./marketing/landingPage.js').then((m) => m.gymLandingPage),
     tagline: t('gym.product.tagline'),
     // What the brand root shows of gym: its row among the three tools and its section.
     root: {

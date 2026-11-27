@@ -1,0 +1,87 @@
+/* What a product's landing (ProductLanding.jsx) adds to the site's look (site.css): its first screen, a section's
+   tail, two text sections sharing a row, where it runs, the questions and the closing. Measures are the room
+   boards' at 1440 and at 390. */
+
+/* ---- first screen ---- */
+.product-first > .front-wrap { padding: 96px 0 112px; }
+.product-heading { font-weight: 500; font-size: clamp(40px, 4.445vw, 64px); line-height: 1; letter-spacing: -.022em; }
+.product-heading br { display: none; }
+.product-heading[data-breaks="wide"] br { display: inline; }
+.product-what { max-width: 880px; margin-top: 28px; font-size: 22px; line-height: 30px; letter-spacing: -.011em; color: var(--look-ink-2); }
+.product-leads { display: flex; flex-wrap: wrap; align-items: center; column-gap: 32px; margin-top: 28px; }
+.product-lead-link { display: inline-flex; align-items: center; gap: 8px; min-height: 26px;
+                     font-weight: 500; font-size: 17px; line-height: 26px; color: var(--look-ink-1); }
+.product-lead-link:hover { color: var(--look-ink-1); text-decoration: underline; text-underline-offset: 3px; }
+.product-lead-link svg { flex: none; order: 1; color: var(--look-accent); }
+.product-leads .product-lead-link + .product-lead-link { color: var(--look-ink-2); }
+.product-lead-note { order: 2; margin-left: 12px; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--look-ink-3); }
+.product-trust { margin-top: 16px; font-size: 14px; line-height: 22px; color: var(--look-ink-3); }
+
+/* ---- what follows a section's features ---- */
+.product-feature-link { margin-top: 10px; }
+.product-line { max-width: 864px; margin-top: 32px; font-size: 17px; line-height: 26px; color: var(--look-ink-3); }
+.product-section-link { margin-top: 28px; }
+.product-line + .product-section-link { margin-top: 12px; }
+.product-section .front-room-head + .front-features { margin-top: 48px; }
+
+/* ---- two text sections in one row, a hairline between them ---- */
+.product-pair-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 64px; padding: 112px 0; }
+.product-pair-column { position: relative; display: flex; flex-direction: column; align-items: flex-start; }
+.product-pair-column + .product-pair-column::before { content: ""; position: absolute; left: -32.5px; top: 0; bottom: 0; width: 1px; background: var(--look-line); }
+.product-pair-column .front-title + .front-text { margin-top: 16px; }
+.product-pair-column .front-features { display: flex; flex-direction: column; gap: 24px; margin-top: 48px; }
+
+/* ---- where it runs ---- */
+.product-runs p { padding: 28px 0; font-size: 14px; line-height: 22px; color: var(--look-ink-3); }
+
+/* ---- the questions: heading in the first column, the list across the other two ---- */
+.product-questions-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; padding: 112px 0; }
+.product-questions-row dl { grid-column: span 2; margin: 0; }
+.product-question { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; padding: 20px 0; }
+.product-question:first-child { padding-top: 0; }
+.product-question:last-child { padding-bottom: 0; }
+.product-question + .product-question { border-top: 1px solid var(--look-line); }
+.product-question dt { font-weight: 500; font-size: 17px; line-height: 26px; }
+.product-question dd { margin: 0; font-size: 17px; line-height: 26px; color: var(--look-ink-2); }
+
+/* ---- the closing ---- */
+.product-closing > .front-wrap { padding: 112px 0; }
+.product-closing-line { font-weight: 500; font-size: clamp(28px, 3.334vw, 48px); line-height: calc(13 / 12); letter-spacing: -.022em; }
+.product-closing .product-lead-link { margin-top: 24px; }
+
+/* ---- the phone boards ---- */
+@media (max-width: 743px) {
+  .product-first > .front-wrap { padding: 32px 0 56px; }
+  .product-heading { font-size: 40px; line-height: 42px; }
+  .product-heading[data-breaks="wide"] br { display: none; }
+  .product-heading[data-breaks="narrow"] br { display: inline; }
+  .product-what { margin-top: 16px; font-size: 16px; line-height: 24px; letter-spacing: 0; }
+  .product-leads { display: block; margin-top: 12px; }
+  .product-lead-link { display: flex; min-height: 48px; font-size: 16px; line-height: 20px; }
+  .product-lead-link svg { order: 3; margin-left: auto; }
+  .product-lead-note { margin-left: 2px; }
+  .product-trust { margin-top: 8px; }
+
+  .product-feature-link { margin-top: 2px; }
+  .product-line { margin-top: 24px; font-size: 16px; line-height: 24px; }
+  .product-section-link { margin-top: 12px; }
+  .product-line + .product-section-link { margin-top: 4px; }
+  .product-section .front-room-head + .front-features { margin-top: 32px; }
+  .product-feature-link, .product-section-link { align-self: stretch; }
+
+  .product-pair-row { display: block; padding: 0; border-top: none; }
+  .product-pair-column { align-items: stretch; padding: 56px 0; border-top: 1px solid var(--look-line); }
+  .product-pair-column + .product-pair-column::before { content: none; }
+  .product-pair-column .front-title + .front-text { margin-top: 16px; }
+  .product-pair-column .front-features { margin-top: 32px; }
+
+  .product-runs p { padding: 24px 0; }
+
+  .product-questions-row { display: block; padding: 56px 0; }
+  .product-questions-row dl { margin-top: 24px; }
+  .product-question { display: block; padding: 16px 0; }
+  .product-question dd { margin-top: 4px; font-size: 16px; line-height: 24px; }
+
+  .product-closing > .front-wrap { padding: 56px 0; }
+  .product-closing .product-lead-link { margin-top: 8px; }
+}

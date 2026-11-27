@@ -23,9 +23,6 @@ const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ d
 const YourRoadmaps = lazy(() => import('./identity/YourRoadmaps.jsx').then((m) => ({ default: m.YourRoadmaps })));
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
-const importRoadmapLanding = () => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding }));
-const RoadmapLanding = lazy(importRoadmapLanding);
-
 const ReminderSection = lazy(() => import('./settings/ReminderSection.jsx').then((m) => ({ default: m.ReminderSection })));
 const TendingSection = lazy(() => import('./settings/TendingSection.jsx').then((m) => ({ default: m.TendingSection })));
 const YourDataSection = lazy(() => import('./settings/YourDataSection.jsx').then((m) => ({ default: m.YourDataSection })));
@@ -121,8 +118,7 @@ export const roadmapRoutes = {
   landing: {
     head: roadmapLandingHead,
     href: '/roadmap',
-    Component: RoadmapLanding,
-    preload: importRoadmapLanding,
+    page: () => import('./marketing/landingPage.js').then((m) => m.roadmapLandingPage),
     tagline: t('roadmap.product.tagline'),
     // What the brand root shows of roadmap: its row among the three tools and its section.
     root: {
