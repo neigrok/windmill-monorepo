@@ -8,9 +8,13 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace wm::roadmap::engine {
 
@@ -152,6 +156,8 @@ private:
   std::set<ScopeKey> keys_;
 };
 
+class CoachRecords;
+
 // The records of the declared scopes as the intent leaves them: stored, then joined, then what the rules append.
 class Outcome {
 public:
@@ -191,9 +197,14 @@ public:
     effects_.byScope[scope].push_back(std::move(delta));
   }
 
+  ~Outcome();
+
   void kill(const ScopeKey& scope, const Row& record) {
     if (present(row(scope, record.t, record.id))) append(scope, lifeOf(record, LifeState::dead));
   }
+
+  // Coach's records of one scope, read once for the intent.
+  CoachRecords& coach(const ScopeKey& scope);
 
   const std::vector<std::pair<ScopeKey, RecordId>>& appendedSteps() const { return appendedSteps_; }
   Effects effects() const { return effects_; }
@@ -214,7 +225,89 @@ private:
   std::map<RecordRef, std::optional<Row>> before_;
   std::vector<std::pair<ScopeKey, RecordId>> appendedSteps_;
   Effects effects_;
+  std::map<ScopeKey, std::unique_ptr<CoachRecords>> coach_;
 };
+
+// Coach's records of one scope as the intent leaves them (Roadmap Coach §9), read once and grouped by what names them:
+// each conversation's messages and proposals, each message's write fates, and the conversations and proposals about each
+// roadmap. A cascade then costs what it kills. The records a kill leaves keep what names them, so the groups hold.
+class CoachRecords {
+public:
+  CoachRecords(Outcome& outcome, const ScopeKey& scope)
+      : outcome_(outcome), scope_(scope), messagesOf_(byField("coachMessage", "threadId")), fatesOf_(byField("coachWriteFate", "messageId")),
+        proposalsOf_(byField("coachProposal", "threadId")), conversationsAbout_(byField("coachThread", "treeId")),
+        proposalsAbout_(byField("coachProposal", "treeId")) {}
+
+  // A conversation's death kills its messages, with their write fates, and its proposals.
+  void endConversation(const std::string& thread) {
+    for (const Row& message : of(messagesOf_, thread)) {
+      outcome_.kill(scope_, message);
+      endFates(message.id.column());
+    }
+    for (const Row& proposal : of(proposalsOf_, thread)) outcome_.kill(scope_, proposal);
+  }
+
+  // A message's death kills its write fates.
+  void endFates(const std::string& message) {
+    for (const Row& fate : of(fatesOf_, message)) outcome_.kill(scope_, fate);
+  }
+
+  // The conversations about the roadmaps `ended` that stand, each as its own death ends it, then the proposals about them
+  // that stand, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+  void endAbout(const std::vector<std::string>& ended) {
+    for (const Row& thread : standing(conversationsAbout_, ended)) {
+      outcome_.kill(scope_, thread);
+      endConversation(thread.id.column());
+    }
+    for (const Row& proposal : standing(proposalsAbout_, ended)) outcome_.kill(scope_, proposal);
+  }
+
+private:
+  using Groups = std::map<std::string, std::vector<Row>>;
+
+  // The scope's records of a type by the string `field` holds, each group in id order, as `rows` gives them.
+  Groups byField(const std::string& type, const std::string& field) {
+    Groups groups;
+    for (Row& row : outcome_.rows(scope_, type)) {
+      const Json::Value key = valueOf(row, field);
+      if (key.isString()) groups[key.asString()].push_back(std::move(row));
+    }
+    return groups;
+  }
+
+  static const std::vector<Row>& of(const Groups& groups, const std::string& key) {
+    static const std::vector<Row> none;
+    const auto found = groups.find(key);
+    return found == groups.end() ? none : found->second;
+  }
+
+  std::vector<Row> standing(const Groups& groups, const std::vector<std::string>& ended) {
+    std::vector<Row> rows;
+    for (const std::string& tree : ended) {
+      for (const Row& row : of(groups, tree)) {
+        if (present(outcome_.row(scope_, row.t, row.id))) rows.push_back(row);
+      }
+    }
+    std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.id.key() < b.id.key(); });
+    return rows;
+  }
+
+  Outcome& outcome_;
+  ScopeKey scope_;
+  Groups messagesOf_;
+  Groups fatesOf_;
+  Groups proposalsOf_;
+  Groups conversationsAbout_;
+  Groups proposalsAbout_;
+};
+
+Outcome::~Outcome() = default;
+
+CoachRecords& Outcome::coach(const ScopeKey& scope) {
+  std::unique_ptr<CoachRecords>& records = coach_[scope];
+  if (!records) records = std::make_unique<CoachRecords>(*this, scope);
+  return *records;
+}
 
 bool writesField(const Intent& intent, const std::string& type, const std::string& field) {
   return std::any_of(intent.d.begin(), intent.d.end(), [&](const Delta& delta) { return delta.t == type && delta.lattice.f.contains(field); });
@@ -396,7 +489,7 @@ private:
     if (type == "tree") return onlyARootIsDeleted(ctx, change);
     if (type == "meta") return checkMeta(ctx, change, outcome);
     if (among(kOwnerOnly, type)) return ownersOnly(ctx, change);
-    if (type == "coachThread" && died(change)) return endConversation(change.scope, change.after.id.column(), outcome);
+    if (type == "coachThread" && died(change)) return outcome.coach(change.scope).endConversation(change.after.id.column());
     if (type == "coachMessage") return checkMessage(ctx, change, outcome);
   }
 
@@ -428,39 +521,10 @@ private:
     if (!tree || tree->owner != change.scope.account()) throw Refusal(code::forbidden);
   }
 
-  // A Coach conversation's death kills its messages, with their write fates, and its proposals.
-  static void endConversation(const ScopeKey& scope, const std::string& thread, Outcome& outcome) {
-    for (const Row& message : outcome.rows(scope, "coachMessage")) {
-      if (valueOf(message, "threadId") != Json::Value(thread)) continue;
-      outcome.kill(scope, message);
-      endFates(scope, message.id.column(), outcome);
-    }
-    for (const Row& proposal : outcome.rows(scope, "coachProposal")) {
-      if (valueOf(proposal, "threadId") == Json::Value(thread)) outcome.kill(scope, proposal);
-    }
-  }
-
-  // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals
-  // about them, whatever conversation holds them. A conversation about all roadmaps names none and stays.
-  static void endCoachRecordsAbout(const ScopeKey& scope, const std::vector<std::string>& ended, Outcome& outcome) {
-    const auto about = [&](const Row& row) {
-      const Json::Value tree = valueOf(row, "treeId");
-      return present(row) && tree.isString() && std::find(ended.begin(), ended.end(), tree.asString()) != ended.end();
-    };
-    for (const Row& thread : outcome.rows(scope, "coachThread")) {
-      if (!about(thread)) continue;
-      outcome.kill(scope, thread);
-      endConversation(scope, thread.id.column(), outcome);
-    }
-    for (const Row& proposal : outcome.rows(scope, "coachProposal")) {
-      if (about(proposal)) outcome.kill(scope, proposal);
-    }
-  }
-
   // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts
   // are final.
   static void checkMessage(const CheckCtx& ctx, const Change& change, Outcome& outcome) {
-    if (died(change)) return endFates(change.scope, change.after.id.column(), outcome);
+    if (died(change)) return outcome.coach(change.scope).endFates(change.after.id.column());
     const Json::Value state = valueOf(change.stored, "state");
     const bool ended = present(change.stored) && state.isString() && among(kWriterTerminal, state.asString());
     if (!ended) return;
@@ -469,12 +533,6 @@ private:
       for (const auto& [name, reg] : delta.lattice.f) {
         if (among(kFinalRegisters, name)) throw Refusal(kTurnFinal);
       }
-    }
-  }
-
-  static void endFates(const ScopeKey& scope, const std::string& message, Outcome& outcome) {
-    for (const Row& fate : outcome.rows(scope, "coachWriteFate")) {
-      if (valueOf(fate, "messageId") == Json::Value(message)) outcome.kill(scope, fate);
     }
   }
 
@@ -509,7 +567,7 @@ private:
       }
       if (valueOf(death->stored, "parent").isNull()) roots.push_back(death->after.id.column());
     }
-    endCoachRecordsAbout(own, ended, outcome);
+    if (!ended.empty()) outcome.coach(own).endAbout(ended);
     if (roots.empty()) return;
     const Roadmaps standing(outcome.rows(own, "tree"));
     for (const std::string& tree : standing.ids()) {

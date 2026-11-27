@@ -192,39 +192,15 @@ class RoadmapServerRules : ServerRules {
                 if (overlay.governedBy?.let { context.state.scopes[it] }?.owner != overlay.owner) throw Refusal("forbidden")
             }
             // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
-            "coachThread" -> if (died(original, after)) endConversation(change.scope, change.key.id.json, outcome)
+            "coachThread" -> if (died(original, after)) outcome.coach(change.scope).endConversation(change.key.id.string!!)
             // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts are final.
             "coachMessage" -> {
-                if (died(original, after)) return endFates(change.scope, id!!, outcome)
+                if (died(original, after)) return outcome.coach(change.scope).endFates(id!!)
                 val ended = present(original) && valueOf(original, "state")?.str() in WRITER_TERMINAL
                 val writes = context.deltas.filter { it.key == change.key }.flatMap { it.fields.keys }
                 if (ended && writes.any { it in FINAL_REGISTERS }) throw Refusal("turn-final")
             }
         }
-    }
-
-    private fun endConversation(scope: ScopeKey, thread: Json, outcome: Outcome) {
-        for (message in outcome.rows(scope, "coachMessage").filter { valueOf(it, "threadId") == thread }) {
-            outcome.kill(scope, message)
-            endFates(scope, message.member("id").str(), outcome)
-        }
-        for (proposal in outcome.rows(scope, "coachProposal").filter { valueOf(it, "threadId") == thread }) outcome.kill(scope, proposal)
-    }
-
-    // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals about them, whatever
-    // conversation holds them. A conversation about all roadmaps names none and stays.
-    private fun endCoachRecordsAbout(scope: ScopeKey, ended: List<String>, outcome: Outcome) {
-        fun about(row: Json) = present(row) && (valueOf(row, "treeId") as? Json.Str)?.value in ended
-        val byId = Comparator<Json> { a, b -> compareBytes(a.member("id").str(), b.member("id").str()) }
-        for (thread in outcome.rows(scope, "coachThread").filter(::about).sortedWith(byId)) {
-            outcome.kill(scope, thread)
-            endConversation(scope, thread.member("id"), outcome)
-        }
-        for (proposal in outcome.rows(scope, "coachProposal").filter(::about).sortedWith(byId)) outcome.kill(scope, proposal)
-    }
-
-    private fun endFates(scope: ScopeKey, message: String, outcome: Outcome) {
-        for (fate in outcome.rows(scope, "coachWriteFate").filter { valueOf(it, "messageId") == Json.of(message) }) outcome.kill(scope, fate)
     }
 
     // §5: a change to a step or a kind carries its life as alive; one that is still dead once it has joined, the delete being newer, the server
@@ -251,7 +227,7 @@ class RoadmapServerRules : ServerRules {
                 ended.add(id)
             }
         }
-        endCoachRecordsAbout(account, ended, outcome)
+        if (ended.isNotEmpty()) outcome.coach(account).endAbout(ended)
         val roots = deaths.filter { valueOf(it.before.row?.json, "parent") == null }.map { it.key.id.string!! }
         if (roots.isEmpty()) return
         for (tree in outcome.rows(account, "tree").filter(::present).map { it.member("id").str() }.sortedWith(::compareBytes)) {
@@ -353,6 +329,50 @@ class RoadmapServerRules : ServerRules {
         fun kill(scope: ScopeKey, row: Json) {
             val key = row.recordKey
             if (present(row(scope, key.type, key.id.string!!))) append(scope, Json.objectOf("t" to Json.of(key.type), "id" to key.id.json, "life" to serverStamped(Json.of("dead"))).with("born" to row["born"]))
+        }
+        // Coach's records of one scope, read once for the intent.
+        private val coachRecords = mutableMapOf<ScopeKey, CoachRecords>()
+        fun coach(scope: ScopeKey): CoachRecords = coachRecords.getOrPut(scope) { CoachRecords(this, scope) }
+    }
+
+    // Coach's records of one scope as the intent leaves them (Roadmap Coach §9), read once and grouped by what names them: each conversation's
+    // messages and proposals, each message's write fates, and the conversations and proposals about each roadmap. A cascade then costs what it
+    // kills. The records a kill leaves keep what names them, so the groups hold.
+    private class CoachRecords(private val outcome: Outcome, private val scope: ScopeKey) {
+        private val byId = Comparator<Json> { a, b -> compareBytes(a.member("id").str(), b.member("id").str()) }
+        // The scope's records of a type by the string `field` holds, each group in id order.
+        private fun byField(type: String, field: String): Map<String, List<Json>> =
+            outcome.rows(scope, type).sortedWith(byId).groupBy { (valueOf(it, field) as? Json.Str)?.value }.filterKeys { it != null }.mapKeys { it.key!! }
+        private val messagesOf = byField("coachMessage", "threadId")
+        private val fatesOf = byField("coachWriteFate", "messageId")
+        private val proposalsOf = byField("coachProposal", "threadId")
+        private val conversationsAbout = byField("coachThread", "treeId")
+        private val proposalsAbout = byField("coachProposal", "treeId")
+
+        // A conversation's death kills its messages, with their write fates, and its proposals.
+        fun endConversation(thread: String) {
+            for (message in messagesOf[thread].orEmpty()) {
+                outcome.kill(scope, message)
+                endFates(message.member("id").str())
+            }
+            for (proposal in proposalsOf[thread].orEmpty()) outcome.kill(scope, proposal)
+        }
+
+        // A message's death kills its write fates.
+        fun endFates(message: String) {
+            for (fate in fatesOf[message].orEmpty()) outcome.kill(scope, fate)
+        }
+
+        // The conversations about the roadmaps `ended` that stand, each as its own death ends it, then the proposals about them that stand,
+        // whatever conversation holds them. A conversation about all roadmaps names none and stays.
+        fun endAbout(ended: List<String>) {
+            fun standing(groups: Map<String, List<Json>>) = ended.flatMap { groups[it].orEmpty() }
+                .filter { present(outcome.row(scope, it.member("t").str(), it.member("id").str())) }.sortedWith(byId)
+            for (thread in standing(conversationsAbout)) {
+                outcome.kill(scope, thread)
+                endConversation(thread.member("id").str())
+            }
+            for (proposal in standing(proposalsAbout)) outcome.kill(scope, proposal)
         }
     }
 

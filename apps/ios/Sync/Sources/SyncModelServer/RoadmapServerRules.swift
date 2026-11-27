@@ -307,11 +307,11 @@ public struct RoadmapServerRules: ServerRules {
       guard let overlay, let governing, governing.owner.isSameID(as: overlay.owner) else { throw Refusal(.forbidden) }
     case "coachThread":
       // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
-      if Self.died(original, after) { outcome.endConversation(change.key.id.json, in: change.scope) }
+      if Self.died(original, after) { outcome.endConversation(Self.name(of: change.key), in: change.scope) }
     case "coachMessage":
       // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts
       // are final.
-      if Self.died(original, after) { return outcome.endFates(of: change.key.id.json, in: change.scope) }
+      if Self.died(original, after) { return outcome.endFates(of: Self.name(of: change.key), in: change.scope) }
       let ended = Self.isPresent(original) && Self.value(original, "state").map(Self.writerTerminal.contains) == true
       let writes: [String] = context.deltas.filter { $0.key == change.key }.flatMap { Array($0.fields.keys) }
       if ended && writes.contains(where: Self.finalRegisters.contains) { throw Refusal("turn-final") }
@@ -554,6 +554,7 @@ struct RoadmapOutcome {
   var joined: [ScopeKey: [RecordKey: JSON]] = [:]
   var byScope: [ScopeKey: [JSON]] = [:]
   var appended: [(scope: ScopeKey, key: RecordKey)] = []
+  var coachRecords: [ScopeKey: CoachRecords] = [:]
 
   init(_ context: RuleContext, _ changes: [RecordChange]) {
     self.context = context
@@ -590,32 +591,73 @@ struct RoadmapOutcome {
     append(RoadmapServerRules.killed(row), in: scope)
   }
 
+  // Coach's records of one scope, read once for the intent.
+  mutating func coach(in scope: ScopeKey) -> CoachRecords {
+    if let records = coachRecords[scope] { return records }
+    let records = CoachRecords(self, in: scope)
+    coachRecords[scope] = records
+    return records
+  }
+
   // A message's death kills its write fates.
-  mutating func endFates(of message: JSON, in scope: ScopeKey) {
-    for fate in rows("coachWriteFate", in: scope) where RoadmapServerRules.value(fate, "messageId") == message { kill(fate, in: scope) }
+  mutating func endFates(of message: String, in scope: ScopeKey) {
+    for fate in coach(in: scope).fatesOf[message] ?? [] { kill(fate, in: scope) }
   }
 
   // A conversation's death kills its messages, with their write fates, and its proposals.
-  mutating func endConversation(_ thread: JSON, in scope: ScopeKey) {
-    for message in rows("coachMessage", in: scope) where RoadmapServerRules.value(message, "threadId") == thread {
+  mutating func endConversation(_ thread: String, in scope: ScopeKey) {
+    let records = coach(in: scope)
+    for message in records.messagesOf[thread] ?? [] {
       kill(message, in: scope)
-      endFates(of: message["id"] ?? .null, in: scope)
+      endFates(of: RoadmapServerRules.id(of: message), in: scope)
     }
-    for proposal in rows("coachProposal", in: scope) where RoadmapServerRules.value(proposal, "threadId") == thread { kill(proposal, in: scope) }
+    for proposal in records.proposalsOf[thread] ?? [] { kill(proposal, in: scope) }
   }
 
-  // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals about
-  // them, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+  // Roadmap Coach §9: the conversations about the roadmaps `ended` that stand, each as its own death ends it, then the
+  // proposals about them that stand, whatever conversation holds them. A conversation about all roadmaps names none and
+  // stays.
   mutating func endCoachRecords(about ended: [String], in scope: ScopeKey) {
-    func about(_ row: JSON) -> Bool {
-      guard RoadmapServerRules.isPresent(row), let tree = try? RoadmapServerRules.value(row, "treeId")?.asString() else { return false }
-      return ended.contains(tree)
+    guard !ended.isEmpty else { return }
+    let records = coach(in: scope)
+    func standing(_ groups: [String: [JSON]], in outcome: RoadmapOutcome) -> [JSON] {
+      ended.flatMap { groups[$0] ?? [] }
+        .filter { RoadmapServerRules.isPresent(outcome.row(RoadmapServerRules.key(of: $0), in: scope)) }
+        .sorted { RoadmapServerRules.precedes(RoadmapServerRules.id(of: $0), RoadmapServerRules.id(of: $1)) }
     }
-    for thread in rows("coachThread", in: scope) where about(thread) {
+    for thread in standing(records.conversationsAbout, in: self) {
       kill(thread, in: scope)
-      endConversation(thread["id"] ?? .null, in: scope)
+      endConversation(RoadmapServerRules.id(of: thread), in: scope)
     }
-    for proposal in rows("coachProposal", in: scope) where about(proposal) { kill(proposal, in: scope) }
+    for proposal in standing(records.proposalsAbout, in: self) { kill(proposal, in: scope) }
+  }
+}
+
+// Coach's records of one scope as the intent leaves them (Roadmap Coach §9), read once and grouped by what names them:
+// each conversation's messages and proposals, each message's write fates, and the conversations and proposals about each
+// roadmap. A cascade then costs what it kills. The records a kill leaves keep what names them, so the groups hold.
+struct CoachRecords {
+  let messagesOf: [String: [JSON]]
+  let fatesOf: [String: [JSON]]
+  let proposalsOf: [String: [JSON]]
+  let conversationsAbout: [String: [JSON]]
+  let proposalsAbout: [String: [JSON]]
+
+  init(_ outcome: RoadmapOutcome, in scope: ScopeKey) {
+    // The scope's records of a type by the string `field` holds, each group in id order, as `rows` gives them.
+    func byField(_ type: String, _ field: String) -> [String: [JSON]] {
+      var groups: [String: [JSON]] = [:]
+      for row in outcome.rows(type, in: scope) {
+        guard let key = try? RoadmapServerRules.value(row, field)?.asString() else { continue }
+        groups[key, default: []].append(row)
+      }
+      return groups
+    }
+    messagesOf = byField("coachMessage", "threadId")
+    fatesOf = byField("coachWriteFate", "messageId")
+    proposalsOf = byField("coachProposal", "threadId")
+    conversationsAbout = byField("coachThread", "treeId")
+    proposalsAbout = byField("coachProposal", "treeId")
   }
 }
 
