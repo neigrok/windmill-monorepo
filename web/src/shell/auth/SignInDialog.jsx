@@ -1,11 +1,10 @@
 import React from 'react';
 import { BrandWordmark, Dialog, Input, Button, Icon } from '../../design-system';
-import { API_BASE } from '../apiBase.js';
 import { t } from '../i18n/entry/index.js';
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function SignInDialog({ open, onClose, onSend, resume = null }) {
+export function SignInDialog({ open, onClose, onSend, onGoogle, resume = null }) {
   const titleId = React.useId();
   const [email, setEmail] = React.useState('');
   const [phase, setPhase] = React.useState('idle'); // idle | sending | wait | error
@@ -116,8 +115,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             <Button type="submit">{t('shell.signIn.send')}</Button>
           )}
 
-          {/* A top-level navigation, not a fetch: the OAuth redirect must leave the SPA. */}
-          <Button type="button" variant="ghost" onClick={() => { window.location.href = `${API_BASE}/v1/auth/google/start`; }}>
+          <Button type="button" variant="ghost" onClick={onGoogle}>
             {t('shell.signIn.google')}
           </Button>
 

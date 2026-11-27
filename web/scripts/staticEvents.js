@@ -1,7 +1,7 @@
 import { DEV_OPT_IN_STORAGE, SESSION_KEY_STORAGE } from '../src/telemetry/beacon.js';
 
-// The site's events on the plain HTML pages in public/ that wear the instrument look, served as /events.js by
-// scripts/staticPageAssets.js and linked deferred by those pages only. Plain ES5, no imports: the file is served raw.
+// The site's events on the plain HTML pages in public/ that tell them (every page in the instrument look, and the support
+// page), served as /events.js by scripts/staticPageAssets.js and linked deferred by those pages only. Plain ES5, no imports: the file is served raw.
 // It tells what src/shell/marketing/SiteChrome.jsx tells, through the same intake, under the same session key and with
 // the same localhost mute as src/telemetry/beacon.js: `front_open` once per load, `front_link` for a link that carries
 // `data-to` inside a `data-area`, once per use (a double click's second click tells nothing), and `front_control` for a
@@ -9,8 +9,8 @@ import { DEV_OPT_IN_STORAGE, SESSION_KEY_STORAGE } from '../src/telemetry/beacon
 
 // Every label the file can send. A page or link naming anything else tells nothing.
 export const LABELS = {
-  page: ['pricing'],
-  area: ['header', 'ways', 'sitemap', 'footer'],
+  page: ['pricing', 'support'],
+  area: ['header', 'ways', 'content', 'sitemap', 'footer'],
   to: ['home', 'landing', 'app', 'sign_in', 'settings', 'pricing', 'connect', 'changelog', 'gallery', 'support', 'privacy', 'terms', 'refunds', 'feedback'],
   product: ['roadmap', 'journal', 'gym'],
 };

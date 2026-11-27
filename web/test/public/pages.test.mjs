@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { loadScreen } from '../products/gym/harness.mjs';
+import { LABELS } from '../../scripts/staticEvents.js';
 
 const PAGES = new URL('../../public/', import.meta.url);
 const pages = fs.readdirSync(PAGES).filter((name) => name.endsWith('.html')).sort();
@@ -27,7 +28,8 @@ test('every family page links Support from its footer row, and the 404 lists it'
   const family = pages.filter((name) => name !== 'pricing-preview.html' && !/<html\b[^>]*\sdata-look=/.test(read(name)));
   assert.deepEqual(family, ['404.html', 'changelog.html', 'connect.html', 'gallery.html', 'pause.html', 'privacy.html', 'refunds.html', 'support.html', 'terms.html']);
   for (const name of family) {
-    assert.ok(read(name).includes('<a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a><a href="/support.html">Support</a></span>'), name);
+    const unlabelled = read(name).replace(/ data-(?:to|product)="[^"]*"/g, '');
+    assert.ok(unlabelled.includes('<a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a><a href="/support.html">Support</a></span>'), name);
   }
   assert.ok(read('404.html').includes('<a href="/refunds.html">Refunds</a> · <a href="/support.html">Support</a></li>'));
 });
@@ -52,5 +54,34 @@ test('every instrument page\'s footer has the shared footer\'s columns, links an
         .map(([, href, to, product, label]) => ({ href, label, to, ...(product ? { product } : {}) })),
     }));
     assert.deepEqual(columns, shared, name);
+  }
+});
+
+// /events.js tells a link by the labels it carries and the area around it, read in document order; the skip link alone
+// tells nothing.
+test('every link on the support page but the skip link carries the labels of the one event it tells', () => {
+  const html = read('support.html');
+  assert.ok(html.includes('<html lang="en" data-page="support">'));
+  let area = null;
+  const links = [...html.slice(html.indexOf('<body')).matchAll(/<(\w+)\b[^>]*>/g)].flatMap(([tag, name]) => {
+    const attribute = (key) => new RegExp(`\\s${key}="([^"]+)"`).exec(tag)?.[1] ?? null;
+    area = attribute('data-area') ?? area;
+    if (name !== 'a') return [];
+    return [[attribute('href'), attribute('data-to') && area, attribute('data-to'), attribute('data-product')]];
+  });
+  const landing = (where) => ['roadmap', 'journal', 'gym'].map((product) => [`/${product}`, where, 'landing', product]);
+  assert.deepEqual(links, [
+    ['#content', null, null, null],
+    ['/', 'header', 'home', null], ...landing('header'), ['/pricing.html', 'header', 'pricing', null],
+    ['/?signin', 'header', 'sign_in', null], ['/#/app', 'header', 'app', null], ['/#/settings', 'header', 'settings', null], ['/#/app', 'header', 'app', null],
+    ['mailto:hello@windmill.works', 'content', 'feedback', null], ['/', 'content', 'home', null],
+    ['/app/settings', 'content', 'settings', null], ['/app/settings', 'content', 'settings', null],
+    ['/privacy.html', 'content', 'privacy', null], ['/terms.html', 'content', 'terms', null], ['/pricing.html', 'content', 'pricing', null],
+    ['/pricing.html', 'footer', 'pricing', null], ['/privacy.html', 'footer', 'privacy', null], ['/terms.html', 'footer', 'terms', null],
+    ['/refunds.html', 'footer', 'refunds', null], ['/changelog.html', 'footer', 'changelog', null], ['/support.html', 'footer', 'support', null],
+    ...landing('footer'), ['/gallery', 'footer', 'gallery', null], ['/connect.html', 'footer', 'connect', null],
+  ]);
+  for (const [, where, to, product] of links.slice(1)) {
+    assert.ok(LABELS.area.includes(where) && LABELS.to.includes(to) && (product === null || LABELS.product.includes(product)), `${where} ${to} ${product}`);
   }
 });

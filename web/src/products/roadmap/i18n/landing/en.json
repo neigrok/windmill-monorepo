@@ -69,7 +69,7 @@
   "roadmap.landing.data.assistantTitle": "Your own assistant",
   "roadmap.landing.data.assistantText": "It sees only the levels you granted.",
   "roadmap.landing.data.othersTitle": "Who else is involved",
-  "roadmap.landing.data.othersText": "Resend sends the sign-in email, Amplitude counts usage and Sentry receives error reports.",
+  "roadmap.landing.data.othersText": "Resend sends the sign-in email, Google signs you in if you choose it, Amplitude counts usage and Sentry receives error reports.",
   "roadmap.landing.data.privacy": "Privacy",
   "roadmap.landing.runs": "Windmill Roadmap runs in a web browser, on a computer or a phone. There is no Roadmap phone app.",
   "roadmap.landing.questions.title": "Questions",

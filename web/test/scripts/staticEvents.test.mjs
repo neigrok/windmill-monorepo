@@ -139,8 +139,8 @@ test('every label the file can send is one web/OBSERVABILITY.md lists for its ev
   assert.ok(listed('front_open', 'page').includes('pricing') && listed('front_control', 'page').includes('pricing'));
   assert.deepEqual(['auto', 'light', 'dark'].filter((choice) => !listed('front_control', 'choice').includes(choice)), []);
   assert.deepEqual(LABELS, {
-    page: ['pricing'],
-    area: ['header', 'ways', 'sitemap', 'footer'],
+    page: ['pricing', 'support'],
+    area: ['header', 'ways', 'content', 'sitemap', 'footer'],
     to: ['home', 'landing', 'app', 'sign_in', 'settings', 'pricing', 'connect', 'changelog', 'gallery', 'support', 'privacy', 'terms', 'refunds', 'feedback'],
     product: ['roadmap', 'journal', 'gym'],
   });

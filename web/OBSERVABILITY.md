@@ -339,9 +339,11 @@ product's registry id. One use of a link tells one event: the second click of a 
 `test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js` drive every link and
 control, signed out, signed in and with a link already sent, and hold the events to this table.
 
-The pricing page (`public/pricing.html`) is a static page in the same look and tells the same three events as `page:
-pricing`, through `/events.js` (`scripts/staticEvents.js`), which the build makes every static page in that look link
-under a page it names on `<html data-page>`. It sends each event as it happens, one beacon each, or one keepalive request
+The pricing page (`public/pricing.html`), a static page in the same look, and the support page (`public/support.html`), in
+the family look, tell the same events as `page: pricing` and `page: support` through `/events.js`
+(`scripts/staticEvents.js`); the build makes every static page in the instrument look link it, and any page that links it
+name a page it knows on `<html data-page>`. The support page's switch is the family look's Light · Dark in its header, told as `front_control`
+`appearance` like the footer's. It sends each event as it happens, one beacon each, or one keepalive request
 where the browser refuses the beacon; a failed send is dropped and never tried again. It reads the session key `beacon.js`
 keeps, minting it there when none is stored, and is muted on localhost as `beacon.js` is. A link tells `front_link` from
 the `data-to` and `data-product` it carries and the `data-area` around it, each checked against the file's fixed lists; a
@@ -352,9 +354,9 @@ drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on t
 
 | Step | Event | Allowlisted props |
 |---|---|---|
-| The page opened, once per mount, at its first paint without waiting on the network (on the pricing page, once per load); the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym/pricing` |
-| A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page. On the pricing page `area` is also its three ways (`ways`) or the footer's last row (`footer`), and `to` also the sign-in door, account settings or the feedback address | `front_link` | `page: front/roadmap/journal/gym/pricing`, `area: header/tools/room/ai/sitemap/first/section/feature/closing/ways/footer`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds/sign_in/settings/feedback`, `product?: roadmap/journal/gym` |
-| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+| The page opened, once per mount, at its first paint without waiting on the network (on the pricing page, once per load); the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym/pricing/support` |
+| A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page. On the static pages `area` is also pricing's three ways (`ways`), support's body (`content`) or the footer (`footer`), and `to` also the sign-in door, account settings or the feedback address | `front_link` | `page: front/roadmap/journal/gym/pricing/support`, `area: header/tools/room/ai/sitemap/first/section/feature/closing/ways/content/footer`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds/sign_in/settings/feedback`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing/support`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
 
 A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
 `front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route, once per page
@@ -368,6 +370,7 @@ and report their own sends:
 | Step | Event | Allowlisted props |
 |---|---|---|
 | A sign-in link asked for at the shared door, on any page | `sign_in_link` | `outcome: sent/refused/failed`, `reason?: invalid_email/rate_limited` when refused, `network/server/request` when failed |
+| Continue with Google chosen at the shared door, as the browser leaves for Google's consent; the sign-in that follows arrives as a new page | `sign_in_google` | `outcome: started` |
 | Feedback sent from the shared dialog | `feedback_send` | `outcome: sent/refused/failed`, `reason?: refused` (a 400 or 429), `network/server/request` when failed |
 
 A failed send, not a refusal, also reports to Sentry with no stack: `auth-magic-link` (kind `auth`) and `feedback-send`

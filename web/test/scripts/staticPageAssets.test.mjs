@@ -38,14 +38,17 @@ test('an instrument page must link /instrument.css, not the family chrome, and h
 
 // The front page tells its events in this look, so a static page in it does too: the build fails one that names no page
 // /events.js knows, or does not link the file.
-test('an instrument page must name its page on <html> and link /events.js; a family page tells nothing', () => {
+test('an instrument page, and any page linking /events.js, must name its page on <html> and link it; terms tells nothing', () => {
   const pricing = page('pricing.html');
-  const silent = 'public/pricing.html wears the instrument look but does not name its page on <html data-page> (pricing) and link /events.js deferred — it would tell none of the site\'s events';
+  const silent = 'public/pricing.html does not name its page on <html data-page> (pricing or support) and link /events.js deferred — it would tell none of the site\'s events';
   assert.throws(() => checkStaticPage('pricing.html', pricing.replace(' data-page="pricing"', '')), { message: silent });
   assert.throws(() => checkStaticPage('pricing.html', pricing.replace('data-page="pricing"', 'data-page="checkout"')), { message: silent });
   assert.throws(() => checkStaticPage('pricing.html', pricing.replace('<script defer src="/events.js"></script>', '')), { message: silent });
   assert.throws(() => checkStaticPage('pricing.html', pricing.replace('<script defer src="/events.js"></script>', '<script src="/events.js"></script>')), { message: silent });
   assert.equal(/events\.js|data-page=/.test(page('terms.html')), false);
+  const support = page('support.html');
+  assert.doesNotThrow(() => checkStaticPage('support.html', support));
+  assert.throws(() => checkStaticPage('support.html', support.replace(' data-page="support"', '')), { message: silent.replaceAll('pricing.html', 'support.html') });
 });
 
 test('an indexable page must unfurl as itself, and a noindex page need not', () => {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-page="support">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -55,54 +55,55 @@
   <style>html[data-auth=in] .au-out{display:none}html[data-auth=out] .au-in{display:none}</style>
   <script defer src="/nav-auth.js"></script>
   <script defer src="/appearance.js"></script>
+  <script defer src="/events.js"></script>
 </head>
   <body>
     <a class="skip" href="#content">Skip to content</a>
-    <header>
-      <a class="wm" href="/"><img src="/brand-mark.svg" alt="" width="28" height="28">Windmill</a>
+    <header data-area="header">
+      <a class="wm" href="/" data-to="home"><img src="/brand-mark.svg" alt="" width="28" height="28">Windmill</a>
       <nav class="fam">
-        <a href="/roadmap">Roadmap</a>
-        <a href="/journal">Journal</a>
-        <a href="/gym">Gym</a>
-        <a href="/pricing.html">Pricing</a>
+        <a href="/roadmap" data-to="landing" data-product="roadmap">Roadmap</a>
+        <a href="/journal" data-to="landing" data-product="journal">Journal</a>
+        <a href="/gym" data-to="landing" data-product="gym">Gym</a>
+        <a href="/pricing.html" data-to="pricing">Pricing</a>
       </nav>
       <span class="navr">
         <span class="wm-appearance" aria-hidden="true"></span>
-        <a class="btn btn--gho au-out" href="/?signin">Sign in</a>
-        <a class="btn btn--pri au-out" href="/#/app">Start your tree</a>
-        <a class="btn btn--gho au-in" href="/#/settings" data-authname>My account</a>
-        <a class="btn btn--pri au-in" href="/#/app">My trees</a>
+        <a class="btn btn--gho au-out" href="/?signin" data-to="sign_in">Sign in</a>
+        <a class="btn btn--pri au-out" href="/#/app" data-to="app">Start your tree</a>
+        <a class="btn btn--gho au-in" href="/#/settings" data-authname data-to="settings">My account</a>
+        <a class="btn btn--pri au-in" href="/#/app" data-to="app">My trees</a>
       </span>
     </header>
-    <main class="wrap" id="content">
+    <main class="wrap" id="content" data-area="content">
       <article class="doc">
         <h1>Support</h1>
         <p class="lede">Windmill is three tools in one account: Windmill Roadmap, Windmill Journal and Windmill Gym.</p>
 
         <h2>Write to us</h2>
-        <p>Email <a href="mailto:hello@windmill.works">hello@windmill.works</a> and say what you did and what you saw. The Feedback button at the foot of the <a href="/">front page</a> reaches the same team; leave your email there if you’d like a reply.</p>
+        <p>Email <a href="mailto:hello@windmill.works" data-to="feedback">hello@windmill.works</a> and say what you did and what you saw. The Feedback button at the foot of the <a href="/" data-to="home">front page</a> reaches the same team; leave your email there if you’d like a reply.</p>
 
         <h2>Your data</h2>
         <p>Signed out, your trees, journal pages and workout log are kept on the device you made them on: in this browser on the web, or in the app on a phone. Signing in syncs them to your account, so they follow you.</p>
-        <p>To keep a copy, open <a href="/app/settings">Settings</a> on the web. <strong>Export my trees</strong> saves a .zip of Markdown, one file per tree, and <strong>Export my pages</strong> saves your journal as one Markdown file. Both work signed in or signed out. The workout log has no export. The phone apps have none either: sign in on the phone, then export from the web.</p>
-        <p>To delete your account on the web, open <a href="/app/settings">Settings</a>: it ends with <strong>Close your account</strong>, where you choose Close my account and type your email to confirm. In the phone apps, open You, choose <strong>Delete account</strong> and type your email to confirm. Either way every device signs out at once, and every connected tool loses its access. For 30 days, signing in again brings it all back; after that it is deleted for good.</p>
+        <p>To keep a copy, open <a href="/app/settings" data-to="settings">Settings</a> on the web. <strong>Export my trees</strong> saves a .zip of Markdown, one file per tree, and <strong>Export my pages</strong> saves your journal as one Markdown file. Both work signed in or signed out. The workout log has no export. The phone apps have none either: sign in on the phone, then export from the web.</p>
+        <p>To delete your account on the web, open <a href="/app/settings" data-to="settings">Settings</a>: it ends with <strong>Close your account</strong>, where you choose Close my account and type your email to confirm. In the phone apps, open You, choose <strong>Delete account</strong> and type your email to confirm. Either way every device signs out at once, and every connected tool loses its access. For 30 days, signing in again brings it all back; after that it is deleted for good.</p>
 
         <h2>Windmill One</h2>
         <p>Windmill One is not on sale yet. When it is, the store you buy it in takes the payment and handles cancelling and refunds.</p>
 
         <h2>More</h2>
         <ul class="more">
-          <li><a href="/privacy.html">Privacy</a></li>
-          <li><a href="/terms.html">Terms</a></li>
-          <li><a href="/pricing.html">Pricing</a></li>
+          <li><a href="/privacy.html" data-to="privacy">Privacy</a></li>
+          <li><a href="/terms.html" data-to="terms">Terms</a></li>
+          <li><a href="/pricing.html" data-to="pricing">Pricing</a></li>
         </ul>
       </article>
     </main>
-    <footer>
+    <footer data-area="footer">
       <span class="fl"><b><img src="/brand-mark.svg" alt="" width="22" height="22">Windmill</b><span>© 2026</span></span>
       <nav class="fcol">
-        <span class="fr"><a href="/pricing.html">Pricing</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/refunds.html">Refunds</a><a href="/changelog.html">Changelog</a><a href="/support.html">Support</a></span>
-        <span class="fr"><a href="/roadmap">Roadmap</a><a href="/journal">Journal</a><a href="/gym">Gym</a><a href="/gallery">Gallery</a><a href="/connect.html">Connect</a></span>
+        <span class="fr"><a href="/pricing.html" data-to="pricing">Pricing</a><a href="/privacy.html" data-to="privacy">Privacy</a><a href="/terms.html" data-to="terms">Terms</a><a href="/refunds.html" data-to="refunds">Refunds</a><a href="/changelog.html" data-to="changelog">Changelog</a><a href="/support.html" data-to="support">Support</a></span>
+        <span class="fr"><a href="/roadmap" data-to="landing" data-product="roadmap">Roadmap</a><a href="/journal" data-to="landing" data-product="journal">Journal</a><a href="/gym" data-to="landing" data-product="gym">Gym</a><a href="/gallery" data-to="gallery">Gallery</a><a href="/connect.html" data-to="connect">Connect</a></span>
       </nav>
     </footer>
   </body>
