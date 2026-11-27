@@ -1,0 +1,24 @@
+/* Roadmap's picture on the brand root (RootPicture.jsx), one rule set per stage; the nodes and the plaque are roadmapLanding.css's. */
+.rmPicture { display: flex; align-items: center; justify-content: center; gap: 40px; padding: 40px; font-family: var(--font-body); }
+.rmPicture-request { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.rmPicture-label { font-family: var(--look-font); font-size: 13px; line-height: 18px; color: var(--look-ink-3); }
+.rmPicture-bubble { padding: 12px 16px; border-radius: var(--look-radius-inner); background: var(--look-wash);
+                    font-size: 15px; line-height: 22px; color: var(--look-ink-1); white-space: nowrap; }
+.rmPicture-arrow { display: flex; flex: none; color: var(--look-ink-3); }
+
+.rmPicture-tree { position: relative; flex: none; }
+.rmPicture-tree > svg { position: absolute; inset: 0; overflow: visible; }
+.rmPicture-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5; }
+.rmPicture-edge.is-lit { stroke: var(--connector-active); stroke-width: 2.2; }
+.rmPicture-crown { position: absolute; z-index: 3; display: flex; transform: translate(-50%, -50%); color: var(--kind-gold); }
+.rmPicture-crown svg { fill: currentColor; }
+.rmPicture .nd-avail { background: var(--look-panel); }
+.rmPicture .nd-dim { background: color-mix(in srgb, var(--g) 22%, var(--look-panel)); }
+.rmPicture .ndlabel { font-size: 11px; line-height: 14px; }
+.rmPicture .ndlabel--dim { color: var(--neutral-500); }
+.rmPicture .plq { left: 17px; top: 15px; border-radius: var(--look-radius-inner); }
+
+/* The column and narrow stages stack the request over the tree: request right, arrow down. */
+.rmPicture:not([data-stage="row"]) { flex-direction: column; align-items: center; gap: 14px; padding: 20px 16px 24px; }
+.rmPicture:not([data-stage="row"]) .rmPicture-request { align-self: stretch; }
+.rmPicture:not([data-stage="row"]) .rmPicture-arrow { transform: rotate(90deg); }

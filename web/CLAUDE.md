@@ -116,7 +116,7 @@ Copy is read through a translator from catalogs; English is the only locale.
 - An owner keeps a catalog per moment its files load, so a page downloads only the copy it shows.
   `i18n/entry/` holds the copy of the files the brand root loads: what the entry chunk carries (the
   shell's landing chrome and sign-in, each product's route table and landing head, and what they import,
-  such as gym's runtime) and each product's brand-root scenes (`marketing/RootScenes.jsx`). `i18n/app/`
+  such as gym's runtime) and each product's brand-root picture (`marketing/RootPicture.jsx`). `i18n/app/`
   holds the copy of the app's chrome and home: the shell's `/app` chrome and each product's home card.
   `i18n/settings/` holds the copy of the settings page: the shell's page, each product's settings sections,
   and what they import. A product's `i18n/landing/` holds the copy of its landing page (the module its
@@ -270,8 +270,8 @@ and per-quest landing pages have no implementation here.
 ## Appearance and boot
 
 `shell/appearance.js` stores the device preference and exposes it through `useAppearance`.
-The app account menu offers Light, Dark and System; landing and static-page controls offer Light
-and Dark. Browser chrome metadata follows the active room or landing and is restored on unmount.
+The app account menu offers Light, Dark and System; the brand root's footer offers the same three as
+Auto, Light and Dark; the product landings' and static pages' controls offer Light and Dark. Browser chrome metadata follows the active room or landing and is restored on unmount.
 
 `scripts/appBoot.js` stamps theme and ground colour before the bundle arrives. It reads rooms from
 `shell/products.js` and colours from shared tokens, failing when declarations drift. App rooms hide
@@ -357,6 +357,7 @@ The worker stages the shell and room dependencies listed by `offline-assets.json
 cache generation before promoting it; a failed update retains the previous complete shell. The build
 enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use; the worker
 keeps the runtime in its asset cache and the weights in `windmill-models-v1` after that use, neither in the shell.
+The brand root's Inter stays out of the precache, so only that page fetches it.
 API responses bypass the worker: its fetch handler declines them, and where the browser takes service
 worker routes the worker routes `/v1/` to the network at install, so a beacon or keepalive request a page sends
 as it hides never waits on the handler. Bounded network navigation falls back to the cached shell.

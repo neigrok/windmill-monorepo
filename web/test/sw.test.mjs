@@ -300,9 +300,11 @@ function chunk(modules, imports = [], dynamicImports = [], assets = [], css = []
   return { type: 'chunk', modules: Object.fromEntries(modules.map((name) => [name.startsWith('/') ? name : `/web/src/${name}`, {}])), code: 'code',
     imports, dynamicImports, viteMetadata: { importedAssets: new Set(assets), importedCss: new Set(css) } };
 }
-test('precache follows the shell and room graph, excluding neural runtime and unrelated assets', () => {
+test('precache follows the shell and room graph, excluding neural runtime, the front page\'s face and unrelated assets', () => {
   const bundle = {
-    'assets/main.js': { ...chunk(['main.jsx'], [], ['assets/gym.js', 'assets/journal.js', 'assets/showcase.js']), isEntry: true },
+    'assets/main.js': { ...chunk(['main.jsx'], [], ['assets/gym.js', 'assets/journal.js', 'assets/showcase.js'], ['assets/nunito.woff2', 'assets/inter.woff2']), isEntry: true },
+    'assets/nunito.woff2': { type: 'asset', source: 'font', originalFileNames: ['node_modules/@fontsource/nunito/files/nunito-latin-400-normal.woff2'] },
+    'assets/inter.woff2': { type: 'asset', source: 'font', originalFileNames: ['node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2'] },
     'assets/gym.js': chunk(['products/gym/GymApp.jsx'], [], [], [], ['assets/gym.css']),
     'assets/journal.js': chunk(['products/journal/JournalApp.jsx', 'products/journal/search/neural/neuralEmbedder.js'], [], ['assets/neural.js']),
     'assets/neural.js': chunk(['/web/node_modules/@huggingface/transformers/dist/transformers.web.js'], [], [], ['assets/worker.js']),
@@ -314,7 +316,7 @@ test('precache follows the shell and room graph, excluding neural runtime and un
   };
   let manifest;
   offlineShell().generateBundle.call({ emitFile: (file) => { manifest = JSON.parse(file.source); } }, {}, bundle);
-  assert.deepEqual(manifest, ['/assets/gym.css', '/assets/gym.js', '/assets/journal.js', '/assets/main.js']);
+  assert.deepEqual(manifest, ['/assets/gym.css', '/assets/gym.js', '/assets/journal.js', '/assets/main.js', '/assets/nunito.woff2']);
 });
 
 test('the build refuses a shell and room graph over the fixed precache budget', () => {

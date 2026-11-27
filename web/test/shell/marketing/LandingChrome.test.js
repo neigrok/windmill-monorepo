@@ -37,10 +37,10 @@ const DOOR = { open() {}, lendHost() {} };
 test('at night the landing stamps <html> with theme, brand, ground and the two metas, and unstamps on unmount', async (t) => {
   const { html, metas } = browser({ ground: '#0B0E16' });
   const { setAppearance } = await loadScreen('shell/appearance.js');
-  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
+  const { LandingFrame } = await loadScreen('shell/marketing/LandingChrome.jsx');
   setAppearance('dark');
 
-  const view = renderHook(t, () => LandingPage({ brand: 'journal', product: 'journal', children: null }), { context: DOOR });
+  const view = renderHook(t, () => LandingFrame({ brand: 'journal', path: '/journal', children: null }), { context: DOOR });
   assert.deepEqual(html.attributes, { 'data-theme': 'dark', 'data-brand': 'journal' });
   assert.deepEqual(html.style.props, { '--wm-boot-ground': '#0B0E16' });
   assert.deepEqual([metas['theme-color'].content, metas['theme-color'].dataset.was], ['#0B0E16', '#F9F5EB']);
@@ -57,10 +57,10 @@ test('at night the landing stamps <html> with theme, brand, ground and the two m
 test('by day the landing leaves <html> and the metas untouched', async (t) => {
   const { html, metas } = browser({ ground: '#F7F7F5' });
   const { setAppearance } = await loadScreen('shell/appearance.js');
-  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
+  const { LandingFrame } = await loadScreen('shell/marketing/LandingChrome.jsx');
   setAppearance('light');
 
-  renderHook(t, () => LandingPage({ brand: 'journal', product: 'journal', children: null }), { context: DOOR });
+  renderHook(t, () => LandingFrame({ brand: 'journal', path: '/journal', children: null }), { context: DOOR });
   assert.deepEqual(html.attributes, {});
   assert.deepEqual(html.style.props, {});
   assert.deepEqual([metas['theme-color'].content, metas['color-scheme'].content], ['#F9F5EB', 'light']);
@@ -71,16 +71,16 @@ test('by day the landing leaves <html> and the metas untouched', async (t) => {
 test('the brand root wears clay at night', async (t) => {
   const { html } = browser({ ground: '#0B0B0C' });
   const { setAppearance } = await loadScreen('shell/appearance.js');
-  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
+  const { LandingFrame } = await loadScreen('shell/marketing/LandingChrome.jsx');
   setAppearance('dark');
-  renderHook(t, () => LandingPage({ brand: null, product: null, children: null }), { context: DOOR });
+  renderHook(t, () => LandingFrame({ brand: null, path: '/', children: null }), { context: DOOR });
   assert.deepEqual(html.attributes, { 'data-theme': 'dark', 'data-brand': 'clay' });
   setAppearance('system');
 });
 
 // ---- the appearance toggle in the nav ----
-// The Light · Dark bar opens the cluster on every landing — signed in, signed out, and while auth
-// is still unanswered — and the seat is told to draw no Appearance row of its own.
+// The Light · Dark bar opens the cluster on every product landing — signed in, signed out, and while
+// auth is still unanswered — and the seat is told to draw no Appearance row of its own.
 
 const renderNamed = (t, tree, name, context) => {
   const element = elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === name);
@@ -89,18 +89,20 @@ const renderNamed = (t, tree, name, context) => {
 };
 
 const cluster = async (t, { product, status, user }) => {
-  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
+  const { LandingFrame, LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
   const { AppearanceToggle } = await loadScreen('shell/marketing/AppearanceToggle.jsx');
   const { AccountSeat } = await loadScreen('shell/auth/AccountSeat.jsx');
   const context = { ...DOOR, status, user, signOut() {} };
-  const page = renderHook(t, () => LandingPage({ brand: product, product, cta: { href: '/x', label: 'Open' }, children: null }), { context });
-  const nav = renderNamed(t, page.tree, 'LandingNav', context);
+  const landing = LandingPage({ brand: product, product, cta: { href: '/x', label: 'Open' }, children: null });
+  const page = renderHook(t, () => LandingFrame(landing.props), { context });
+  const { header } = landing.props;
+  const nav = renderHook(t, () => header.type(header.props), { context }).tree;
   const tree = renderNamed(t, nav, 'NavCluster', context);
   const children = elementsOf(tree)[0].props.children.flat().filter(Boolean);
   return { page, tree, kinds: children.map((each) => (each.type === AppearanceToggle ? 'toggle' : each.type === AccountSeat ? 'seat' : each.type)), seat: children.find((each) => each.type === AccountSeat) };
 };
 
-test('the toggle opens the cluster on every landing, signed in and out, and the seat draws no row', async (t) => {
+test('the toggle opens the cluster on every product landing, signed in and out, and the seat draws no row', async (t) => {
   browser({ ground: '#F7F7F5' });
   const { PRODUCTS } = await loadScreen('shell/products.js');
   const { setAppearance } = await loadScreen('shell/appearance.js');
@@ -109,13 +111,13 @@ test('the toggle opens the cluster on every landing, signed in and out, and the 
     { status: 'ghost', user: null },
     { status: 'signed-in', user: { name: 'Ada', email: 'ada@example.com' } },
   ];
-  for (const product of [null, ...PRODUCTS.map((entry) => entry.id)]) {
+  for (const product of PRODUCTS.map((entry) => entry.id)) {
     for (const visitor of visitors) {
       const { kinds, seat } = await cluster(t, { product, ...visitor });
-      assert.equal(kinds[0], 'toggle', `${product ?? 'root'} ${visitor.status}: first in the cluster`);
-      assert.equal(kinds.at(-1), 'seat', `${product ?? 'root'} ${visitor.status}: the seat closes it`);
-      assert.equal(kinds.filter((kind) => kind === 'toggle').length, 1, `${product ?? 'root'} ${visitor.status}: one toggle`);
-      assert.equal(seat.props.appearance, false, `${product ?? 'root'} ${visitor.status}: the seat draws no Appearance row on a landing`);
+      assert.equal(kinds[0], 'toggle', `${product} ${visitor.status}: first in the cluster`);
+      assert.equal(kinds.at(-1), 'seat', `${product} ${visitor.status}: the seat closes it`);
+      assert.equal(kinds.filter((kind) => kind === 'toggle').length, 1, `${product} ${visitor.status}: one toggle`);
+      assert.equal(seat.props.appearance, false, `${product} ${visitor.status}: the seat draws no Appearance row on a landing`);
     }
   }
 });
@@ -159,22 +161,4 @@ test('while auth is unanswered the toggle is already there and first; only the s
   const hidden = elementsOf(tree).find((each) => each.props['aria-hidden'] === 'true');
   assert.deepEqual(hidden.props.style, { display: 'contents', visibility: 'hidden' }, 'the buttons keep their box invisibly');
   assert.equal(elementsOf(hidden).some((each) => each.type?.name === 'AppearanceToggle'), false, 'the toggle is not in the hidden part');
-});
-
-// ---- the cross-nav on the brand root ----
-// The product links point at a product's landing everywhere but on the brand root, where `anchored`
-// turns them into anchors to that product's section on the same page. Pricing is unchanged.
-test('anchored turns the product links into same-page anchors and leaves Pricing alone', async (t) => {
-  browser({ ground: '#F7F7F5' });
-  const { PRODUCTS } = await loadScreen('shell/products.js');
-  const { LandingPage } = await loadScreen('shell/marketing/LandingChrome.jsx');
-  const context = { ...DOOR, status: 'ghost', user: null, signOut() {} };
-  const hrefsOf = (anchored) => {
-    const page = renderHook(t, () => LandingPage({ brand: null, product: null, anchored, children: null }), { context });
-    const nav = renderNamed(t, page.tree, 'LandingNav', context);
-    const primary = elementsOf(nav).find((each) => each.props['aria-label'] === 'Primary');
-    return elementsOf(primary).filter((each) => each.type === 'a').map((each) => each.props.href);
-  };
-  assert.deepEqual(hrefsOf(true), [...PRODUCTS.map((entry) => `#${entry.id}`), '/pricing.html']);
-  assert.deepEqual(hrefsOf(false), [...PRODUCTS.map((entry) => entry.landing.href), '/pricing.html']);
 });

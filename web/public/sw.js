@@ -13,9 +13,11 @@ const LIBRARY_MODEL_CACHE = 'transformers-cache';
 const GENERATION_PREFIX = 'windmill-generation-';
 const POINTER = '/offline-generation';
 const ICON_PATHS = [
-  '/brand-logo.svg', '/brand-mark.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png',
+  '/brand-logo.svg', '/brand-mark.svg', '/brand-mark-night.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png',
   '/apple-touch-icon.png', '/favicon.ico', '/favicon.svg', '/favicon-32.png',
 ];
+// The marks a page draws in its first paint are kept at activation, so a page offline after one visit still draws them.
+const MARKS = ['/brand-mark.svg', '/brand-mark-night.svg'];
 let priming;
 
 // A request sent as the page hides cannot wait on the fetch handler: it would fall back to the network after the page is gone.
@@ -31,6 +33,11 @@ self.addEventListener('activate', (event) => {
     await Promise.all(names.filter((name) => name === LIBRARY_MODEL_CACHE || (name.startsWith(MODEL_CACHE_PREFIX) && name !== MODEL_CACHE))
       .map((name) => caches.delete(name).catch(() => {})));
     await primeShell().catch(() => {});
+    await Promise.all(MARKS.map(async (url) => {
+      if (await kept(ICON_CACHE, url)) return;
+      const response = await network(url, true, true).catch(() => null);
+      if (response?.ok && !response.redirected) await keep(ICON_CACHE, url, response);
+    }));
     await self.clients.claim();
   })());
 });

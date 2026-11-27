@@ -7,6 +7,8 @@ import { SignInDialog } from './SignInDialog.jsx';
 import { requestMagicLink } from './AuthClient.js';
 import { useAuth } from './AuthProvider.jsx';
 import { readNavigation, subscribeNavigation, replaceLocation } from '../navigation.js';
+import { track } from '../../telemetry/beacon.js';
+import { captureError } from '../../telemetry/sentry.js';
 
 const SIGN_IN_PARAM = 'signin';
 
@@ -66,8 +68,21 @@ export function SignInDoorProvider({ children }) {
     if (status === 'signed-in') setRequest(null);
   }, [status]);
 
+  // Each link asked for tells one `sign_in_link`; a refusal the door words is told alone, any other failure is reported too.
   const send = useCallback(async (email) => {
-    const result = await requestMagicLink(email);
+    let result;
+    try { result = await requestMagicLink(email); }
+    catch (error) {
+      if (['invalid_email', 'rate_limited'].includes(error?.code)) {
+        track('sign_in_link', { outcome: 'refused', reason: error.code });
+        throw error;
+      }
+      const reason = !error?.status ? 'network' : error.status >= 500 ? 'server' : 'request';
+      track('sign_in_link', { outcome: 'failed', reason });
+      captureError('auth', 'auth-magic-link', '', '/auth', { reason });
+      throw error;
+    }
+    track('sign_in_link', { outcome: 'sent' });
     request?.onSent?.(); // only on a link that actually went out
     return result;
   }, [request]);

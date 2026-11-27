@@ -1,9 +1,37 @@
 @import '../gymTokens.css';
-@import './gymIslands.css';
+
+/* The parts every gym island on the landing is built from: its moat and its loop stages.
+
+   The islands wear .gym-skin, so the token import above is the product's own palette, never a copy.
+   On a night page an island stands on the ground it wears: it climbs to the raised step and takes the
+   strong edge, every cell inside it climbs one more, and the small captions take the dim ink. */
+.landing[data-theme="dark"] .gyw { background: var(--gym-raised); border-color: var(--border-strong); }
+.landing[data-theme="dark"] .gyw :is(.gyInnerCard, .gyWell, .gychip, .gyrep) { background: var(--neutral-300); }
+.landing[data-theme="dark"] .gyCaption { color: var(--gym-ink-dim); }
+
+.gyCaption { color: var(--gym-ink-faint); }
+
+.gyWell {
+  background: var(--gym-sunken);
+  border: 1px solid var(--gym-line);
+  border-radius: var(--radius-lg);
+}
+
+.gychip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 52px; height: 44px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gym-line-strong);
+  background: var(--gym-raised);
+  font-family: var(--font-mono); font-size: 14.5px; color: var(--gym-ink);
+  transition: background 150ms var(--ease-standard), color 150ms var(--ease-standard);
+}
+
+.gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
+.gyck { margin-left: auto; color: var(--set-done); }
 
 /* What the landing adds to the island parts: the hero moat, the loop stages, the movement shelf and
-   the arrivals that play inside them. The brand root's scenes are gymRootScenes.css and are not
-   imported here — nothing on this page draws them. */
+   the arrivals that play inside them. */
 
 .gyMoat {
   width: min(720px, 100%);
@@ -62,9 +90,7 @@
   padding: 16px 18px;
   text-align: left;
 }
-/* The answer that landed: the brand's wash over the card's own night ground, never over the page, whose
-   day ground would leave night ink on a pale tint. As specific as the night page's island rule
-   (gymIslands.css), which it follows, so the card keeps its wash on both pages. */
+/* The answer that landed: the brand's wash over the card's own night ground, as specific as the island rule it follows. */
 .landing .gyw.gycard-landed {
   border-color: var(--color-brand);
   background: linear-gradient(var(--color-brand-soft), var(--color-brand-soft)), var(--gym-canvas);
