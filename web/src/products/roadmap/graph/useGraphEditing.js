@@ -4,7 +4,7 @@ import { graftPlan } from '../paste/graftPlan.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
 import { onceLanded, receiptUndo } from '../board/acts.js';
-import { readEffects } from '../model/effects.js';
+import { readEffects } from '../model/domainReads.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -115,6 +115,9 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
   const handleConnect = useCallback((sourceId, targetId) => writeEdit({ kind: 'AddEdge', from: sourceId, to: targetId }, { prerequisites: true }), []);
 
+  // The steps a new link of a step would close a loop with, over the roadmap a hold leaves standing: the domain's.
+  const loopsOf = useCallback((id) => readEffects(standingTreeRef.current, [id])?.loops ?? null, []);
+
   const handleDeleteEdge = useCallback((sourceId, targetId) => writeEdit({ kind: 'RemoveEdge', from: sourceId, to: targetId }, { prerequisites: true }), []);
 
   const handleReconnect = useCallback((oldFrom, oldTo, newFrom, newTo) => {
@@ -193,7 +196,8 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
     if (!nodes || !session) return;
     const selected = selectedIdRef.current;
     const anchored = selected && nodes.some((node) => node.id === selected);
-    const targetId = (anchored ? selected : nodes.find((node) => node.prerequisites.length === 0)?.id) ?? null;
+    // Under the step selected, else where the domain lands a paste: the roadmap's first starting step.
+    const targetId = (anchored ? selected : readEffects(treeRef.current, [])?.under) ?? null;
 
     const graft = graftPlan({
       parse,
@@ -225,7 +229,7 @@ export function useGraphEditing({ room, legendRef, desktopEditorRef, selection, 
 
   return {
     autoFocusNameId, composerOpen, draft, setDraft, draftKinds, setDraftKinds, draftParse, closeComposer, openComposer,
-    undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, handleDeleteEdge, handleReconnect,
+    undo, redo, announce, handleRename, handleCreateChild, handleCreateRoot, handleConnect, loopsOf, handleDeleteEdge, handleReconnect,
     deleteNodeAt, deleteSelected, bulkDelete, handleSetKind, reorderContext, handleSetNodeOrder, bulkRecolor, graftImported,
   };
 }

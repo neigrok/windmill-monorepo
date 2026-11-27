@@ -99,7 +99,8 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 ## Loading a roadmap
 
-`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, derives progress through `UnlockRules`,
+`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, reads its steps' states from the domain
+(`model/domainReads.js`),
 runs layout and installs the render model in `SkillTreeScene` when one is available, then has the reading follow each
 change. Without WebGL2 it installs the tree and model with null scene bounds, seeds activity and starts following without
 any scene or camera calls. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
@@ -436,9 +437,9 @@ pointer changes or the room loads again. Once a claim takes the tree to the acco
 channel, `onTreeClaimed`), the room stops reading the device, and the facts it holds stand until the server's replace
 them.
 
-`UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
-mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
-(`takesMark`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
+The domain's `completedOf` (`domain/account.js`, which `model/domainReads.js` reads the room's tree through) is the one
+rule: a step that opens a tree is complete exactly when that tree is, whatever its mark and its prerequisites, and one
+whose pointer leads nowhere follows its mark. No hand marks such a step (`takesMark`, `model/Opening.js`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
 and sends nothing for one. A mark that such a step already holds, made before the pointer arrived, is set aside
 (`SyncSession.owedFrames`): it stays on the device as it is, and while the lattice record holds a pointer it is not sent
 and not counted as unsent, in the outbox, in the status the room shows or in what keeps a refusal standing. Nothing
@@ -574,9 +575,10 @@ this roadmap* with Try again in its place, the rest of the picker standing. Each
 with its read and reason. A 401 on either read is the room's lapse (`treeActs.lapsed`, the path a refused write takes),
 with no Try again.
 
-One line under the rows says what happens to a hand's mark. `treeAttachment` in `model/UnlockRules.js` answers it
-from the tree and the marks the Board derives from: whether the step holds a mark, and how many steps up next lock
-again once the step is done no longer, none where the tree chosen is complete. The ⋯ is a menu under the heading from
+One line under the rows says what happens to a hand's mark. The domain's `EffectsRead.attachRelocks` answers it
+(`readEffects` with the attach), over the tree and the marks the Board reads: null where the step holds no mark, else
+the steps up next that lock again once the step is done no longer, none where the tree chosen is complete or the step
+stands done no longer already. The ⋯ is a menu under the heading from
 744px, standing in the step's layer so the scrolling step does not clip it, and a sheet on phones; its footnote names
 the mark only where one was set aside.
 
@@ -1010,10 +1012,11 @@ six-second Undo.
 ### Held delete
 
 Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the steps that follow
-it, the domain's `EffectsRead.follow` (`readEffects`, `model/effects.js`). Confirm closes the detail and creates a
+it, the domain's `EffectsRead.follow` (`readEffects`, `model/domainReads.js`). Confirm closes the detail and creates a
 `HeldDelete`, with no structural write yet. For its nine-second Undo window every Board surface reads the held
 projection: cards, counts, identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold
-and projects it into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
+and projects it into the Graph. The projection is the domain's reading of the delete (`standingWithout`): the held
+steps are absent, so a step that followed one follows what it followed (D-5), as the delete reads once it is written.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or
@@ -1144,10 +1147,10 @@ best-effort projection when replicated state contains cycles. `TrunkTree` choose
 for layout: same-kind parents first, then depth and id; siblings keep their fractional order and
 creation-stamp order.
 
-`UnlockRules.derive` is the authority for locked, available and complete, off the completed set `UnlockRules.completed`
-gives; the same file answers what a step
-still owes (`owedStepsOf` for one step, `owedCounts` for every step in one pass) and what completing it opens
-(`unlocksOf`). An edge inherits its source node's state. Legend order lives in the lattice and is written by
+The domain's graph (`domainReading` in `model/domainReads.js`, one `FollowGraph` for each tree and set of marks) is the
+authority for locked, available and complete, and for what a step still owes (`owed`, and `owedIndex` for every step in
+one pass) and what completing it opens (`unlocks`); the Board is the domain's `BoardRead`. An edge inherits its source
+node's state. Legend order lives in the lattice and is written by
 `ReorderKinds`; `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 

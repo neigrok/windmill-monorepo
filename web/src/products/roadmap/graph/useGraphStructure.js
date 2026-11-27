@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { layoutTree } from '../layout/index.js';
 import { SkillTree } from '../model/SkillTree.js';
-import { UnlockRules } from '../model/UnlockRules.js';
+import { domainReading } from '../model/domainReads.js';
 import { makeRenderable } from '../model/renderableGraph.js';
 import { GRAPH_TOAST, cycleToast, keptStepsToast } from '../copy.js';
 
@@ -64,7 +64,7 @@ export function useGraphStructure({ room, progressActs, showToast, syncLegendFro
       showToast(GRAPH_TOAST.undrawnEdit, { act: 'notice' });
       return;
     }
-    const nextStates = UnlockRules.derive(nextTree, progressActs.snapshot);
+    const nextStates = domainReading(nextTree, progressActs.snapshot).states;
     const model = nextTree.toRenderModel(positions, nextStates);
     sceneNow?.applyModel(model);
     treeRef.current = nextTree;

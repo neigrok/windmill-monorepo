@@ -52,7 +52,7 @@ test('Board — the initial Learn to sail roadmap: 3 locked, 2 up next, 3 done, 
     'locked 3',
     '  Leave the dock · needs Read the wind +0 · 1 to go',
     '  Sail a triangle · needs Leave the dock +0 · 2 to go',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 2',
     '  Read the wind · unlocks Leave the dock +0',
     '  Tie a bowline',
@@ -74,7 +74,7 @@ test('Board — a card carries its step, its column and structured reasons, neve
   assert.deepEqual(
     { step: solo.step, column: solo.column, unlockCount: solo.unlockCount, needs: solo.needs, unlocks: solo.unlocks },
     { step: tree.nodesById.get('solo'), column: 'locked', unlockCount: 0,
-      needs: { need: tree.nodesById.get('triangle'), extra: 1, toGo: 4 }, unlocks: null },
+      needs: { need: tree.nodesById.get('bowline'), extra: 1, toGo: 4 }, unlocks: null },
   );
   assert.deepEqual(
     { step: wind.step, column: wind.column, unlockCount: wind.unlockCount, needs: wind.needs, unlocks: wind.unlocks },
@@ -95,7 +95,7 @@ test('Board — completing Read the wind moves Leave the dock up next and shorte
   assert.equal(render(new Board(tree, progress)), [
     'locked 2',
     '  Sail a triangle · needs Leave the dock +0 · 1 to go',
-    '  Sail solo · needs Sail a triangle +1 · 3 to go',
+    '  Sail solo · needs Tie a bowline +1 · 3 to go',
     'upNext 2',
     '  Leave the dock · unlocks Sail a triangle +0',
     '  Tie a bowline',
@@ -118,7 +118,7 @@ test('Board — resetting Name the boat parts regroups its dependents and leaves
     '  Tie a bowline · needs Name the boat parts +0 · 1 to go',
     '  Leave the dock · needs Read the wind +0 · 2 to go',
     '  Sail a triangle · needs Leave the dock +0 · 3 to go',
-    '  Sail solo · needs Sail a triangle +1 · 5 to go',
+    '  Sail solo · needs Tie a bowline +1 · 5 to go',
     'upNext 1',
     '  Name the boat parts · unlocks Tie a bowline +1',
     'done 2',
@@ -137,7 +137,7 @@ test('Board — a new step behind Read the wind arrives locked, one to go, and g
     ['Leave the dock', 'Read the wind', 0, 1],
     ['Reefing basics', 'Read the wind', 0, 1],
     ['Sail a triangle', 'Leave the dock', 0, 2],
-    ['Sail solo', 'Sail a triangle', 1, 4],
+    ['Sail solo', 'Tie a bowline', 1, 4],
   ]);
   assert.deepEqual(board.overall, { done: 3, total: 9 });
   assert.equal(board.columnOf('reef'), 'locked');
@@ -188,7 +188,7 @@ test('Board — the kind filter is an OR across hues and narrows every column, n
 
   assert.equal(render(new Board(tree, initialProgress(), { kinds: ['gold'] })), [
     'locked 1',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 0',
     'done 0',
     'progress 3/8',
@@ -203,7 +203,7 @@ test('Board — the kind filter is an OR across hues and narrows every column, n
   ].join('\n'));
   assert.equal(render(new Board(tree, initialProgress(), { kinds: new Set(['gold', 'sky']) })), [
     'locked 1',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 1',
     '  Read the wind · unlocks Leave the dock +0',
     'done 1',
@@ -263,7 +263,7 @@ test('Board — the Read the wind branch holds six steps and still reads status 
     'locked 3',
     '  Leave the dock · needs Read the wind +0 · 1 to go',
     '  Sail a triangle · needs Leave the dock +0 · 2 to go',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 1',
     '  Read the wind · unlocks Leave the dock +0',
     'done 2',
@@ -278,7 +278,7 @@ test('Board — filter and search intersect the branch; a vanished anchor scopes
 
   assert.equal(render(new Board(tree, initialProgress(), { branch: 'wind', search: 'sail', kinds: ['terracotta', 'gold'] })), [
     'locked 1',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 0',
     'done 1',
     '  Choose a sailing course',
@@ -377,7 +377,7 @@ test('Board — Created sorts Locked and Up next, newest or oldest, ties in auth
     'locked 3',
     '  Leave the dock · needs Read the wind +0 · 1 to go',
     '  Sail a triangle · needs Leave the dock +0 · 2 to go',
-    '  Sail solo · needs Sail a triangle +1 · 4 to go',
+    '  Sail solo · needs Tie a bowline +1 · 4 to go',
     'upNext 2',
     '  Tie a bowline',
     '  Read the wind · unlocks Leave the dock +0',

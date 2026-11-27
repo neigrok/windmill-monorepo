@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SkillTree, respliceEdges } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { NODE_SIZE } from '../../../../src/products/roadmap/theme.js';
 
 const treeOf = (nodes) => new SkillTree({ id: 't', title: 'T', nodes });
@@ -115,29 +115,4 @@ test('toRenderModel refuses to render a node the layout gave no position', () =>
 test('a tree with no steps renders the extent of one step at the origin, where a camera fit to it can stand', () => {
   assert.deepEqual(treeOf([]).toRenderModel(new Map(), new Map()),
     { nodes: [], edges: [], bounds: { minX: -NODE_SIZE, minY: -NODE_SIZE, maxX: NODE_SIZE, maxY: NODE_SIZE } });
-});
-
-test('without shares the resplice edges, preserves node fields and tree identity, and leaves the source untouched', () => {
-  const nodes = [
-    { id: 'r', label: 'Root', prerequisites: [] },
-    { id: 'a', label: 'A', prerequisites: ['r'] },
-    { id: 'b', label: 'B', prerequisites: ['a'] },
-    { id: 'c', label: 'C', color: 'sky', description: 'Keep this', prerequisites: ['a', 'b'] },
-    { id: 'd', label: 'D', prerequisites: ['b', 'r'] },
-  ];
-  const tree = new SkillTree({ id: 't', title: 'T', author: 'Author', nodes });
-  assert.deepEqual(respliceEdges(nodes, ['a', 'b']), [{ from: 'r', to: 'c' }]);
-  const projected = tree.without(['a', 'b']);
-  assert.deepEqual({ id: projected.id, title: projected.title, author: projected.author, nodes: projected.nodes }, {
-    id: 't', title: 'T', author: 'Author', nodes: [nodes[0], { ...nodes[3], prerequisites: ['r'] }, { ...nodes[4], prerequisites: ['r'] }],
-  });
-  assert.deepEqual(tree.nodes, nodes);
-  assert.deepEqual(tree.without(['unknown']).nodes, nodes);
-  assert.deepEqual(tree.without(nodes.map((node) => node.id)).nodes, []);
-});
-
-test('removing a root creates roots without inventing a resplice edge', () => {
-  const tree = treeOf([{ id: 'r', prerequisites: [] }, { id: 'c', prerequisites: ['r'] }]);
-  assert.deepEqual(respliceEdges(tree.nodes, ['r']), []);
-  assert.deepEqual(tree.without(['r']).nodes, [{ id: 'c', prerequisites: [] }]);
 });

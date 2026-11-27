@@ -8,8 +8,8 @@ import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { detectMilestones } from '../model/milestones.js';
 import { advanceProgress, milestoneAnnouncement, progressChanges } from '../model/progress.js';
-import { Openings } from '../model/Opening.js';
-import { UnlockRules, takesMark } from '../model/UnlockRules.js';
+import { domainReading } from '../model/domainReads.js';
+import { Openings, takesMark } from '../model/Opening.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { markDoneTargets } from '../model/bulkSelection.js';
 
@@ -42,7 +42,7 @@ export class RoomProgress {
   // What stands complete under these marks: the marks themselves until the roadmap has loaded.
   completedUnder(progress) {
     const tree = this.collaborators.treeRef.current;
-    return tree ? UnlockRules.completed(tree, progress) : progress.completed;
+    return tree ? domainReading(tree, progress).completed : progress.completed;
   }
 
   // What stands complete goes to the return ledger, so the next visit recaps only what happened since. A roadmap that

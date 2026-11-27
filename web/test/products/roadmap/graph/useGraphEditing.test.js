@@ -8,6 +8,7 @@ import { parsePlan } from '../../../../src/products/roadmap/paste/planGrammar.js
 import { edgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { renderHook } from '../../gym/harness.mjs';
+import { standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
 
 const SAIL = { id: 'sail', title: 'Sail', nodes: [
   { id: 'course', label: 'Choose a course', prerequisites: [], color: 'terracotta' },
@@ -20,8 +21,9 @@ function room(t) {
   const session = new SyncSession({ treeId: 'sail', registry: null, store: { save: () => Promise.resolve() }, reportFailure: () => {} });
   session.seed(SAIL);
   const projectionRef = { current: session.lattice.toTreeData() };
-  session.onTreeChanged((data) => { projectionRef.current = data; });
-  const treeRef = { current: null };
+  // The room's tree follows its projection, as the room's structure keeps it.
+  const treeRef = { current: new SkillTree(projectionRef.current) };
+  session.onTreeChanged((data) => { projectionRef.current = data; treeRef.current = new SkillTree(data); });
   const standingTreeRef = { current: null };
   const toasts = [];
   const selectedIdRef = { current: null };
@@ -95,7 +97,7 @@ test('the Graph refuses a delete that takes the last root a hold leaves standing
   const tree = new SkillTree(session.lattice.toTreeData());
   assert.deepEqual(tree.roots().map((root) => root.id).sort(), ['course', 'solo']);
   const before = steps(session);
-  standingTreeRef.current = tree.without(['solo']);
+  standingTreeRef.current = standingWithout(tree, ['solo']);
   editing.tree.deleteNodeAt('course');
   assert.deepEqual(steps(session), before);
   assert.deepEqual(toasts, []);

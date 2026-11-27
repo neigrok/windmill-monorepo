@@ -161,7 +161,7 @@ test('sin, cos, asin, atan and atan2 return the correctly rounded double or its 
 test('the picture’s files take from the platform’s Math only what is exact, import only one another, and are each named to a port', () => {
   const picture = [
     'layout/arithmetic.js', 'layout/BubbleLayoutEngine.js', 'layout/LayoutEngine.js', 'layout/RadialLayoutEngine.js', 'layout/index.js',
-    'model/SkillTree.js', 'model/SpatialGrid.js', 'model/TrunkTree.js', 'model/UnlockRules.js', 'model/footprint.js',
+    'model/SkillTree.js', 'model/SpatialGrid.js', 'model/TrunkTree.js', 'model/footprint.js',
     'scene/captionLayout.js', 'scene/edgeCurve.js', 'scene/framing.js', 'theme.js',
   ];
   const root = new URL('../../../../src/products/roadmap/', import.meta.url);

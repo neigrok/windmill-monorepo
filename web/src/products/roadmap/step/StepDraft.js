@@ -1,4 +1,4 @@
-import { COLUMN_OF_STATE, UnlockRules } from '../model/UnlockRules.js';
+import { COLUMN_OF_STATE, domainReading, readEffects } from '../model/domainReads.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { COLUMN_TITLES, COMPOSER, PICKER, STEP_DETAIL, afterStep, placementPreview } from '../copy.js';
 
@@ -36,8 +36,10 @@ export class StepDraft {
 
   placement(tree, completed) {
     const draft = this.reconcile(tree);
-    const nodes = [...tree.nodes, draft];
-    const states = UnlockRules.derive({ nodes }, { completed });
+    // The draft stands in for the step it edits, which keeps the roadmap it opens.
+    const drafted = { id: draft.id, prerequisites: draft.prerequisites, opening: tree.nodesById.get(draft.id)?.opening };
+    const nodes = [...tree.nodes.filter((step) => step.id !== draft.id), drafted];
+    const { states } = domainReading({ nodes }, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
     const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
     const unmetLabels = unmet.map((step) => step.label?.trim() ? step.label : STEP_DETAIL.unnamed);
@@ -65,9 +67,10 @@ export class CreateStepRequest {
   }
 }
 
+// The steps the step `editing` may not come to require: itself and every step after it, as the domain reads its loops.
 export function blockedPrerequisites(tree, editing) {
   if (!editing || !tree.nodesById.has(editing)) return new Set();
-  return new Set([editing, ...tree.descendantsOf(editing).map((step) => step.id)]);
+  return new Set(readEffects(tree, [editing]).loops?.requires ?? []);
 }
 
 export class PrerequisiteChoices {
@@ -81,7 +84,7 @@ export class PrerequisiteChoices {
     this.selectedIds = Object.freeze([...new Set(selected)].filter((id) => tree.nodesById.has(id) && !this.blockedIds.has(id)));
 
     const chosen = new Set(this.selectedIds);
-    const states = UnlockRules.derive(tree, { completed });
+    const { states } = domainReading(tree, { completed });
     const labels = new Map(tree.nodes.map((step) => [step.id, step.label?.trim() ? step.label : STEP_DETAIL.unnamed]));
     const dropped = selected.filter((id) => this.blockedIds.has(id));
     this.revalidated = Object.freeze([...new Map([

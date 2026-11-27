@@ -5,7 +5,7 @@ import sharedRoster from '../../../../../packages/api-contract/roadmap/quests/ro
 import { ROSTER } from '../../../../src/products/roadmap/quests/roster.js';
 import { ReplicaBirth } from '../../../../src/products/roadmap/room/ReplicaBirth.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
+import { domainReading } from '../../../../src/products/roadmap/model/domainReads.js';
 import { NODE_COLOR_NAMES } from '../../../../src/products/roadmap/theme.js';
 
 test('the shared quests folder holds the roster and its README, and no file left unclaimed', () => {
@@ -57,14 +57,14 @@ for (const quest of ROSTER) {
     assert.deepStrictEqual(roots, [quest.nodes[0]], 'exactly one root, and it is nodes[0]');
 
     const zeroProgress = { completed: new Set() };
-    const atZero = UnlockRules.derive(tree, zeroProgress);
+    const atZero = domainReading(tree, zeroProgress).states;
     assert.deepStrictEqual(
       quest.nodes.filter((node) => atZero.get(node.id) === 'available').map((node) => node.id),
       [quest.nodes[0].id],
       'zero progress must light exactly one available node — the root',
     );
 
-    const afterRoot = UnlockRules.derive(tree, { completed: new Set([quest.nodes[0].id]) });
+    const afterRoot = domainReading(tree, { completed: new Set([quest.nodes[0].id]) }).states;
     const cascade = quest.nodes.filter((node) => afterRoot.get(node.id) === 'available');
     assert.ok(cascade.length >= 2, `completing the root unlocks ${cascade.length} step(s) — the cascade must show at least 2`);
 

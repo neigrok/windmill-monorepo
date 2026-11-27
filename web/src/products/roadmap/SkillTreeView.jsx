@@ -26,7 +26,7 @@ import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
 import { deletable } from './board/acts.js';
-import { readEffects } from './model/effects.js';
+import { domainReading, readEffects } from './model/domainReads.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast, landingNote } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
@@ -38,7 +38,6 @@ import { useGraphEditing } from './graph/useGraphEditing.js';
 import { useGraphStructure } from './graph/useGraphStructure.js';
 import { inUseCount, withCounts } from './model/Legend.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
-import { UnlockRules } from './model/UnlockRules.js';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { listServerTrees, readTreeCard } from './persistence/TreeRegistry.js';
@@ -162,7 +161,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const desktopEditor = placeKept && !demotion && !knownReader;
   desktopEditorRef.current = desktopEditor;
   useEffect(() => { if (knownReader) sceneRef.current?.setReadOnly?.(); }, [knownReader, scene]);
-  const states = useMemo(() => (tree ? UnlockRules.derive(tree, { completed }) : new Map()), [tree, completed]);
+  const states = useMemo(() => (tree ? domainReading(tree, { completed }).states : new Map()), [tree, completed]);
   useEffect(() => { sceneRef.current?.applyStates(states); }, [states]);
   const shareStats = useMemo(() => (tree ? ShareStats.from(tree, states) : null), [tree, states]);
   const nodesById = tree?.nodesById ?? new Map();
@@ -306,7 +305,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
   const heldGraphModel = useMemo(() => {
     if (!canvasView || !boardHeld || !boardTree || !renderModel) return renderModel;
     const positions = new Map(renderModel.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
-    return boardTree.toRenderModel(positions, UnlockRules.derive(boardTree, { completed }));
+    return boardTree.toRenderModel(positions, domainReading(boardTree, { completed }).states);
   }, [canvasView, boardHeld, boardTree, renderModel, completed]);
   const graphHeldRef = useRef(false);
   useEffect(() => {
@@ -315,7 +314,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     graphHeldRef.current = held;
     if (heldGraphModel) sceneRef.current?.applyModel(heldGraphModel);
   }, [canvasView, boardHeld, heldGraphModel]);
-  const boardStats = useMemo(() => (boardTree ? ShareStats.from(boardTree, UnlockRules.derive(boardTree, { completed })) : null), [boardTree, completed]);
+  const boardStats = useMemo(() => (boardTree ? ShareStats.from(boardTree, domainReading(boardTree, { completed }).states) : null), [boardTree, completed]);
   const shownStats = boardActive ? { ...boardStats, ...(boardOverall ?? {}) } : shareStats;
 
   // A step open over either view, and the composer that writes one.

@@ -1,16 +1,13 @@
 // Tap-then-tap legality: which nodes a tap may NOT land on, and which way the edge it creates points.
-// A cycle or a duplicate edge is illegal; multiple parents are fine.
+// A link that closes a loop, as the domain reads its loops, or repeats one the source already has is illegal; multiple
+// parents are fine.
+
+import { domainReading, readEffects } from '../../model/domainReads.js';
 
 export function illegalTargets(tree, sourceId, direction) {
-  const illegal = new Set([sourceId]);
-  if (direction === 'needs') {
-    for (const descendant of tree.descendantsOf(sourceId)) illegal.add(descendant.id);
-    for (const parent of tree.parentsOf(sourceId)) illegal.add(parent.id);
-    return illegal;
-  }
-  for (const ancestor of tree.ancestorsOf(sourceId)) illegal.add(ancestor.id);
-  for (const child of tree.childrenOf(sourceId)) illegal.add(child.id);
-  return illegal;
+  const effects = readEffects(tree, [sourceId]);
+  if (direction === 'needs') return new Set([...effects.loops.requires, ...domainReading(tree).graph.followed(sourceId).map((followed) => followed.id)]);
+  return new Set([...effects.loops.opens, ...effects.follow]);
 }
 
 export function edgeFor(sourceId, targetId, direction) {
