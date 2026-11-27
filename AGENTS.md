@@ -28,6 +28,9 @@ Mission driven, not money driven: make people develop themselves. Be extremely h
 customers — no dark patterns, no manufactured urgency, no copy that promises what the product does
 not do. When a choice trades honesty or user growth for revenue, the mission wins.
 
+Every word a person outside the build reads — product copy, public pages, store listings, emails and
+posts — follows the [communication guide](docs/design/communication.md). Read it before writing one.
+
 ## Information hygiene
 
 Docs, comments, READMEs and product copy record the CURRENT state only — not how it used to be, not

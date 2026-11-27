@@ -1,13 +1,13 @@
 # Marketing site
 
-The public pages of windmill.works: the sitemap, the rules, the Instrument look, what is built, what
+The public pages of windmill.works: the sitemap, the Instrument look, what is built, what
 is proposed, how search engines read the pages, and the strings still false. The drawings
 are on the Marketing file's page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
 A page is built only from its section marked ✅ Ready for dev. Its wording is on that section's boards;
 each page's title, which the boards do not draw, is recorded here.
 
-The pages speak from [the idea](brand-foundations.md#the-idea) and keep every rule in [Honesty](brand-foundations.md#honesty)
-and in [what every channel keeps](../marketing/strategy.md#what-every-channel-keeps).
+The pages speak from [the idea](communication.md#the-idea) and keep every rule in the
+[communication guide](communication.md) and in [Honesty](brand-foundations.md#honesty).
 
 ## What the pages are for
 
@@ -39,21 +39,6 @@ A visitor should learn four things, in this order, and each page owns one of the
   of its own stays unpublished.
 - The static pages send "Start your tree" to `/#/app`; the front page's pill "Open Windmill" goes to
   `/app` signed out and to the last room signed in.
-
-## Rules every public page keeps
-
-- It describes what a visitor can do today on the surface named. A number appears only when the code
-  or a document that states it has been checked.
-- The AI guides and the person does the work: it gives clarity and guidance, helps keep the record and
-  helps a person past what blocks them. No public string says the AI "works for you" or "does it for
-  you". Nothing frightens or belittles.
-- Gym is called a workout log.
-- The phone apps are not offered to strangers. A page says they are in beta and not public yet, and
-  links to no download or beta.
-- Windmill One is named as a plain sentence that says it is not on sale. It has no badge and no
-  button, and no page but `/pricing` gives its price.
-- Plain words, sentence case, short sentences, one idea per heading, one description per page. Each
-  room is named in full at first mention: Windmill Roadmap, Windmill Gym, Windmill Journal.
 
 ## The Instrument look
 
@@ -185,7 +170,7 @@ takes the payment and handles cancelling and refunds.
 
 | Page | Proposed |
 |---|---|
-| `/about` | Title "About Windmill — why it exists and what the name means"; main heading "Why Windmill exists". The statement from [the idea](brand-foundations.md#the-idea); The AI guides, you decide · Yours and open · Never graded · The name; what Windmill will not do; how it is paid for. No section on who makes Windmill. A founder note appears only if the owner writes one. |
+| `/about` | Title "About Windmill — why it exists and what the name means"; main heading "Why Windmill exists". The statement from [the idea](communication.md#the-idea); The AI guides, you decide · Yours and open · Never graded · The name; what Windmill will not do; how it is paid for. No section on who makes Windmill. A founder note appears only if the owner writes one. |
 | `/connect` | Title keeps "Windmill Roadmap & Gym MCP server". Main heading "Bring your own assistant". One exchange shown end to end: the request, the access asked for, the result, how to disconnect. |
 | `/changelog` | Covers all three rooms. |
 | `/t/<id>` | Title "<tree title> — a skill tree on Windmill Roadmap". The tree's own heading, summary and first steps are in the first HTML. |
@@ -220,8 +205,7 @@ In order of weight:
    the other way round. One description per page.
 7. **Links.** Every public page is reachable from the footer, and from the two shelves of links in
    the first HTML of `/` and of each room page.
-8. **Naming.** "Windmill Roadmap", "Windmill Gym", "Windmill Journal" and windmill.works at first
-   mention, so a search does not confuse Windmill with the unrelated developer automation platform.
+8. **Naming.** As [the communication guide](communication.md#names) rules.
 9. **Small repairs.** The `robots.txt` comment names a route that does not exist; the web manifest and
    `package.json` describe the product in two more ways.
 
