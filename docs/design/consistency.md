@@ -1023,6 +1023,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
+- **Roadmap Coach · the sign-in question when the browser holds conversations (10.4).** Built as drawn: *Add to your
+  account?* says in one sentence how many of the browser's roadmaps and conversations wait, with no list and no note, and
+  Discard asks again, *Discard 2 roadmaps and 3 conversations?*; where the browser holds no conversation the question
+  stays flow 50's. To draw or rule:
+  - 10.4's NOTE says *The engine asks once for the roadmap room when this browser holds work made signed out and the
+    account holds roadmap records*. It is built to [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md)
+    §5 instead: signed-out work that changes no roadmap of the browser's own, such as a conversation about every
+    roadmap or a reader's about someone's public roadmap, is added without asking, its conversations with it, as the
+    iPhone adds it.
+  - No board draws signed-out work that also changes another's roadmap, such as a step a reader marked. It is built with
+    the Shell's noun after the conversations: *This browser has 1 roadmap, 1 conversation, and 1 change from before you
+    signed in.*
+  - The dialog is the shell's `AccountDecision`, as flow 50's and WD9's questions are (see *The sign-in question's
+    dialog* below). 10.4 draws it 460 px wide, with compact answers and the paragraph in the secondary ink. The web keeps
+    540 px, large answers and the lead in the primary ink. 10.4 also draws Discard's label in the danger colour, where
+    flow 50 and the web give Add and Discard equal weight.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -2283,8 +2299,9 @@ Android. It and the product differ in these places.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
 - **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
-  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
-  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+  answers, and its answers start at the left. Roadmap Coach 10.4 draws it 460 px wide with compact answers. The web
+  builds flow 50's `AccountDecision` for every product (540 px, the 28 px display title, large answers at the right,
+  Cancel sign-in at the left). The drawings should agree on one.
 - **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
   the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
   weigh-ins*.

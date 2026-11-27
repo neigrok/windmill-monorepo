@@ -253,9 +253,14 @@ Every gesture is an action on the domain kit, the same in each language.
   work changes: the browser's own by name, and another's by its changes ("{roadmap} · N changes"),
   each by the name the browser showed it signed out and never by one another account's replica
   holds; its Discard takes all of it, and the old stores (§8.2) of each roadmap the carry-over
-  carried into it, while their entries hold what they held as the question was asked. A roadmap made
-  and deleted signed out stays deleted either way and goes unnamed, and work that changes no roadmap
-  of the browser's own is added without asking.
+  carried into it, while their entries hold what they held as the question was asked. Where the work
+  holds [Roadmap Coach](roadmap-coach.md)'s conversations, the question names nothing by name: it counts,
+  in one sentence, the device's own roadmaps, its conversations that still stand and, on the web, the
+  changes to another's roadmaps, and its Discard asks again in the same count (Roadmap Coach 10.4 on the
+  web, Roadmap · iOS 10.7 on the iPhone). Conversations and proposals are records of that work, so one
+  answer takes them with the roadmaps they name, which keep their ids. A roadmap or a conversation made
+  and deleted signed out stays deleted either way and goes uncounted, and work that changes no roadmap
+  of the browser's own is added without asking, its conversations with it.
   The sign-out question names, beside the replica's unsent changes, the account's roadmaps the
   browser's old stores still hold (§8.2), each with its changes, and is asked where only those wait;
   its Discard takes exactly those, while their entries hold what it counted. Work a question did not

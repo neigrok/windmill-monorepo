@@ -1,5 +1,5 @@
-// Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50): the words
-// of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
+// Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50, Roadmap
+// Coach 10.4): the words of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
 // Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
 // covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes,
 // and the old stores the carry-over carried into them; and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
@@ -17,6 +17,7 @@ import { track as beacon } from '../../../telemetry/beacon.js';
 import { countBucket } from '../../../telemetry/countBucket.js';
 import { CarryNotes, OldStores } from '../carry/OldStores.js';
 import { carryLedgerOf, listedAs } from '../domain/carry.js';
+import { CoachThread } from '../domain/conversation.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';
 import { RoadmapScopes } from '../domain/roadmapRules.js';
 import { RoadmapNames } from '../kept/KeptChanges.js';
@@ -120,32 +121,66 @@ const formatted = (count) => new Intl.NumberFormat(APP_LOCALE).format(count);
 // A roadmap the question names by its changes: "{name} · N changes".
 const changedRow = (name, changes) => t('roadmap.accountChoice.changedRoadmap', { name, count: changes, shown: formatted(changes) });
 
+// How many Coach conversations the work a question pins (`counted`) makes that still stand: those its entries write that
+// the active replica draws. One made and deleted here is not counted, as a roadmap made and deleted is not named.
+function conversationsOf(engine, counted) {
+  const written = new Set(entriesOf(engine, counted).flatMap((entry) => effectsOf(entry).flatMap(({ scope, d }) => (scope === RoadmapScopes.account
+    ? d.filter((delta) => delta.t === CoachThread.type).map((delta) => String(delta.id))
+    : []))));
+  return runnerOf(engine).read(RoadmapScopes.account, (read) => read.repository(CoachThread).all('drawn').filter((thread) => written.has(thread.id.record)).length);
+}
+
 // The engine adds without asking the roadmap work that changes no roadmap the signed-out list holds: the question would
-// name only roadmaps the person does not own, and their changes join the account.
+// name only roadmaps the person does not own, and their changes join the account, with every conversation the work holds.
 export function adoptionAnswer(engine, due) {
   return ChangedRoadmap.of(engine, due.counted).some((roadmap) => roadmap.listed) ? null : 'add';
 }
 
 // Add your roadmaps? (50.01, 50.03): every roadmap the signed-out work changes, as its Discard takes all of it: the
 // browser's own roadmaps by name, and another's roadmap by its changes, each named as this browser showed it. One the
-// person made and deleted here is not named: added or discarded, it stays deleted. Its Discard takes, with that work, what
+// person made and deleted here is not named: added or discarded, it stays deleted. Where the work holds Coach's
+// conversations it is Add to your account? (10.4) instead, which counts what its Discard takes in one sentence: the
+// browser's own roadmaps, the conversations, and the changes to another's roadmaps. Its Discard takes, with that work, what
 // the browser kept beside the roadmaps it made, and the old stores the carry-over carried into it, as they stand while the
 // question is asked (`forgetDiscarded`).
 export async function signInWords(engine, due, track = beacon, { stores = new OldStores(), report = reportRoadmapFailure } = {}) {
   const roadmaps = ChangedRoadmap.of(engine, due.counted).filter((roadmap) => !roadmap.deleted);
   const count = roadmaps.filter((roadmap) => roadmap.listed).length;
+  const conversations = conversationsOf(engine, due.counted);
   const asked = countBucket(count);
+  const talked = countBucket(conversations);
   const carried = await carriedInto(engine, due.counted, stores);
   return {
-    title: t('roadmap.accountChoice.addTitle'),
-    lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
-    items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
-    note: t('roadmap.accountChoice.addNote', { count }),
+    ...(conversations > 0 ? countedWords(roadmaps, count, conversations) : {
+      title: t('roadmap.accountChoice.addTitle'),
+      lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
+      items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
+      note: t('roadmap.accountChoice.addNote', { count }),
+    }),
     onStep: (step) => {
-      if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked });
+      if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked, conversations: talked });
       if (step === 'discard') return forgetDiscarded(engine, due.counted, { carried, stores, track, report });
       return undefined;
     },
+  };
+}
+
+// 10.4's words, the Shell's question (iOS 23i) with this browser for this phone: how many of the browser's own roadmaps,
+// how many conversations, and how many changes to another's roadmaps, in one sentence and again in the Discard that asks
+// once more. The work always counts a roadmap and a conversation, so it is "them".
+function countedWords(roadmaps, count, conversations) {
+  const changes = roadmaps.filter((roadmap) => !roadmap.listed).reduce((sum, roadmap) => sum + roadmap.changes, 0);
+  const work = new Intl.ListFormat(APP_LOCALE, { type: 'conjunction' }).format([
+    t('roadmap.accountChoice.roadmaps', { count, shown: formatted(count) }),
+    t('roadmap.accountChoice.conversations', { count: conversations, shown: formatted(conversations) }),
+    ...(changes > 0 ? [t('roadmap.accountChoice.changes', { count: changes, shown: formatted(changes) })] : []),
+  ]);
+  return {
+    title: t('roadmap.accountChoice.addWorkTitle'),
+    lead: t('roadmap.accountChoice.addWorkLead', { work }),
+    items: [],
+    note: null,
+    discard: { title: t('roadmap.accountChoice.discardWorkTitle', { work }), body: t('roadmap.accountChoice.discardWorkBody') },
   };
 }
 

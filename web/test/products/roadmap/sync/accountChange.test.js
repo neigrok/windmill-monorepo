@@ -1,16 +1,21 @@
-// Roadmap's part as the account changes on the device's copy (flow 50): the words of the sign-in question, naming the
-// roadmaps of the person's list the signed-out work changes; the words of the sign-out question, where every unsent
-// change is roadmap's; the work it lets the engine add without asking; and the sweep of the landing notes and told notices
-// at sign-out.
+// Roadmap's part as the account changes on the device's copy (flow 50, Roadmap Coach 10.4): the words of the sign-in
+// question, naming the roadmaps of the person's list the signed-out work changes, or counting them with its Coach
+// conversations; the words of the sign-out question, where every unsent change is roadmap's; the work it lets the engine
+// add without asking; what reaches the account, and a second browser, with each answer; and the sweep of the landing notes
+// and told notices at sign-out.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomInt } from 'node:crypto';
 import { hello } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
+import { Id } from '../../../../src/platform/domain-kit/entities.js';
+import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../../src/platform/domain-kit/time.js';
+import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, OpenTurn, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { CreateRoadmap, CreateSubtree, DeleteRoadmap, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { ChangeStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { MarkStep } from '../../../../src/products/roadmap/domain/progress.js';
@@ -69,7 +74,7 @@ test('signed out, the browser’s roadmaps meet an account that holds roadmaps: 
       note: 'Choosing Discard removes these browser roadmaps.',
       onStep: 'function',
     },
-    told: [['roadmap_signin', { step: 'shown', roadmaps: '2-5' }], ['roadmap_signin', { step: 'add', roadmaps: '2-5' }]],
+    told: [['roadmap_signin', { step: 'shown', roadmaps: '2-5', conversations: '0' }], ['roadmap_signin', { step: 'add', roadmaps: '2-5', conversations: '0' }]],
   });
 });
 
@@ -89,6 +94,53 @@ test('one roadmap is asked of in the singular, and work that changes no roadmap 
     lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'], note: 'Choosing Discard removes this browser roadmap.',
     asked: null, unseen: 'add',
   });
+});
+
+// Signed out, a turn about `tree` (null for every roadmap) that Coach answered: the conversation and Coach's answer.
+async function answered(runner, tree, question = 'Where do I start?') {
+  const opened = await runner.runAct(new OpenTurn({ about: { treeId: tree }, question }));
+  assert.equal(opened.kind, 'committed');
+  const coach = new Id(opened.result.coach, CoachMessage);
+  assert.equal((await runner.runAct(new EndTurn(coach, { state: 'completed', text: 'Read the wind.' }))).kind, 'committed');
+  return { thread: new Id(opened.result.thread, CoachThread), coach };
+}
+
+test('signed out, Coach’s conversations beside the browser’s roadmaps: the question counts both in one sentence (10.4), one made and withdrawn is not counted, and each step is told with both counts', async (t) => {
+  const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+  const { engine, runner, plant } = await device(t, { holdsRoadmaps: true });
+  const sail = await plant('Learn to sail', ['Read the wind']);
+  await plant('Learn to row');
+  await answered(runner, sail.tree);
+  await answered(runner, null, 'What should I learn next?');
+  const withdrawn = await runner.runAct(new OpenTurn({ about: { treeId: sail.tree }, question: 'Never asked' }));
+  const { thread, person, coach } = withdrawn.result;
+  const turn = { thread: new Id(thread, CoachThread), person: new Id(person, CoachMessage), coach: new Id(coach, CoachMessage) };
+  assert.equal((await runner.runAct(new WithdrawTurn(turn))).kind, 'committed');
+  const due = roadmapDue(await engine.signIn('A'));
+  const told = [];
+  const words = await accountChange.signInWords(engine, due, (name, props) => told.push([name, props]));
+  words.onStep('shown');
+  words.onStep('discard');
+  assert.deepEqual({ adoption: accountChange.adoptionAnswer(engine, due), words: { ...words, onStep: typeof words.onStep }, told }, {
+    adoption: null,
+    words: {
+      title: 'Add to your account?',
+      lead: 'This browser has 2 roadmaps and 2 conversations from before you signed in. Your account already has roadmaps. Add them, or discard them from this browser.',
+      items: [],
+      note: null,
+      discard: { title: 'Discard 2 roadmaps and 2 conversations?', body: 'They are deleted from this browser. You can’t undo this.' },
+      onStep: 'function',
+    },
+    told: [['roadmap_signin', { step: 'shown', roadmaps: '2-5', conversations: '2-5' }], ['roadmap_signin', { step: 'discard', roadmaps: '2-5', conversations: '2-5' }]],
+  });
+});
+
+test('signed out, work that holds conversations and no roadmap of the browser’s own is added without asking (roadmap-on-the-engine §5)', async (t) => {
+  const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+  const { engine, runner } = await device(t, { holdsRoadmaps: true });
+  await answered(runner, null, 'What should I learn?');
+  const due = roadmapDue(await engine.signIn('A'));
+  assert.deepEqual({ count: due.count, adoption: accountChange.adoptionAnswer(engine, due) }, { count: { coachMessage: 2, coachThread: 1 }, adoption: 'add' });
 });
 
 test('an account that holds no roadmaps takes the browser’s without a question', async (t) => {
@@ -197,7 +249,7 @@ const { pull, push } = await import('../../../../../packages/api-contract/sync/r
 const { RoadmapProduct } = await import('../../../../../packages/api-contract/sync/reference/roadmap/product.js');
 const { FakeChannels, FakeLocks } = await import('../../../platform/sync/fakes.js');
 const { roadmapRegistry } = await import('../domain/vectors.js');
-const { RoadmapScopes } = await import('../../../../src/products/roadmap/domain/roadmapRules.js');
+const { RoadmapScopes, writeIn } = await import('../../../../src/products/roadmap/domain/roadmapRules.js');
 const { Roadmap, RoadmapMeta, SetVisibility } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
 const { CarryOver } = await import('../../../../src/products/roadmap/carry/CarryOver.js');
 const { Complete } = await import('../../../../src/products/roadmap/domain/progress.js');
@@ -562,7 +614,112 @@ test('a sign-in’s Discard takes the old stores of each roadmap the carry-over 
     items: ['Learn to sail', 'Learn to swim'],
     discarded: { old: [swim, 't_00000000000000b1'].sort(), rows: [swim, 't_00000000000000b1'].sort() },
     signedOut: ['Learn to swim'],
-    told: [['roadmap_signin', { step: 'discard', roadmaps: '2-5' }], ['roadmap_carry', { stage: 'discarded', roadmaps: '2-5' }]],
+    told: [['roadmap_signin', { step: 'discard', roadmaps: '2-5', conversations: '0' }], ['roadmap_carry', { stage: 'discarded', roadmaps: '2-5' }]],
     reported: [],
+  });
+});
+
+// Coach's records, made signed out and taken through each answer to the account and a second browser of it. A browser of
+// its own: storage, locks and channels.
+const ownDisk = () => ({ engines: new IDBFactory(), locks: new FakeLocks(), channels: new FakeChannels() });
+
+// A pending proposal about `tree` on Coach's answer, written raw: minting one is the propose ability's
+// (m4-model-proposals), so the test writes the record's fields as the registry admits them.
+class PendingProposal {
+  constructor(tree, { thread, coach }) {
+    this.tree = tree;
+    this.thread = thread;
+    this.coach = coach;
+  }
+
+  load(read) { return read.inScope(RoadmapScopes.account, (account) => ({ moment: account.moment })); }
+
+  decide({ moment }, ids) {
+    const id = ids.mint(CoachProposal);
+    const fields = () => ({ treeId: this.tree, threadId: this.thread.json, messageId: this.coach.json, base: { steps: {} },
+      changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }], state: 'pending' });
+    const plan = new Plan();
+    plan.create(new Valid({ id, fields }, moment));
+    return writeIn(RoadmapScopes.account, plan, id.record);
+  }
+}
+
+// What a browser draws of Coach: each conversation, by what it is about, with who said what and the state Coach's turn
+// stands in; each proposal with its roadmap and state; and how many turns this browser holds marked as running.
+function coachOf(engine) {
+  return runnerOf(engine).read(RoadmapScopes.account, (read) => ({
+    conversations: read.repository(CoachThread).all('drawn').map((thread) => ({ about: thread.treeId,
+      said: Conversation.read(read, thread.id).messages.map((message) => [message.role, message.text, message.isCoach ? message.state : null]) }))
+      .sort((a, b) => String(a.about).localeCompare(String(b.about))),
+    proposals: read.repository(CoachProposal).all('drawn').map((proposal) => ({ about: proposal.treeId, state: proposal.state })),
+    marks: Object.keys(read.devices('runningTurn:')).length,
+  }));
+}
+
+const listed = (engine) => runnerOf(engine).read(RoadmapScopes.account, (read) => read.repository(Roadmap).all('drawn').length);
+
+for (const answer of ['add', 'discard']) {
+  test(`signed out, a conversation and a pending proposal about a roadmap made here, and a turn still running: ${answer === 'add'
+    ? 'Add takes them to the account, where a second browser draws them, the proposal still pending'
+    : 'Discard takes them from the browser with the turn’s mark, and the account never holds them'}`, async (t) => {
+    const server = new Server();
+    const phone = await tab(t, ownDisk(), server, 'A');
+    assert.equal((await runnerOf(phone).runAct(new CreateRoadmap('Learn to row'))).kind, 'committed');
+    await sent(phone);
+    const engine = await tab(t, ownDisk(), server);
+    const made = await runnerOf(engine).runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] }));
+    const sail = String(made.result.tree);
+    const turn = await answered(runnerOf(engine), sail);
+    assert.equal((await runnerOf(engine).runAct(new PendingProposal(sail, turn))).kind, 'committed');
+    assert.equal((await runnerOf(engine).runAct(new OpenTurn({ about: { treeId: null }, question: 'And after that?' }))).kind, 'committed');
+    const before = coachOf(engine);
+    engine.transport.account = 'A';
+    const due = roadmapDue(await engine.signIn('A'));
+    assert.equal((await engine.signIn('A', { decisions: { roadmap: answer }, counted: { roadmap: due.counted } })).complete, true);
+    await sent(engine);
+    const second = await tab(t, ownDisk(), server, 'A');
+    await until(second, () => listed(second) === (answer === 'add' ? 2 : 1), 'the account’s list on a second browser');
+    if (answer === 'add') await until(second, () => coachOf(second).proposals.length === 1, 'the proposal on a second browser');
+    const none = { conversations: [], proposals: [], marks: 0 };
+    assert.deepEqual({ before, here: coachOf(engine), second: coachOf(second) }, {
+      before: {
+        conversations: [
+          { about: null, said: [['person', 'And after that?', null], ['coach', '', 'running']] },
+          { about: sail, said: [['person', 'Where do I start?', null], ['coach', 'Read the wind.', 'completed']] },
+        ],
+        proposals: [{ about: sail, state: 'pending' }],
+        marks: 1,
+      },
+      here: answer === 'add' ? before : none,
+      second: answer === 'add' ? { ...before, marks: 0 } : none,
+    });
+  });
+}
+
+test('signed out, a conversation beside work on another’s public roadmap: the question counts the browser’s roadmaps, its conversations and the changes to another’s roadmap (10.4)', async (t) => {
+  const accountChange = await import('../../../../src/products/roadmap/sync/accountChange.js');
+  const server = new Server();
+  const owner = await tab(t, ownDisk(), server, 'C');
+  const made = await runnerOf(owner).runAct(new CreateRoadmap('Open water', { steps: [{ key: 'float', label: 'Float' }], links: [] }));
+  const water = String(made.result.tree);
+  assert.equal((await runnerOf(owner).runAct(new SetVisibility(water, 'public'))).kind, 'committed');
+  await sent(owner);
+  const engine = await tab(t, ownDisk(), server);
+  await engine.subscribe(RoadmapScopes.tree(water));
+  await until(engine, () => titleOf(engine, water) === 'Open water', 'the public roadmap, signed out');
+  assert.equal((await runnerOf(engine).runAct(Complete(water, made.result.steps.float))).kind, 'committed');
+  const sail = await runnerOf(engine).runAct(new CreateRoadmap('Learn to sail'));
+  await answered(runnerOf(engine), String(sail.result.tree));
+  const holder = await tab(t, ownDisk(), server, 'B');
+  assert.equal((await runnerOf(holder).runAct(new CreateRoadmap('Learn to knit'))).kind, 'committed');
+  await sent(holder);
+  engine.transport.account = 'B';
+  const due = roadmapDue(await engine.signIn('B'));
+  const words = await accountChange.signInWords(engine, due, () => {});
+  assert.deepEqual({ lead: words.lead, items: words.items, note: words.note, discard: words.discard }, {
+    lead: 'This browser has 1 roadmap, 1 conversation, and 1 change from before you signed in. Your account already has roadmaps. Add them, or discard them from this browser.',
+    items: [],
+    note: null,
+    discard: { title: 'Discard 1 roadmap, 1 conversation, and 1 change?', body: 'They are deleted from this browser. You can’t undo this.' },
   });
 });
