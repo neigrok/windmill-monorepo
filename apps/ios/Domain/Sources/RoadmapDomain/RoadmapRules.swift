@@ -14,6 +14,13 @@ public enum RoadmapRules {
     RoadmapKind(id: ID("milestone"), hue: "gold", label: "Milestone", description: "Moments that matter", ord: "a2"),
   ]
 
+  // Whether the room shows a step's web link, by its address as the domain stores it, trimmed: one that starts with http:,
+  // https: or mailto:, in any case (packages/api-contract/roadmap-link-urls.json).
+  public static func showsAddress(_ url: String) -> Bool {
+    let folded = url.utf8.prefix(7).map { (0x41...0x5A).contains($0) ? $0 | 0x20 : $0 }
+    return ["http:", "https:", "mailto:"].contains { folded.starts(with: $0.utf8) }
+  }
+
   public static let book = RuleBook(
     registry: SyncSchema.registry,
     entities: [RoadmapEntry.self, RoadmapMeta.self, RoadmapStep.self, RoadmapLink.self, RoadmapKind.self, StepMark.self, StepPointer.self,

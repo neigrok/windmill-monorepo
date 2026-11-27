@@ -920,7 +920,7 @@ source/schema/file-hash artifact first. The helper passes 33 script checks plus 
 web class, including rejection of symlinks before hashing. An actual local anonymous hello at
 schema 10/minimum 10 admitted the matching client and held both mismatch directions, which
 proves the local decision and the modeled workflow boundary. Current source is registry 15 /
-minimum 15; production's hello advertised schema 12 / minimum 11 when last verified, on 2026-11-01.
+minimum 15; the [coordinated cutoff](../../backend/deploy/README.md#coordinated-client-cutoff) records what production's hello advertises.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and
