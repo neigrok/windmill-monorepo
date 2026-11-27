@@ -219,8 +219,8 @@ strings still false.
 
 | Section | Page | State |
 |---|---|---|
-| [C · Front page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=272-2508) | `/` | Built on `main`: `web/src/shell/marketing/BrandLanding.jsx` |
-| [Mark · night version](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=267-3491) | header and footer on night grounds | Built on `main`: `web/public/brand-mark-night.svg` |
+| [C · Front page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=272-2508) | `/` | In production: `web/src/shell/marketing/BrandLanding.jsx` |
+| [Mark · night version](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=267-3491) | header and footer on night grounds | In production: `web/public/brand-mark-night.svg` |
 | [✅ C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508) | `/pricing` | Ready for dev; not built |
 | [✅ C · Roadmap page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=290-2508) | `/roadmap` | Ready for dev; not built |
 | [✅ C · Journal page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=294-2508) | `/journal` | Ready for dev; not built |

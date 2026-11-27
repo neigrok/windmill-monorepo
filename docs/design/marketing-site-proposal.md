@@ -164,9 +164,8 @@ cannot be logged on the web. Its structured data names "Web browser" until an ap
 ### Before build
 
 - Echoes do not draw on a person's AI amount: Windmill's background budgets pay for them
-  ([AI allowances](../../backend/AI_ALLOWANCES.md)). The pricing page lists echoes in its Windmill's AI
-  column and answers yes to "Do echoes use the AI amount?", and the Journal page's echoes section has
-  the feature "It uses your AI amount". Each needs the owner's corrected wording before it is built.
+  ([AI allowances](../../backend/AI_ALLOWANCES.md)). The pricing page's answer and the Journal page's
+  echoes section say so.
 
 ## Proposed, not drawn
 

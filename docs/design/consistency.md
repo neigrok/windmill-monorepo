@@ -2311,14 +2311,6 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
   page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
   Instrument look.
-- **Approved wording that says echoes spend the AI amount.** The ✅ pricing section lists echoes in its
-  Windmill's AI column and answers *Do echoes use the AI amount?* with *Yes. A hosted model finds them,
-  and each one counts.*; the ✅ Journal page's echoes section carries *It uses your AI amount*. Echoes
-  are paid from Windmill's background budgets and never debit a person's allowance
-  (`backend/AI_ALLOWANCES.md`). Correct both boards, with the owner, before those pages are built.
-- **Front page marks.** The front page is built from section `272:2508`
-  (`web/src/shell/marketing/BrandLanding.jsx`), whose layer name reads 🔨, and the night mark from
-  `267:3491` (`web/public/brand-mark-night.svg`), whose layer name reads ✅. Mark both 🚀 In production when the page is live.
 - **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
   (three product bands with per-room platform lines), describe the root the front page replaced. Archive
   them (🗄 Archived prefix and tag).
