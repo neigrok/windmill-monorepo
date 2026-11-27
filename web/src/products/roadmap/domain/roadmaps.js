@@ -1,7 +1,7 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
-import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
+import { DecodeError, EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
@@ -265,12 +265,23 @@ export class DeleteRoadmap {
           if (each.parent?.tree === id && !under.includes(subtree)) under.push(subtree);
         }
       }
-      const about = (/** @type {{ treeId: string | null, id: Id<any> }} */ record) => record.treeId !== null && under.includes(record.treeId);
+      // The drawn Coach records of a type about the roadmap or a subtree under it, in id order. A record this build cannot
+      // read names no roadmap it can tell, so the delete leaves it to the server's rule (engine A.1) and goes on.
+      /** @param {EntityType<{ id: Id<any>, treeId: string | null }, string>} type */
+      const about = (type) => account.views.visible('drawn', type.type).flatMap((record) => {
+        try {
+          const value = type.decode(Fields.record(record));
+          return value.treeId !== null && under.includes(value.treeId) ? [value.id] : [];
+        } catch (error) {
+          if (error instanceof DecodeError) return [];
+          throw error;
+        }
+      }).sort(Id.compare);
       return {
         roadmap: account.repository(Roadmap).find(this.id, 'drawn'),
         notes: under.map(RoadmapScopes.landing).filter((key) => account.device(key) !== null),
-        conversations: account.repository(CoachThread).all('drawn').filter(about).map((thread) => thread.id).sort(Id.compare),
-        proposals: account.repository(CoachProposal).all('drawn').filter(about).map((proposal) => proposal.id).sort(Id.compare),
+        conversations: about(CoachThread),
+        proposals: about(CoachProposal),
       };
     });
   }

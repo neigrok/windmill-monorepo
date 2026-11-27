@@ -17,7 +17,9 @@ import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSp
 /** @typedef {'running' | 'interrupted' | 'completed' | 'declined' | 'failed' | 'stopped'} MessageState */
 /** @typedef {{ thread: Id<CoachThreadValue>, person: Id<CoachMessageValue>, coach: Id<CoachMessageValue> }} Turn */
 
-// The registry's patterns for a picture's id, which its device row's key repeats, and for a refusal code.
+// The registry's patterns for a roadmap's id, for a picture's id, which its device row's key repeats, and for a refusal
+// code.
+const TREE_ID = /^t_[0-9a-f]{16}$/u;
 const PICTURE_ID = /^[A-Za-z0-9_-]{8,64}$/u;
 const CODE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/u;
 
@@ -52,7 +54,11 @@ export const CoachThread = new EntityType({
   type: 'coachThread', scope: RoadmapScopes.account, heldRemoval: true,
   decode: (f) => new CoachThreadValue(new Id(f.id, CoachThread), { treeId: f.optionalString('treeId'), stepId: f.optionalString('stepId'), title: f.string('title', '') }),
   checks: [
-    new Check('treeId', (thread) => { RoadmapSpecs.coachTreeId.applyOptional(thread.treeId, new Path('treeId')); return thread; }),
+    new Check('treeId', (thread) => {
+      const treeId = RoadmapSpecs.coachTreeId.applyOptional(thread.treeId, new Path('treeId'));
+      if (treeId !== null && !TREE_ID.test(treeId)) throw new Violation(RoadmapSpecs.coachTreeId.path, new Path('treeId'), { kind: 'custom', custom: 'notATreeId' });
+      return thread;
+    }),
     new Check('stepId', (thread) => thread.with({ stepId: RoadmapSpecs.coachStep.applyOptional(thread.stepId, new Path('stepId')) })),
     new Check('title', (thread) => thread.with({ title: RoadmapSpecs.coachTitle.apply(thread.title, new Path('title')) })),
   ],
@@ -154,10 +160,10 @@ export const CoachMessage = new EntityType({
 
 /** @typedef {'pending' | 'applied' | 'rejected' | 'stale' | 'replaced'} ProposalState */
 
-// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes, where it was made, and its state. Minting
-// one, with its base and changes, is m4's.
+// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes, none where its record names none, where
+// it was made, and its state. Minting one, with its base and changes, is m4's.
 export class CoachProposalValue {
-  /** @param {Id<CoachProposalValue>} id @param {{ treeId: string, threadId: Id<CoachThreadValue>, messageId: Id<CoachMessageValue>, state?: ProposalState }} values */
+  /** @param {Id<CoachProposalValue>} id @param {{ treeId: string | null, threadId: Id<CoachThreadValue>, messageId: Id<CoachMessageValue>, state?: ProposalState }} values */
   constructor(id, { treeId, threadId, messageId, state = 'pending' }) {
     this.id = id;
     this.treeId = treeId;
@@ -175,7 +181,7 @@ export const CoachProposal = new EntityType({
   type: 'coachProposal', scope: RoadmapScopes.account, heldRemoval: true, checks: [],
   decode: (f) => {
     const state = f.string('state', 'pending');
-    return new CoachProposalValue(new Id(f.id, CoachProposal), { treeId: f.string('treeId'), threadId: f.ref('threadId', CoachThread),
+    return new CoachProposalValue(new Id(f.id, CoachProposal), { treeId: f.optionalString('treeId'), threadId: f.ref('threadId', CoachThread),
       messageId: f.ref('messageId', CoachMessage), state: /** @type {ProposalState} */ (PROPOSAL_STATES.find((known) => known === state) ?? 'pending') });
   },
 });

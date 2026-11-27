@@ -43,10 +43,20 @@ public struct CoachThread: ProductEntity, Writable, Removable, Equatable {
   }
 
   public static let checks: [Check<CoachThread>] = [
-    Check("treeId") { t, _ in _ = try RoadmapSpecs.coachTreeId.apply(t.treeId, at: "treeId") },
+    Check("treeId") { t, _ in
+      guard let treeId = try RoadmapSpecs.coachTreeId.apply(t.treeId, at: "treeId") else { return }
+      if !CoachThread.isTreeId(treeId) { throw Violation(rule: RoadmapSpecs.coachTreeId.path, path: "treeId", reason: .custom("notATreeId")) }
+    },
     Check("stepId") { t, _ in t.stepId = try RoadmapSpecs.coachStep.apply(t.stepId, at: "stepId") },
     Check("title") { t, _ in t.title = try RoadmapSpecs.coachTitle.apply(t.title, at: "title") },
   ]
+
+  // The registry's pattern for a roadmap's id, `^t_[0-9a-f]{16}$`, once its length is checked.
+  static func isTreeId(_ id: String) -> Bool {
+    let bytes = Array(id.utf8)
+    return bytes.count == 18 && bytes[0] == 0x74 && bytes[1] == 0x5F
+      && bytes.dropFirst(2).allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+  }
 }
 
 // A picture on a message: its id on the device that sent it while `localOnly`.
@@ -161,21 +171,21 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   }
 }
 
-// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes and where it was made. Minting one, with
-// its base and changes, is m4's.
+// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes, none where its record names none, and
+// where it was made. Minting one, with its base and changes, is m4's.
 public struct CoachProposal: ProductEntity, Removable, Equatable {
   public static let type = Roadmap.Types.coachProposal
   public static let scope = Roadmap.scope
   public static let heldRemoval = true
 
   public let id: ID<CoachProposal>
-  public let treeId: String
+  public let treeId: String?
   public let threadId: ID<CoachThread>
   public let messageId: ID<CoachMessage>
 
   public init(_ r: Fields) throws(DecodeError) {
     id = ID(r.id)
-    treeId = try r.string("treeId")
+    treeId = try r.optionalString("treeId")
     threadId = try r.ref("threadId", CoachThread.self)
     messageId = try r.ref("messageId", CoachMessage.self)
   }

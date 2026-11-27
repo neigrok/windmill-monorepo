@@ -284,9 +284,14 @@ public struct DeleteRoadmap: ActAction {
         next += 1
       }
       let trees = Set(under.map(\.record.description))
+      // The drawn Coach records about the roadmap or a subtree under it, in id order. A record this build cannot read names
+      // no roadmap it can tell, so the delete leaves it to the server's rule (engine A.1) and goes on.
+      let conversations = try account.repository(CoachThread.self).records(in: .drawn).filter(\.isVisible)
+        .compactMap { try? CoachThread(Fields($0)) }.filter { $0.treeId.map(trees.contains) ?? false }.map(\.id).sorted()
+      let proposals = try account.repository(CoachProposal.self).records(in: .drawn).filter(\.isVisible)
+        .compactMap { try? CoachProposal(Fields($0)) }.filter { $0.treeId.map(trees.contains) ?? false }.map(\.id).sorted()
       return Loaded(roadmap: try entries.find(tree, in: .drawn), noted: try under.filter { try account.device(LandingNote.key(of: $0)) != nil },
-                    conversations: try account.repository(CoachThread.self).all(in: .drawn).filter { $0.treeId.map(trees.contains) ?? false }.map(\.id).sorted(),
-                    proposals: try account.repository(CoachProposal.self).all(in: .drawn).filter { trees.contains($0.treeId) }.map(\.id).sorted())
+                    conversations: conversations, proposals: proposals)
     }
   }
 
