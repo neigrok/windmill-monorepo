@@ -345,7 +345,8 @@ public final class ProposalFold {
   let seen: [String: RecordStamps]
   var records: ScratchRecords
   var given = Set<[UInt8]>()
-  var touched: [(key: String, register: BaseRegister)] = []
+  var touched: [BaseRegister] = []
+  var touchedKeys = Set<String>()
   var removes: [ProposalRemoval] = []
   var cachedTree: RoadmapTree?
   var cachedRoadmap: StandingRoadmap?
@@ -377,7 +378,7 @@ public final class ProposalFold {
   }
 
   // §7 The base: every register the set touches, in the order the changes first touch it, with the copy's stamp.
-  public var base: [BaseRegister] { touched.map(\.register) }
+  public var base: [BaseRegister] { touched }
 
   // The scratch copy as a tree, rebuilt once a change has written it.
   var tree: RoadmapTree {
@@ -440,7 +441,7 @@ public final class ProposalFold {
     if let marks = folding.marks?() { return marks }
     if folding.unchanged ?? folding.writes.allSatisfy({ records.value($0) == $0.value }) { return CoachRefusal(.noChange, change.subject) }
     if let removed = folding.removes { removes.append(removal(removed)) }
-    for each in touching where !touched.contains(where: { $0.key == each.key }) { touched.append((each.key, each.register)) }
+    for each in touching where touchedKeys.insert(each.key).inserted { touched.append(each.register) }
     for each in giving { given.insert(Array(each.id.utf8)) }
     for write in folding.writes { records.write(write) }
     cachedTree = nil
@@ -631,11 +632,12 @@ public final class ProposalFold {
   func registers(_ named: [String], _ writes: [ProposalWrite], giving: Set<[UInt8]>) -> [(key: String, register: BaseRegister, moved: Bool, owner: String)] {
     let isNew = { (id: String) in self.given.contains(Array(id.utf8)) || giving.contains(Array(id.utf8)) }
     var found: [(key: String, register: BaseRegister, moved: Bool, owner: String)] = []
+    var keys = Set<String>()
     for write in named.map({ ProposalWrite.node($0, "life", true) }) + writes.filter(\.base) {
       let scope = write.t == "progress" ? ScopeRef.overlay(original.id) : ScopeRef.tree(original.id)
       let record = RecordStamps.key(scope.description, write.t, write.id)
       let key = record + " " + write.register
-      if found.contains(where: { $0.key == key }) { continue }
+      guard keys.insert(key).inserted else { continue }
       let ids = write.ids
       if ids.contains(where: isNew) {
         if write.t != "edge" && write.t != "progress" && write.register == "life" && giving.contains(Array(ids[0].utf8)) {
@@ -715,20 +717,25 @@ public enum RoadmapProposals {
   // §7 The Shape rule (Coach engine §6) over the call, the gate's first rule and so the first check: a change outside the
   // catalog's schema refuses the call at its index, naming its subject; a fault outside the changes names nothing.
   static func shaped(_ input: JSON) throws(CoachRefusal) -> (treeId: String, changes: [ProposalChange]) {
-    guard let ability = Catalog.roadmap.ability(named: name), case .object(var call) = ability.input, case .object(var list)? = call["properties"],
-          case .object(var changes)? = list["changes"], let items = changes["items"] else { preconditionFailure("the catalog declares \(name)") }
-    changes["items"] = nil
-    list["changes"] = .object(changes)
-    call["properties"] = .object(list)
-    guard JSONSchema(.object(call)).fault(in: input) == nil, case .string(let treeId)? = input["treeId"], case .array(let sent)? = input["changes"] else {
+    guard callSchema.fault(in: input) == nil, case .string(let treeId)? = input["treeId"], case .array(let sent)? = input["changes"] else {
       throw CoachRefusal(.invalidInput)
     }
-    if let at = sent.firstIndex(where: { JSONSchema(items).fault(in: $0) != nil }) {
+    if let at = sent.firstIndex(where: { changeSchema.fault(in: $0) != nil }) {
       let subject = (try? sent[at].asObject()).map { ProposalChange(json: $0).subject } ?? nil
       throw CoachRefusal(.invalidInput, subject, at: at)
     }
     return (treeId, sent.compactMap { if case .object(let change) = $0 { ProposalChange(json: change) } else { nil } })
   }
+
+  // The catalog's schema of the call, its changes a list of anything, and of one change (`changes.items`).
+  static let (callSchema, changeSchema): (JSONSchema, JSONSchema) = {
+    guard let ability = Catalog.roadmap.ability(named: name), case .object(var call) = ability.input, case .object(var list)? = call["properties"],
+          case .object(var changes)? = list["changes"], let items = changes["items"] else { preconditionFailure("the catalog declares \(name)") }
+    changes["items"] = nil
+    list["changes"] = .object(changes)
+    call["properties"] = .object(list)
+    return (JSONSchema(.object(call)), JSONSchema(items))
+  }()
 
   // The sync registry's caps of a proposal's record: its changes, counted and in bytes, and its base in bytes (§6 rule 4).
   static let proposalChanges = registryCap("changes").items ?? 0

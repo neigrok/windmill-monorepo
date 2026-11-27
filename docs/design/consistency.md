@@ -1019,6 +1019,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
   as it does for a person's own edit, with Retry and Discard, and the proposal stays applied. The design's rule and
   its boards say what Apply does on the device; reword the rule to say so.
+- **Roadmap Coach · when a proposal is out of date.** The design's Rules · Proposals says a proposal is out of date if
+  "any step or link it touches has changed since". The spec ([Roadmap Coach](../foundation/roadmap-coach.md) §7) keeps
+  a proposal's base per register, the being there of each step it names and each field, link or mark it writes, and a
+  proposal is out of date only where one of those moved: a rename stays good after the step's description changed
+  elsewhere. To draw or rule: the rule reworded to say "any step, field or link it changes", or a ruling that any
+  change to a step it touches makes it out of date.
 - **Roadmap Coach · the Windmill One button on the web.** Design ruling 8 draws the button in the "allowance used"
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it

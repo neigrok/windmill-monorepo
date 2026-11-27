@@ -523,13 +523,13 @@ or a required one left out, is `invalid-input`.
         text the domain cannot store;
      3. a value past its cap, `over-limit`;
      4. a web link's address, `address-not-allowed`;
-     5. the steps and kinds it names, `unknown-step` and `unknown-kind`, and a new id the copy holds,
-        `invalid-input`;
+     5. a new id the copy holds, `invalid-input`, and the steps and kinds it names, `unknown-step` and
+        `unknown-kind`;
      6. the roadmap's counts of steps, links and kinds, `over-limit`;
      7. its own rule of the graph: `takes-every-start` for a `remove_step`; `closes-cycle` for a
-        `connect` (after a link that stands, which changes nothing), a `merge` or a `split`; and
-        `hue-taken` for a kind, checked at each change as the room's recolour checks it, so two
-        kinds do not swap hues in one proposal;
+        `merge`, a `split` or a `connect`, whose link the step already follows closes nothing and
+        changes nothing; and `hue-taken` for a kind, checked at each change as the room's recolour
+        checks it, so two kinds do not swap hues in one proposal;
      8. `roadmap-changed`: a register it touches that the turn read at another stamp than the copy
         holds now (§5), so the model reads again and never proposes over an edit it has not seen. A
         register the turn never read is taken at the copy's stamp;
