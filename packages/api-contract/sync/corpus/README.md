@@ -492,9 +492,12 @@ is not alive or not declared reading absent) → `ok`, no change, write `[]`, `s
 2. **Revival.** An intent delta of a `node` or a `kind` carrying an alive life whose record is dead once
    joined (the delete is newer) appends `life := alive` at the next pass's server stamp.
 3. **A roadmap's death** (in `self/roadmap`): each `tree` record whose joined life turns dead kills every alive
-   subtree under it. Each that had no place (a root) also kills every alive `node` of the owner's other alive
-   roadmaps whose alive `pointer` in the owner's overlay `opens` it. Discovery declares those overlays and
-   trees, and every alive scope of the subtrees the killed steps own and those under them.
+   subtree under it. Each such roadmap, and each subtree it kills, then kills every alive `coachThread` whose
+   `treeId` names it, as that thread's own death does (check 1), and every alive `coachProposal` whose `treeId`
+   names it; a `coachThread` whose `treeId` is null stays. Each that had no place (a root) also kills every alive
+   `node` of the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` it. Discovery
+   declares those overlays and trees, and every alive scope of the subtrees the killed steps own and those under
+   them.
 4. **Visibility.** When the intent changes the value of its tree's `meta.visibility` (unset reads `private`),
    by a delta or a restore, the tree's `meta.reach` takes that value and *reach* runs over the subtrees under it.
    A restamp of the value it holds writes no reach.

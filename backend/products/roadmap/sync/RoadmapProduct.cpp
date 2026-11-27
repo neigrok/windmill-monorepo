@@ -396,7 +396,7 @@ private:
     if (type == "tree") return onlyARootIsDeleted(ctx, change);
     if (type == "meta") return checkMeta(ctx, change, outcome);
     if (among(kOwnerOnly, type)) return ownersOnly(ctx, change);
-    if (type == "coachThread") return endThread(change, outcome);
+    if (type == "coachThread" && died(change)) return endConversation(change.scope, change.after.id.column(), outcome);
     if (type == "coachMessage") return checkMessage(ctx, change, outcome);
   }
 
@@ -429,16 +429,31 @@ private:
   }
 
   // A Coach conversation's death kills its messages, with their write fates, and its proposals.
-  static void endThread(const Change& change, Outcome& outcome) {
-    if (!died(change)) return;
-    const std::string& thread = change.after.id.column();
-    for (const Row& message : outcome.rows(change.scope, "coachMessage")) {
+  static void endConversation(const ScopeKey& scope, const std::string& thread, Outcome& outcome) {
+    for (const Row& message : outcome.rows(scope, "coachMessage")) {
       if (valueOf(message, "threadId") != Json::Value(thread)) continue;
-      outcome.kill(change.scope, message);
-      endFates(change.scope, message.id.column(), outcome);
+      outcome.kill(scope, message);
+      endFates(scope, message.id.column(), outcome);
     }
-    for (const Row& proposal : outcome.rows(change.scope, "coachProposal")) {
-      if (valueOf(proposal, "threadId") == Json::Value(thread)) outcome.kill(change.scope, proposal);
+    for (const Row& proposal : outcome.rows(scope, "coachProposal")) {
+      if (valueOf(proposal, "threadId") == Json::Value(thread)) outcome.kill(scope, proposal);
+    }
+  }
+
+  // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals
+  // about them, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+  static void endCoachRecordsAbout(const ScopeKey& scope, const std::vector<std::string>& ended, Outcome& outcome) {
+    const auto about = [&](const Row& row) {
+      const Json::Value tree = valueOf(row, "treeId");
+      return present(row) && tree.isString() && std::find(ended.begin(), ended.end(), tree.asString()) != ended.end();
+    };
+    for (const Row& thread : outcome.rows(scope, "coachThread")) {
+      if (!about(thread)) continue;
+      outcome.kill(scope, thread);
+      endConversation(scope, thread.id.column(), outcome);
+    }
+    for (const Row& proposal : outcome.rows(scope, "coachProposal")) {
+      if (about(proposal)) outcome.kill(scope, proposal);
     }
   }
 
@@ -474,7 +489,7 @@ private:
   }
 
   // §4: a roadmap's death kills every subtree under it, and a root's deletes each step of the owner's other roadmaps
-  // whose pointer opens it.
+  // whose pointer opens it. Roadmap Coach §9: each roadmap that dies so takes the conversations and proposals about it.
   static void endBranches(const CheckCtx& ctx, const std::vector<Change>& changes, Outcome& outcome) {
     const UserId& account = ctx.caller.account;
     const ScopeKey own = accountOf(account);
@@ -485,10 +500,16 @@ private:
     if (deaths.empty()) return;
     const Roadmaps roadmaps(outcome.rows(own, "tree"));
     std::vector<std::string> roots;
+    std::vector<std::string> ended;
     for (const Change* death : deaths) {
-      for (const std::string& id : roadmaps.under(death->after.id.column())) outcome.kill(own, *roadmaps.row(id));
+      ended.push_back(death->after.id.column());
+      for (const std::string& id : roadmaps.under(death->after.id.column())) {
+        outcome.kill(own, *roadmaps.row(id));
+        ended.push_back(id);
+      }
       if (valueOf(death->stored, "parent").isNull()) roots.push_back(death->after.id.column());
     }
+    endCoachRecordsAbout(own, ended, outcome);
     if (roots.empty()) return;
     const Roadmaps standing(outcome.rows(own, "tree"));
     for (const std::string& tree : standing.ids()) {

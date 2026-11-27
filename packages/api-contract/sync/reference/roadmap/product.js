@@ -1,6 +1,6 @@
 // Roadmap's server rules (engine.md Appendix A.1): its commands and their inverses, the life a change to a step or a
-// kind carries, a root's visibility and the reach of its branch, the end of a root, the owner's workspace and Coach's
-// records.
+// kind carries, a root's visibility and the reach of its branch, the end of a roadmap with Coach's records about it, the
+// owner's workspace and Coach's records.
 // corpus/README.md states the same rules.
 
 import { DEFAULT_KINDS } from '../../../genesis.js';
@@ -353,14 +353,21 @@ export class RoadmapProduct {
   }
 
   // §4: a roadmap's death kills every subtree under it, and a root's deletes each step of the owner's other roadmaps
-  // whose pointer opens it.
+  // whose pointer opens it. Roadmap Coach §9: each roadmap that dies so takes the conversations about it, as their own
+  // deaths would, and the proposals about it.
   endBranches(ctx, changes, outcome) {
     const account = accountOf(ctx);
     const roadmaps = new Roadmaps(outcome.rows(account, 'tree'));
     const deaths = changes.filter((record) => record.scopeKey === account && record.type.type === 'tree' && died(record));
+    const ended = [];
     for (const death of deaths) {
-      for (const id of roadmaps.under(death.after.id)) outcome.kill(account, roadmaps.rows.get(id));
+      ended.push(death.after.id);
+      for (const id of roadmaps.under(death.after.id)) {
+        outcome.kill(account, roadmaps.rows.get(id));
+        ended.push(id);
+      }
     }
+    endCoachRecordsAbout(account, ended, outcome);
     const roots = deaths.filter((record) => valueOf(record.original, 'parent') == null).map((record) => record.after.id);
     if (!roots.length) return;
     const standing = outcome.rows(account, 'tree').filter(present).map((row) => row.id).sort(compareIds);
@@ -431,13 +438,7 @@ const RULES = {
 
   // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
   coachThread(ctx, record, outcome) {
-    if (!died(record)) return;
-    for (const message of outcome.rows(record.scopeKey, 'coachMessage')) {
-      if (valueOf(message, 'threadId') !== record.after.id) continue;
-      outcome.kill(record.scopeKey, message);
-      endFates(record.scopeKey, message.id, outcome);
-    }
-    for (const row of outcome.rows(record.scopeKey, 'coachProposal')) if (valueOf(row, 'threadId') === record.after.id) outcome.kill(record.scopeKey, row);
+    if (died(record)) endConversation(record.scopeKey, record.after.id, outcome);
   },
 
   // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts are
@@ -449,6 +450,27 @@ const RULES = {
     if (ended && writes.some((name) => FINAL_REGISTERS.includes(name))) throw new Refusal('turn-final');
   },
 };
+
+function endConversation(scopeKey, thread, outcome) {
+  for (const message of outcome.rows(scopeKey, 'coachMessage')) {
+    if (valueOf(message, 'threadId') !== thread) continue;
+    outcome.kill(scopeKey, message);
+    endFates(scopeKey, message.id, outcome);
+  }
+  for (const row of outcome.rows(scopeKey, 'coachProposal')) if (valueOf(row, 'threadId') === thread) outcome.kill(scopeKey, row);
+}
+
+// Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals about
+// them, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+function endCoachRecordsAbout(scopeKey, ended, outcome) {
+  if (!ended.length) return;
+  const about = (row) => present(row) && ended.includes(valueOf(row, 'treeId'));
+  for (const thread of outcome.rows(scopeKey, 'coachThread').filter(about).sort((x, y) => compareIds(x.id, y.id))) {
+    outcome.kill(scopeKey, thread);
+    endConversation(scopeKey, thread.id, outcome);
+  }
+  for (const proposal of outcome.rows(scopeKey, 'coachProposal').filter(about).sort((x, y) => compareIds(x.id, y.id))) outcome.kill(scopeKey, proposal);
+}
 
 function endFates(scopeKey, message, outcome) {
   for (const row of outcome.rows(scopeKey, 'coachWriteFate')) if (valueOf(row, 'messageId') === message) outcome.kill(scopeKey, row);

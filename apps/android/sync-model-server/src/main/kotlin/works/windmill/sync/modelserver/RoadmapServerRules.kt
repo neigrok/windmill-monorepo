@@ -3,8 +3,8 @@ package works.windmill.sync.modelserver
 import works.windmill.sync.core.*
 
 // Roadmap's server rules (engine.md Appendix A.1): its commands and their inverses, the life a change to a step or a kind carries, a root's
-// visibility and the reach of its branch, the end of a root, the owner's workspace and Coach's records. corpus/README.md states the same
-// rules. They read and write records in their JSON form, where a null stamp is the one the server mints.
+// visibility and the reach of its branch, the end of a roadmap with Coach's records about it, the owner's workspace and Coach's records.
+// corpus/README.md states the same rules. They read and write records in their JSON form, where a null stamp is the one the server mints.
 class RoadmapServerRules : ServerRules {
     override fun discoverEffectScopes(context: RuleContext, command: CheckedCommand?): Set<ScopeKey> {
         val account = context.ownerScope
@@ -192,13 +192,7 @@ class RoadmapServerRules : ServerRules {
                 if (overlay.governedBy?.let { context.state.scopes[it] }?.owner != overlay.owner) throw Refusal("forbidden")
             }
             // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
-            "coachThread" -> if (died(original, after)) {
-                for (message in outcome.rows(change.scope, "coachMessage").filter { valueOf(it, "threadId") == change.key.id.json }) {
-                    outcome.kill(change.scope, message)
-                    endFates(change.scope, message.member("id").str(), outcome)
-                }
-                for (proposal in outcome.rows(change.scope, "coachProposal").filter { valueOf(it, "threadId") == change.key.id.json }) outcome.kill(change.scope, proposal)
-            }
+            "coachThread" -> if (died(original, after)) endConversation(change.scope, change.key.id.json, outcome)
             // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts are final.
             "coachMessage" -> {
                 if (died(original, after)) return endFates(change.scope, id!!, outcome)
@@ -207,6 +201,26 @@ class RoadmapServerRules : ServerRules {
                 if (ended && writes.any { it in FINAL_REGISTERS }) throw Refusal("turn-final")
             }
         }
+    }
+
+    private fun endConversation(scope: ScopeKey, thread: Json, outcome: Outcome) {
+        for (message in outcome.rows(scope, "coachMessage").filter { valueOf(it, "threadId") == thread }) {
+            outcome.kill(scope, message)
+            endFates(scope, message.member("id").str(), outcome)
+        }
+        for (proposal in outcome.rows(scope, "coachProposal").filter { valueOf(it, "threadId") == thread }) outcome.kill(scope, proposal)
+    }
+
+    // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals about them, whatever
+    // conversation holds them. A conversation about all roadmaps names none and stays.
+    private fun endCoachRecordsAbout(scope: ScopeKey, ended: List<String>, outcome: Outcome) {
+        fun about(row: Json) = present(row) && (valueOf(row, "treeId") as? Json.Str)?.value in ended
+        val byId = Comparator<Json> { a, b -> compareBytes(a.member("id").str(), b.member("id").str()) }
+        for (thread in outcome.rows(scope, "coachThread").filter(::about).sortedWith(byId)) {
+            outcome.kill(scope, thread)
+            endConversation(scope, thread.member("id"), outcome)
+        }
+        for (proposal in outcome.rows(scope, "coachProposal").filter(::about).sortedWith(byId)) outcome.kill(scope, proposal)
     }
 
     private fun endFates(scope: ScopeKey, message: String, outcome: Outcome) {
@@ -224,11 +238,20 @@ class RoadmapServerRules : ServerRules {
     }
 
     // §4: a roadmap's death kills every subtree under it, and a root's deletes each step of the owner's other roadmaps whose pointer opens it.
+    // Roadmap Coach §9: each roadmap that dies so takes the conversations and proposals about it.
     private fun endBranches(context: RuleContext, changes: List<RecordChange>, outcome: Outcome) {
         val account = context.ownerScope
         val roadmaps = Roadmaps(outcome.rows(account, "tree"))
         val deaths = changes.filter { it.scope == account && it.key.type == "tree" && died(it.before.row?.json, it.after.json) }
-        for (death in deaths) for (id in roadmaps.under(death.key.id.string!!)) outcome.kill(account, roadmaps.rows.getValue(id))
+        val ended = mutableListOf<String>()
+        for (death in deaths) {
+            ended.add(death.key.id.string!!)
+            for (id in roadmaps.under(death.key.id.string!!)) {
+                outcome.kill(account, roadmaps.rows.getValue(id))
+                ended.add(id)
+            }
+        }
+        endCoachRecordsAbout(account, ended, outcome)
         val roots = deaths.filter { valueOf(it.before.row?.json, "parent") == null }.map { it.key.id.string!! }
         if (roots.isEmpty()) return
         for (tree in outcome.rows(account, "tree").filter(::present).map { it.member("id").str() }.sortedWith(::compareBytes)) {

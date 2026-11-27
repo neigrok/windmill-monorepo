@@ -1,7 +1,8 @@
 import SyncCore
 
 // Roadmap's server rules (engine.md Appendix A.1): its commands and their inverses, the life a change to a step or a kind
-// carries, a root's visibility and the reach of its branch, the end of a root, the owner's workspace and Coach's records.
+// carries, a root's visibility and the reach of its branch, the end of a roadmap with Coach's records about it, the owner's
+// workspace and Coach's records.
 // corpus/README.md states the same rules. They read records in their wire form and write deltas in it, a null stamp the
 // one the server mints.
 
@@ -306,14 +307,7 @@ public struct RoadmapServerRules: ServerRules {
       guard let overlay, let governing, governing.owner.isSameID(as: overlay.owner) else { throw Refusal(.forbidden) }
     case "coachThread":
       // Coach's conversation (Roadmap Coach §9): its death kills its messages, with their write fates, and its proposals.
-      guard Self.died(original, after) else { return }
-      for message in outcome.rows("coachMessage", in: change.scope) where Self.value(message, "threadId") == change.key.id.json {
-        outcome.kill(message, in: change.scope)
-        outcome.endFates(of: message["id"] ?? .null, in: change.scope)
-      }
-      for proposal in outcome.rows("coachProposal", in: change.scope) where Self.value(proposal, "threadId") == change.key.id.json {
-        outcome.kill(proposal, in: change.scope)
-      }
+      if Self.died(original, after) { outcome.endConversation(change.key.id.json, in: change.scope) }
     case "coachMessage":
       // A message's death kills its write fates; once its writer has ended the turn, its state, text, calls and receipts
       // are final.
@@ -339,16 +333,20 @@ public struct RoadmapServerRules: ServerRules {
   }
 
   // §4: a roadmap's death kills every subtree under it, and a root's deletes each step of the owner's other roadmaps whose
-  // pointer opens it.
+  // pointer opens it. Roadmap Coach §9: each roadmap that dies so takes the conversations and proposals about it.
   func endBranches(_ changes: [RecordChange], in context: RuleContext, outcome: inout RoadmapOutcome) {
     let account = context.roadmapScope
     let roadmaps = Roadmaps(outcome.rows("tree", in: account))
     let deaths = changes.filter { $0.scope == account && $0.key.type == "tree" && Self.died($0.before.row?.json, $0.after.json) }
+    var ended: [String] = []
     for death in deaths {
+      ended.append(Self.name(of: death.key))
       for id in roadmaps.under(Self.name(of: death.key)) {
         if let row = roadmaps.rows[id] { outcome.kill(row, in: account) }
+        ended.append(id)
       }
     }
+    outcome.endCoachRecords(about: ended, in: account)
     let roots = deaths.filter { Self.value($0.before.row?.json, "parent") == nil }.map { Self.name(of: $0.key) }
     guard !roots.isEmpty else { return }
     let standing = outcome.rows("tree", in: account).filter(Self.isPresent).map(Self.id).sorted(by: Self.precedes)
@@ -595,6 +593,29 @@ struct RoadmapOutcome {
   // A message's death kills its write fates.
   mutating func endFates(of message: JSON, in scope: ScopeKey) {
     for fate in rows("coachWriteFate", in: scope) where RoadmapServerRules.value(fate, "messageId") == message { kill(fate, in: scope) }
+  }
+
+  // A conversation's death kills its messages, with their write fates, and its proposals.
+  mutating func endConversation(_ thread: JSON, in scope: ScopeKey) {
+    for message in rows("coachMessage", in: scope) where RoadmapServerRules.value(message, "threadId") == thread {
+      kill(message, in: scope)
+      endFates(of: message["id"] ?? .null, in: scope)
+    }
+    for proposal in rows("coachProposal", in: scope) where RoadmapServerRules.value(proposal, "threadId") == thread { kill(proposal, in: scope) }
+  }
+
+  // Roadmap Coach §9: the conversations about the roadmaps `ended`, each as its own death ends it, and the proposals about
+  // them, whatever conversation holds them. A conversation about all roadmaps names none and stays.
+  mutating func endCoachRecords(about ended: [String], in scope: ScopeKey) {
+    func about(_ row: JSON) -> Bool {
+      guard RoadmapServerRules.isPresent(row), let tree = try? RoadmapServerRules.value(row, "treeId")?.asString() else { return false }
+      return ended.contains(tree)
+    }
+    for thread in rows("coachThread", in: scope) where about(thread) {
+      kill(thread, in: scope)
+      endConversation(thread["id"] ?? .null, in: scope)
+    }
+    for proposal in rows("coachProposal", in: scope) where about(proposal) { kill(proposal, in: scope) }
   }
 }
 
