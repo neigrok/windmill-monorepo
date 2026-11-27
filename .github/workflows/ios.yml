@@ -62,8 +62,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # swift-tools-version 6.2 and swift-syntax 602 need this pinned compiler.
-  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  # The layering test's swift-syntax 604 reads Swift 6.4 and older, and the compile attacks assert what this compiler refuses.
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
   TZ: UTC
 
 defaults:
@@ -72,7 +72,7 @@ defaults:
 
 jobs:
   packages-and-builds:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v5
@@ -83,10 +83,10 @@ jobs:
         run: echo "WM_SOURCE_PACKAGES=$RUNNER_TEMP/source-packages" >> "$GITHUB_ENV"
 
       # The repository pins one toolchain: the domain kit's layering tests read sources with swift-syntax
-      # 602, which must match the compiler's major (Swift 6.2), and its compile attacks assert what that
+      # 604, whose major must be at least the compiler's (Swift 6.4), and its compile attacks assert what that
       # compiler refuses. Moving to a newer Xcode means bumping swift-syntax and re-checking the attacks.
-      - name: Select Xcode 26.3
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: Select Xcode 27.1
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
 
       - run: |
           xcodebuild -version
@@ -218,8 +218,10 @@ jobs:
                       if not isinstance(report, dict):
                           continue
                       process = report.get("procName")
+                      # SwiftPM's native build makes one WindmillDomainPackageTests bundle; Swift Build one bundle per test target.
                       domain = process == "WindmillDomainPackageTests" or (process in ("xctest", "swiftpm-testing-helper") and any(
-                          isinstance(image, dict) and "/WindmillDomainPackageTests.xctest/" in image.get("path", "")
+                          isinstance(image, dict) and ("/WindmillDomainPackageTests.xctest/" in image.get("path", "")
+                                                       or "/apps/ios/Domain/.build/" in image.get("path", "") and ".xctest/" in image.get("path", ""))
                           for image in report.get("usedImages", [])))
                       if not domain:
                           continue
@@ -272,7 +274,7 @@ jobs:
 
   # A runner's build of the app takes 7 to 28 minutes, and the unit tests about 15.
   app-unit-tests:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 55
     defaults:
       run:
@@ -282,9 +284,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select Xcode 26.3
+      - name: Select Xcode 27.1
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
+          sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
 
       - name: Install XcodeGen
@@ -292,12 +294,13 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
-      # The unit-test scheme leaves out the UI-test bundle and its runner.
+      # The unit-test scheme leaves out the UI-test bundle and its runner. iOS 27.0 is the newest runtime that carries an
+      # iPhone 17: Xcode 27.1's own iOS 27.1 runtime carries only the iPhone Duo.
       - name: Build and run App unit tests
         run: |
           python3 Tools/generate_project.py
           xcodebuild test -project Windmill.xcodeproj -scheme WindmillUnitTests \
-            -destination 'platform=iOS Simulator,name=iPhone 17'
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0'
 
   # Three shards balanced on measured test times. Five macOS jobs is the most that run at once, so a fourth shard would
   # queue rather than shorten the run.

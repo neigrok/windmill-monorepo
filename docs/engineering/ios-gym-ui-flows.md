@@ -240,7 +240,7 @@ Native suites live in `Tests/Gym`, `GymWorkoutFlowTests`, `GymCoachFlowTests`,
 The unit scheme is `WindmillUnitTests`. Nightly and design suites require
 `TEST_RUNNER_WM_NIGHTLY_UI=1` and `TEST_RUNNER_WM_DESIGN_CAPTURE=1`, respectively. Follow
 `apps/ios/App/README.md` for generation, fixture and owned-simulator setup. Local commands use
-`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; CI uses Xcode 26.3.
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, Xcode 27.1, as CI does.
 
 Local-stack acceptance follows `.claude/skills/verify/SKILL.md`: isolated Postgres/backend/Vite,
 fixture accounts, real native writes, and inspection of structured write logs, first-party event

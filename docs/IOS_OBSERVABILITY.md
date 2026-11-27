@@ -455,7 +455,7 @@ values have only the app-functionality purpose. Sentry and GRDB bundle their own
 manifest follows [Apple's required API reasons](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 and [data collection categories](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype).
 
-`.github/workflows/ios-release.yml` runs only through `workflow_dispatch`, with Xcode 26.3. It uses
+`.github/workflows/ios-release.yml` runs only through `workflow_dispatch`, with Xcode 27.1. It uses
 `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`, `IOS_DEV_CERT_P12_BASE64`,
 `IOS_DEV_CERT_PASSWORD` and `IOS_SENTRY_DSN`. `IOS_DEV_CERT_P12_BASE64` is the base64 of a
 password-protected .p12 holding one Apple Development certificate and its private key; the workflow

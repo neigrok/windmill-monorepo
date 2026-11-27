@@ -1282,7 +1282,7 @@ name in a result fail the export.
 ## TestFlight releases
 
 TestFlight releases run through [`.github/workflows/ios-release.yml`](../../../.github/workflows/ios-release.yml).
-The workflow uses the repository's signing credentials, builds with Xcode 26.3 and uploads to
+The workflow uses the repository's signing credentials, builds with Xcode 27.1 (the iOS 27 SDK) and uploads to
 App Store Connect. Normal uploads do not require an interactive App Store Connect login. Separate
 Apple processing or distribution troubleshooting may require App Store Connect access.
 

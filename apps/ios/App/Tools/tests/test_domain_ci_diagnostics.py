@@ -84,6 +84,16 @@ class DomainDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(result))
         sleep.assert_not_called()
 
+    def test_swift_build_bundles_of_the_domain_package_count(self):
+        domain = "/work/apps/ios/Domain/.build/out/Products/Debug/LayeringTests.xctest/Contents/MacOS/LayeringTests"
+        other = "/work/apps/ios/Sync/.build/out/Products/Debug/SyncCoreTests.xctest/Contents/MacOS/SyncCoreTests"
+        self.report("swiftpm-testing-helper-domain.ips", process="swiftpm-testing-helper", usedImages=[{"path": domain}])
+        self.report("swiftpm-testing-helper-sync.ips", process="swiftpm-testing-helper", usedImages=[{"path": other}])
+        summary, sleep = self.collect()
+        self.assertEqual(["domain-crash-1.json"], summary["reports"])
+        self.assertEqual([{"path": domain}], json.loads((self.output / "domain-crash-1.json").read_text())["usedImages"])
+        sleep.assert_not_called()
+
     def test_missing_or_partial_reports_wait_only_the_bounded_window(self):
         (self.reports / "WindmillDomainPackageTests-partial.ips").write_text('{"bug_type":"309"}\n{')
         (self.reports / "WindmillDomainPackageTests-invalid.ips").write_text('[]\n{}')

@@ -2,14 +2,17 @@
 
 The complete Domain Swift test command remains the authoritative CI gate, with its existing
 parallel scheduling and no test filter. A failed gate triggers one 300-second LLDB reproduction
-of the already-built Domain bundle through the selected toolchain's Swift Testing helper. A
+of the already-built Domain bundle through the selected toolchain's Swift Testing helper. That bundle is
+SwiftPM's native `WindmillDomainPackageTests.xctest`; Xcode 27's Swift Build makes one bundle per test target
+instead, so on CI's Xcode 27.1 the reproduction reports `domain_bundle_missing`. A
 330-second outer watchdog and seven-minute workflow limit bound setup and debugger execution.
 A successful reproduction run does not turn the original failure green.
 
 On macOS, SwiftPM uses `swiftpm-testing-helper --test-bundle-path … --testing-library swift-testing`.
 The helper receives the selected macOS platform's framework/library paths, matching SwiftPM's
 runtime environment setup. The diagnostic collector accepts a helper-named IPS only when its
-loaded images include the exact Domain test bundle. References:
+loaded images include a Domain test bundle: the native build's one, or a per-target bundle under the
+Domain package's `.build`. References:
 [Swift Testing debugging](https://github.com/swiftlang/swift-testing/blob/main/Documentation/CommandlineDebugging.md)
 and [SwiftPM 6.2.3 test environment](https://github.com/swiftlang/swift-package-manager/blob/swift-6.2.3-RELEASE/Sources/Commands/Utilities/TestingSupport.swift).
 The environment reference is SwiftPM 6.2.3; the Xcode 26.3 CI diagnostic records Swift 6.2.4.
@@ -42,8 +45,8 @@ LayeringTests runs each complete parse and syntax inspection on its own 8 MiB Fo
 returning only Sendable results. Source, manifest and PackageDescription inspections share this
 boundary. Files, parser depth, findings and parallel test scheduling remain unchanged. Recursive
 parser and visitor stack use is documented in the pinned
-[parser](https://github.com/swiftlang/swift-syntax/blob/602.0.0/Sources/SwiftParser/Parser.swift)
-and [visitor](https://github.com/swiftlang/swift-syntax/blob/602.0.0/Sources/SwiftSyntax/generated/SyntaxVisitor.swift).
+[parser](https://github.com/swiftlang/swift-syntax/blob/604.0.0/Sources/SwiftParser/Parser.swift)
+and [visitor](https://github.com/swiftlang/swift-syntax/blob/604.0.0/Sources/SwiftSyntax/generated/SyntaxVisitor.swift).
 
 The unmodified 94,852-byte generated Coach catalogue has SHA256
 `dfa24b8344884d50b13cc3f5a1102fc2bae6a22c6d9f46919327cd57ecd9ee4b`. Local probes compile all 46

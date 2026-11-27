@@ -23,13 +23,13 @@ on:
         default: false
 
 env:
-  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
   TZ: UTC
 
 jobs:
   shard:
     name: ${{ inputs.shard }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: ${{ inputs.timeout }}
     defaults:
       run:
@@ -39,9 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select Xcode 26.3
+      - name: Select Xcode 27.1
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
+          sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
 
       - name: Install XcodeGen
@@ -55,11 +55,12 @@ jobs:
           sudo mdutil -a -i off || true
           mdutil -s /System/Volumes/Data
 
+      # iOS 27.0 is the newest runtime that carries an iPhone 17: Xcode 27.1's own iOS 27.1 runtime carries only the iPhone Duo.
       - name: Create and prepare the UI simulator
         timeout-minutes: 10
         run: |
           UI_SIMULATOR=$(xcrun simctl create "Windmill CI ${{ inputs.shard }}" \
-            com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+            com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-0)
           echo "UI_SIMULATOR=$UI_SIMULATOR" >> "$GITHUB_ENV"
           python3 Tools/prepare_simulator.py "$UI_SIMULATOR"
 

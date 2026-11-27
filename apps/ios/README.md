@@ -50,7 +50,7 @@ and test host over the probe product, and `GraphBench/` the Graph's benchmark on
 | `Domain/Tests/JournalDomainTests/` | Every shared journal file is claimed by the rules, values and action runners, beside the real-engine claim, restart, refusal and failed-commit tests. |
 | `Domain/Tests/RoadmapDomainTests/` | The runners of roadmap's vectors: the reads (`CorpusTests`, which names every file of `packages/api-contract/roadmap/domain/` as claimed), the rule book, its values and each entity against the registry (`RoadmapRulesTests`), the actions of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, each case decided again with its records reversed (`RoadmapsTests`, `StepsTests`, `KindsTests`, `ProgressTests`, `WorkspaceTests`, `LandingTests`), every act built from its case as `RoadmapAct` (`Acts.swift`) builds it, and the scenes of `undo.json`, played on the harness over `RoadmapServerRules` (`UndoTests`); a subtree, a visibility and a recolour drawn as the model server's `RoadmapServerRules` then writes them, a root's held delete, and a subtree the server refuses; one roadmap read from a phone's engine, through a step another device deleted, by the server's `seq` of the delete and of each link, and equal to the corpus's read of the same records; over the real engine, as the web's harness tells them, a step's held delete and its Undo, a change made against another phone's delete, before the delete arrived and when the phone keeps only the step's or the kind's spent id, a subtree whose standing that delete ended and the change brings back, a stale public sent after a newer private, a roadmap's delete that lets go of its note at once, a link from such a step whose line names it from the note, a link that landed before the delete, which tells nothing and goes with the next write of the note, and a roadmap built step by step, whose note holds its newest step alone; a recolour that reaches a step the device holds deleted, and a subtree's revival over a note that holds a landed step, each held to the web's decision of the same records; two checks of what Swift's own strings would read otherwise than the web (ids that differ only in spelling, a capital sigma that ends a word); every case of the plan grammar (`Plan/PlanCorpusTests`), and 300 generated roadmaps each written and read back as it was (`Plan/PlanFileTests`); a note of 120 planted steps that landed, let go of by the next write; timed under a ceiling, the Board read over 5,000 steps; the shared address cases, each read and written again (`AddressesTests`); and Roadmap Coach's (`Coach/`): every case of `packages/api-contract/roadmap/abilities/` but the context's and the proposal's (`AbilitiesCorpusTests`), the direct writes' and the reads' rules beyond them (`AbilityWritesTests`, `AbilityReadsTests`), the standing roadmap read from a phone's engine (`StandingTests`), the tool host over that engine with each kind of Undo, one a kind's hue refuses where it is asked, a release that fails and a closed conversation (`ToolHostTests`), and the catalog with the caps of `limits.json` (`CatalogTests`). |
 | `Domain/Tests/RoadmapLayoutTests/` | Every file under `packages/api-contract/roadmap/layout/`, each named, compared bit for bit: the arithmetic's 2,014 vectors, and for each of thirteen roadmaps its engine, seats, tiers, links with their kind, sway and control point, bounds, both canvases' fit, floor and focus frames, and every caption pass, in turn on one placer for each canvas. Beside them: zeros, infinities and what is not a number through the arithmetic, an angle it refuses, a layout that throws seated by the fallback, text keyed by UTF-16 code unit, a roadmap that is no graph refused, and the time 5,000 steps take under a generous ceiling. |
-| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, the CI workflows, and each app project that exists, `SyncProbe/project.yml` among them; with one fixture per rule under `Fixtures/`. |
+| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, §10.1's Dispatch queues and imports in the app and the UI modules, the CI workflows, and each app project that exists, `SyncProbe/project.yml` among them; with one fixture per rule under `Fixtures/`. |
 
 The package is written in the Swift 6 language mode with strict concurrency, for iOS 18 and macOS 15.
 `SyncCore` and `SyncAPI`, which other packages compile against, enable `MemberImportVisibility` and
@@ -160,14 +160,14 @@ credentials and sample counts remain failures.
 **Property tests** draw a fresh seed on every run and name it in any failure. Replay one with
 `SYNC_SEED=<seed> swift test --filter <test>`.
 
-[CI](../../.github/workflows/ios.yml) pins Xcode 26.3 and runs five parallel jobs. The packages/builds job checks the
+[CI](../../.github/workflows/ios.yml) pins Xcode 27.1, the iOS 27 SDK, and runs five parallel jobs. The packages/builds job checks the
 generated registry, tests `WindmillSync`, `WindmillDomain` and `SyncTestingSurface` with the explicit import check,
 checks the App tools, and builds SyncProbe and the App in Release for the simulator's arm64 slice. A pull request runs
 32 seeds of the replay fuzz, a push to main 128. The App's Release build compiles every Sync library for iOS, and its
 products check that the App's String Catalogs are current ([Localization](App/README.md#localization)); the
 unit tests compile `SyncTesting`. The probe build, the layering test and the Release build share one package checkout
-per app, under `WM_SOURCE_PACKAGES`. App unit tests run the `WindmillUnitTests` scheme on iPhone 17, which builds the
-app and `WindmillTests` without the UI tests. Three UI shards, balanced on measured test times, select each standard
+per app, under `WM_SOURCE_PACKAGES`. App unit tests run the `WindmillUnitTests` scheme on an iPhone 17 on iOS 27.0, the newest runtime that carries one
+(Xcode 27.1's iOS 27.1 runtime carries only the iPhone Duo), which builds the app and `WindmillTests` without the UI tests. Three UI shards, balanced on measured test times, select each standard
 `WindmillUITests` class once:
 
 | Shard | Classes |
@@ -176,19 +176,13 @@ app and `WindmillTests` without the UI tests. Three UI shards, balanced on measu
 | `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests`, `RoadmapNestedFlowTests` |
 | `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `RoadmapSharingFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
 
-A local Xcode newer than CI's 26.3 (Swift 6.2) accepts code that CI rejects:
-- **Nested test classes:** a class nested in a test suite that builds an App type in a stored property's default value
-  needs `@MainActor`, since the App's types are main-actor-isolated.
-- **Long `+` chains:** a long chain that mixes `CGFloat` and `Double` needs one type.
-- **`ID` inside an `Identifiable` type:** name it `DomainKit.ID`.
-
 Each test job builds its own App, and the packages job checks that the UI class partition stays complete. The opt-in
 classes stay out of it and keep their guards: the design capture suite in `App/UITests/DesignCapture/` (how to run and
 export it is in [the App README](App/README.md#design-captures)), and `NightlyFlowTests` and `GymNightlyFlowTests`,
 which [iOS nightly](../../.github/workflows/ios-nightly.yml) runs once a day with `WM_NIGHTLY_UI=1`, beside a replay
 fuzz of 128 seeds that starts each day where the day before ended. Every shard, the nightly one included, runs
 [one definition](../../.github/workflows/ios-ui-tests.yml). Each UI shard
-creates its own iPhone 17 on iOS 26.5 and prepares it with `App/Tools/prepare_simulator.py <udid>`, which prepares a
+creates its own iPhone 17 on iOS 27.0 and prepares it with `App/Tools/prepare_simulator.py <udid>`, which prepares a
 new local simulator the same way: it seeds English/US preferences, Live Activity consent and completed Apple
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility
 automation, UTC, a fixed status bar and the software keyboard, with autocorrection and predictions off. The shard
