@@ -14,7 +14,7 @@ value/action scene with its records reversed.
 |---|---|
 | `rules.json` | One complete rule book: two entity facts and 18 rules |
 | `values.json` | 141 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation and draft adoption |
-| `page-actions.json` | 53 cases: bound and anonymous saves, words over a page's ratings and source, retirements, supersession, retained edits, confirmation proofs and reconciliation |
+| `page-actions.json` | 57 cases: bound and anonymous saves, words over a page's ratings and source, retirements, supersession, retained edits, confirmation proofs and reconciliation |
 | `echo-quotes.json` | 17 cases: NFC-equivalent quotations, original-body UTF-16 anchors, occurrence selection and real edits |
 
 `rules.json` is the gym corpus's `{entities,rules}` object. The other files are arrays of
@@ -162,7 +162,8 @@ its companion delta into the same atomic intent.
   or committing the candidate clock; the retained writing remains available.
 - **Source (Journal Talk §5.3).** A page Talk has written into is `spoken`, and typing keeps it: `SaveWords`
   over a page the device holds as `spoken` saves `spoken`, whatever source it is handed, until a save with no
-  text removes the page. `SavePage` and `ClaimPage` save the document they are handed whole, its source included.
+  text removes the page. Words carried in from another day are typed: only the day's own page can be spoken.
+  `SavePage` and `ClaimPage` save the document they are handed whole, its source included.
 - **Draft adoption (owner ruling).** Sign-in carries every draft into the account or retains it
   recoverably on the device. Recovery does not override current writing. Keeping an authoritative
   destination and a distinct incoming recovery preserves both documents without duplication.
@@ -180,9 +181,9 @@ and echo-quotation expectation; no surface supplies expected values.
 |---|---:|
 | `rules.json` | 1 |
 | `values.json` | 141 |
-| `page-actions.json` | 53 |
+| `page-actions.json` | 57 |
 | `echo-quotes.json` | 17 |
-| Total | 212 |
+| Total | 216 |
 
 The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 
