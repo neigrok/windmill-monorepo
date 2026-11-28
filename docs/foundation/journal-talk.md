@@ -6,7 +6,8 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. Talk exists on the web only, as a
+**Status:** Specified, and approved by the owner on 2026-11-17. The journal's registry holds the mark's row (D-5);
+nothing else is built. Talk exists on the web only, as a
 finished recording sent to the backend's `POST /v1/journal/transcribe`
 ([journal architecture](../../backend/products/journal/ARCHITECTURE.md)). The iPhone has no Talk.
 The build order lives in the Journal Talk roadmap tree, which the dogfood tree
