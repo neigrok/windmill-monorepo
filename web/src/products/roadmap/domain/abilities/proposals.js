@@ -230,6 +230,21 @@ function stampIn(stamps, key, register) {
   return { held: Object.hasOwn(record.f, register), stamp: record.f[register] ?? null };
 }
 
+// §7 Apply: whether anything in a proposal's base differs from the copy now, the standing roadmap's stamps: a stamp that
+// is not the one recorded, or a step or link that has gone or come, which moves the stamp of its life. An entry that is
+// no register is a base that cannot stand.
+/** @param {Standing} standing @param {string} treeId @param {readonly Json[]} base */
+export function baseMoved(standing, treeId, base) {
+  const stamps = new Map((standing.stamps ?? []).map((record) => [recordKey(record.scope, record.t, record.id), record]));
+  return base.some((entry) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return true;
+    const { t, id, register, stamp } = /** @type {Record<string, Json>} */ (entry);
+    if (typeof t !== 'string' || typeof register !== 'string' || id === undefined) return true;
+    const scope = t === 'progress' ? RoadmapScopes.overlay(treeId) : RoadmapScopes.tree(treeId);
+    return stampIn(stamps, recordKey(scope, t, id), register).stamp !== (stamp ?? null);
+  });
+}
+
 // A link's key among the scratch's links.
 /** @param {string} from @param {string} to */
 const linkKey = (from, to) => jcs([from, to]);
@@ -378,7 +393,7 @@ export class ProposalFold {
       edges: new Map((copy.edges ?? []).map((edge) => [linkKey(edge.from, edge.to), edge])),
       marks: new Map((copy.marks ?? []).map((mark) => [mark.node, mark])),
     };
-    /** @param {Map<string, Record<string, any>>} folded @param {Map<string, Record<string, any>>} held @param {readonly string[]} names @param {Record<string, Json>} unset */
+    /** @param {Map<string, Record<string, any>>} folded @param {Map<string, Record<string, any>>} held @param {readonly string[]} names @param {Readonly<Record<string, any>>} unset */
     const records = (folded, held, names, unset) => [...folded.values()].sort((a, b) => compareText(a.id, b.id)).flatMap((record) => {
       const before = held.get(record.id);
       /** @param {Record<string, any>} from @param {string} name @returns {Json} */

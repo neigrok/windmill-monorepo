@@ -5,6 +5,7 @@
 // each step, completion and diagnostic of that roadmap as the room shows it.
 
 import { compareText } from '../../../../platform/domain-kit/entities.js';
+import { Reader, Views } from '../../../../platform/domain-kit/reading.js';
 import { precondition } from '../../../../platform/domain-kit/values.js';
 import { registry } from '../../../../platform/sync/schema.js';
 import { RoadmapAccount } from '../account.js';
@@ -12,7 +13,7 @@ import { diagnose, pointerDiagnostics } from '../diagnostics.js';
 import { FollowGraph } from '../graph.js';
 import { RoadmapTree } from '../records.js';
 import { LegendRead } from '../reads.js';
-import { readRoadmap } from '../roadmaps.js';
+import { Roadmap, readRoadmap } from '../roadmaps.js';
 import { RoadmapScopes } from '../roadmapRules.js';
 import { RoadmapKind } from '../kinds.js';
 import { RoadmapLink, RoadmapStep } from '../steps.js';
@@ -92,6 +93,40 @@ export function readStanding(copies, { listRead = true, ownerMarks = new Map() }
   const subtasks = copies.flatMap(({ id, overlay = null }) => (overlay === null ? [] : overlay.repository(Subtask).all('drawn')
     .map((subtask) => ({ tree: id, step: subtask.step, label: subtask.label, done: subtask.done }))));
   return { trees, held, subtasks, listRead, stamps };
+}
+
+// D-2 of one roadmap of the person's own and of the roadmaps its reading reaches, from the device's copy through an act's
+// reader, as `readStanding` reads them: the roadmaps above it and those its steps own or open, and theirs in turn, each
+// where the person's list holds it. An act that reads one roadmap so reads none of the others the device holds.
+/**
+ * @param {import('../../../../platform/domain-kit/acts.js').ActReader} read
+ * @param {string} treeId
+ * @returns {Required<Standing>}
+ */
+export function readReached(read, treeId) {
+  const { listed, listRead } = read.inScope(RoadmapScopes.account, (account) => ({
+    listed: new Map([...account.views.drawn.values()].filter((record) => record.t === Roadmap.type).map((record) => [String(record.id), record])),
+    listRead: account.firstPullComplete(),
+  }));
+  /** @param {string} scope @param {readonly ViewRecord[]} drawn @param {readonly ViewRecord[]} stored */
+  const reader = (scope, drawn, stored) => new Reader(Views.ofRecords(read.registry, { drawn: [...drawn], stored: [...stored] }), scope, read.moment);
+  /** @type {Map<string, RoadmapCopy>} */
+  const copies = new Map();
+  for (const pending = [treeId]; pending.length;) {
+    const id = /** @type {string} */ (pending.pop());
+    const record = listed.get(id);
+    if (copies.has(id) || record === undefined) continue;
+    const tree = read.inScope(RoadmapScopes.tree(id), (scope) => ({ drawn: [...scope.views.drawn.values()], stored: [...scope.views.stored.values()],
+      read: scope.firstPullComplete() }));
+    const overlay = read.inScope(RoadmapScopes.overlay(id), (scope) => ({ drawn: [...scope.views.drawn.values()], read: scope.firstPullComplete() }));
+    const copy = { id, listed: record, tree: reader(RoadmapScopes.tree(id), tree.drawn, tree.stored),
+      overlay: reader(RoadmapScopes.overlay(id), overlay.drawn, overlay.drawn), read: listRead && tree.read && overlay.read };
+    copies.set(id, copy);
+    const roadmap = readRoadmap(id, copy);
+    pending.push(...[roadmap.parent?.tree, roadmap.meta?.root, ...roadmap.nodes.map((node) => node.branch), ...[...roadmap.pointers.values()].map((pointer) => pointer.opens)]
+      .filter((named) => typeof named === 'string'));
+  }
+  return readStanding([...copies.values()], { listRead });
 }
 
 // Each standing roadmap's reading, made the first time an ability reads it: a turn reads one standing many times, and

@@ -49,6 +49,19 @@ enum RoadmapCaps {
   }
 }
 
+// What reads the device's copy one scope at a time: the runner outside an act, or an act's reader during its load.
+protocol CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
+}
+
+extension ActionRunner: CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T { try read(scope, body) }
+}
+
+extension ActReader: CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T { try inScope(scope, body) }
+}
+
 // Every roadmap the device holds as the room shows it: the account the domain reads over them, each roadmap's completed
 // steps as the room shows them, the steps under a delete the person can still undo, the person's checklists, whether the
 // device holds the person's whole list, the stamps of the registers they were read from, and the roadmaps whose completion
@@ -119,31 +132,66 @@ public struct StandingRoadmaps: Sendable {
   // overlay of it, whole once the device has pulled all three, a step under a delete the person can still undo absent from
   // it (`drawn` holds the delete, `stored` the step); the person's checklists; and the stamps of every register read.
   public init(reading runner: ActionRunner) throws {
-    let (entries, listRead) = try runner.read(RoadmapEntry.scope) { (list: Reader) throws -> ([Record], Bool) in
+    let (entries, listRead) = try Self.list(from: runner)
+    self.init(copies: try entries.map { try Copy($0, listRead: listRead, from: runner) }, listRead: listRead)
+  }
+
+  // D-2 of one roadmap of the person's own and of the roadmaps its reading reaches, through an act's reader: the roadmaps
+  // above it and those its steps own or open, and theirs in turn, each where the person's list holds it. An act that reads
+  // one roadmap so reads none of the others the device holds.
+  init(reaching treeId: String, reading read: ActReader) throws {
+    let (entries, listRead) = try Self.list(from: read)
+    let listed = ByText<Record>(entries.map { (Array($0.id.description.utf8), $0) }) { _, last in last }
+    var copies: [Copy] = []
+    var copied = Set<[UInt8]>()
+    var pending = [treeId]
+    while let id = pending.popLast() {
+      guard copied.insert(Array(id.utf8)).inserted, let entry = listed[id] else { continue }
+      let copy = try Copy(entry, listRead: listRead, from: read)
+      copies.append(copy)
+      let named = [copy.tree.parent?.tree, copy.tree.meta?.root] + copy.tree.nodes.map(\.branch) + copy.tree.pointers.map { Optional($0.opens) }
+      pending += named.compactMap { $0 }
+    }
+    self.init(copies: copies, listRead: listRead)
+  }
+
+  // The person's list as the device holds it, and whether it holds the whole of it.
+  static func list(from read: some CopyReading) throws -> (entries: [Record], read: Bool) {
+    try read.reading(RoadmapEntry.scope) { (list: Reader) throws -> ([Record], Bool) in
       (try list.repository(RoadmapEntry.self).records(in: .drawn), try list.firstPullComplete())
     }
-    var trees: [RoadmapTree] = []
-    var held: [Held] = []
-    var subtasks: [ChecklistItem] = []
-    var stamps: [RecordStamps] = []
-    for listed in entries {
+  }
+
+  // One roadmap of the person's list as the device's copy holds it: its tree, the steps under a delete the person can still
+  // undo, their checklists, and the stamps of every register read.
+  struct Copy {
+    let tree: RoadmapTree
+    let held: [Held]
+    let subtasks: [ChecklistItem]
+    let stamps: [RecordStamps]
+
+    init(_ listed: Record, listRead: Bool, from read: some CopyReading) throws {
       let id = ID<RoadmapEntry>(listed.id)
-      let (records, treeRead, kept) = try runner.read(id.tree) { (scope: Reader) throws -> ([Record], Bool, [String]) in
+      let (records, treeRead, kept) = try read.reading(id.tree) { (scope: Reader) throws -> ([Record], Bool, [String]) in
         let steps = scope.repository(RoadmapStep.self)
         let shown = Set(try steps.records(in: .drawn).filter(\.isVisible).map(\.id))
         let kept = try steps.records(in: .stored).filter { $0.isVisible && !shown.contains($0.id) }.map(\.id.description)
         return (try scope.records(in: .drawn), try scope.firstPullComplete(), kept)
       }
-      let (overlay, overlayRead, items) = try runner.read(id.overlay) { (scope: Reader) throws -> ([Record], Bool, [Subtask]) in
+      let (overlay, overlayRead, items) = try read.reading(id.overlay) { (scope: Reader) throws -> ([Record], Bool, [Subtask]) in
         (try scope.records(in: .drawn), try scope.firstPullComplete(), try scope.repository(Subtask.self).all(in: .drawn))
       }
-      trees.append(try RoadmapTree(id: id, listed: listed, tree: records, overlay: overlay, read: listRead && treeRead && overlayRead))
-      held += kept.map { Held(tree: id.description, step: $0) }
-      subtasks += items.map { ChecklistItem(tree: id.description, step: $0.step.description, label: $0.label, done: $0.done) }
-      stamps += [RecordStamps(listed, in: RoadmapEntry.scope)] + records.map { RecordStamps($0, in: id.tree) }
+      tree = try RoadmapTree(id: id, listed: listed, tree: records, overlay: overlay, read: listRead && treeRead && overlayRead)
+      held = kept.map { Held(tree: id.description, step: $0) }
+      subtasks = items.map { ChecklistItem(tree: id.description, step: $0.step.description, label: $0.label, done: $0.done) }
+      stamps = [RecordStamps(listed, in: RoadmapEntry.scope)] + records.map { RecordStamps($0, in: id.tree) }
         + overlay.filter { $0.type == StepMark.type || $0.type == StepPointer.type }.map { RecordStamps($0, in: id.overlay) }
     }
-    self.init(trees: trees, held: held, subtasks: subtasks, listRead: listRead, stamps: stamps)
+  }
+
+  init(copies: [Copy], listRead: Bool) {
+    self.init(trees: copies.map(\.tree), held: copies.flatMap(\.held), subtasks: copies.flatMap(\.subtasks), listRead: listRead,
+              stamps: copies.flatMap(\.stamps))
   }
 
   // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading

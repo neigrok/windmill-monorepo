@@ -274,14 +274,17 @@ class ImportPlan {
   chunks(reserved = 0) { return importChunks(this.units, reserved); }
 }
 
-// §5 Import and paste: chunks of at most IMPORT_CHUNK records and half the engine's push limit, a step's
-// prerequisites in its chunk or an earlier one. The first chunk keeps room for `reserved` records.
+// §5 Import and paste, and a proposal applied: chunks of at most IMPORT_CHUNK records and half the engine's push limit,
+// each unit whole and in its order, so a step's prerequisites come in its chunk or an earlier one. The first chunk keeps
+// room for `reserved` records.
 /**
- * @param {ImportUnit[]} units
+ * @template {{ count: number, bytes: number }} U
+ * @param {U[]} units
  * @param {number} reserved
+ * @returns {U[][]}
  */
 export function importChunks(units, reserved = 0) {
-  /** @type {ImportUnit[][]} */
+  /** @type {U[][]} */
   const chunks = [[]];
   let count = reserved;
   let bytes = 0;
@@ -414,7 +417,7 @@ function loadTree(read, tree, named) {
  * @param {string[]} froms
  * @param {Map<string, string>} [made]
  */
-function linkedNames(tree, froms, made = new Map()) {
+export function linkedNames(tree, froms, made = new Map()) {
   return [...new Set(froms)].flatMap((id) => {
     const name = tree.nodesById.get(id)?.label ?? made.get(id);
     return name === undefined ? [] : [{ id, name }];

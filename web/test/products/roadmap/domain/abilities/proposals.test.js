@@ -139,8 +139,8 @@ function writtenOver(copy, { recolours, kinds, nodes, links, marks }) {
     legend.set(kind, { .../** @type {any} */ (legend.get(kind)), hue });
     for (const id of wearers) steps.set(id, { .../** @type {any} */ (steps.get(id)), color: hue });
   }
-  for (const { id, removed, fields } of kinds) legend.set(id, { ...(legend.get(id) ?? { id, born: null }), ...fields, present: !removed });
-  for (const { id, removed, fields } of nodes) steps.set(id, { ...(steps.get(id) ?? { id, born: null }), ...fields, present: !removed });
+  for (const { id, removed, fields } of kinds) legend.set(id, /** @type {any} */ ({ ...(legend.get(id) ?? { id, born: null }), ...fields, present: !removed }));
+  for (const { id, removed, fields } of nodes) steps.set(id, /** @type {any} */ ({ ...(steps.get(id) ?? { id, born: null }), ...fields, present: !removed }));
   for (const { from, to, alive } of links) edges.set(jcs([from, to]), { from, to, present: alive });
   for (const { node, mark } of marks) marked.set(node, { node, ...mark, recordedAt: null, deviceAt: null });
   return new RoadmapTree(/** @type {any} */ ({ ...copy, nodes: [...steps.values()], edges: [...edges.values()], kinds: [...legend.values()], marks: [...marked.values()] }));
@@ -152,7 +152,7 @@ test('what a set reduces to for Apply, written over the copy, leaves every regis
   assert.ok(accepted.length > 10);
   for (const each of accepted) {
     const ids = [...(each.given.ids ?? [])];
-    const minted = propose(each.given, each.call.input, each.about, () => /** @type {string} */ (ids.shift()));
+    const minted = /** @type {any} */ (propose(each.given, each.call.input, each.about, () => /** @type {string} */ (ids.shift())));
     const folded = ProposalFold.over(each.given, each.call.input.treeId, minted.proposal.changes);
     assert.ok('fold' in folded, each.case);
     const { fold } = folded;

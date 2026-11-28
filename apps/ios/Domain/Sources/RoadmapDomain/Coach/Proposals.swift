@@ -384,6 +384,20 @@ public final class ProposalFold {
   // §7 The base: every register the set touches, in the order the changes first touch it, with the copy's stamp.
   public var base: [BaseRegister] { touched }
 
+  // §7 Apply: whether anything in a proposal's base differs from the copy now, the standing roadmap's stamps: a stamp that is
+  // not the one recorded, or a step or link that has gone or come, which moves the stamp of its life. An entry that is no
+  // register is a base that cannot stand.
+  public static func baseMoved(_ base: [JSON], over standing: StandingRoadmaps, treeId: String) -> Bool {
+    let stamps = Dictionary(standing.stamps.map { ($0.key, $0) }) { _, last in last }
+    return base.contains { entry in
+      guard let t = try? entry.member("t").asString(), let register = try? entry.member("register").asString(), let id = entry["id"] else { return true }
+      let scope = t == "progress" ? ScopeRef.overlay(treeId) : ScopeRef.tree(treeId)
+      let recorded = entry["stamp"].flatMap { $0.isNull ? nil : try? $0.asString() }
+      let now = stamp(in: stamps[RecordStamps.key(scope.description, t, id)], register).stamp
+      return now.map { Array($0.utf8) } != recorded.map { Array($0.utf8) }
+    }
+  }
+
   // The scratch copy as a tree, rebuilt once a change has written it.
   var tree: RoadmapTree {
     if let cachedTree { return cachedTree }

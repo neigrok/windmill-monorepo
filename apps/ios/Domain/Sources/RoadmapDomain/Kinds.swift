@@ -237,20 +237,30 @@ public struct RecolourKind: ActAction {
     let chosen = recoloured.value.hue
     try recoloured.value.checkHueUnworn(among: loaded.kinds.present)
     guard !held.changed(by: recoloured).isEmpty else { return .unchanged(()) }
-    let wearers = held.holdsValues ? loaded.steps.filter { $0.color.utf8.elementsEqual(held.value.hue.utf8) } : []
-    var predicted = [Prediction.update(RoadmapKind.self, kind, ["hue": .string(chosen)])]
-    for step in wearers { predicted.append(.update(RoadmapStep.self, step.id, ["color": .string(chosen)])) }
-    var recolour = try Plan(running: RecolourKindCommand(kind: kind, hue: chosen), predicting: predicted)
-    if held.holdsValues {
-      var restored = [UndoTarget.restored(kind, "hue")]
-      for step in wearers { restored.append(UndoTarget.restored(step.id, "color")) }
-      recolour.undoBy(.fields(restoreCommand: Roadmap.Commands.restoreTree, targets: restored))
-    }
-    if held.state == .present { recolour.undoCheckedBy(KindRestore(tree: tree, kind: kind, hue: held.value.hue)) }
+    let wearers = held.holdsValues ? loaded.steps.filter { $0.color.utf8.elementsEqual(held.value.hue.utf8) }.map(\.id) : []
+    let recolour = try Self.recolouring(held.value, to: chosen, worn: wearers, in: tree, restored: held.holdsValues, checked: held.state == .present)
     let command = ScopedPlan(tree.tree, recolour)
     guard held.isAbsent else { return .write(ActPlan([command]), ()) }
     let revival = held.reviving(try Valid(held.value, fields: [], at: loaded.kinds.moment), fields: [])
     return .write(ActPlan([ScopedPlan(tree.tree, revival), command]), ())
+  }
+}
+
+extension RecolourKind {
+  // §4 `roadmap.recolourKind` as one plan, the room's recolour and a proposal's alike: the command, predicting the kind's
+  // new hue and each step of `worn`, those that wear its hue, repainted. Where the device holds the kind's values
+  // (`restored`), its Undo writes the kind's hue and each worn step's colour back; of a kind that stands (`checked`), that
+  // Undo is asked only while no other kind has come to wear the hue it writes back, `kind`'s.
+  static func recolouring(_ kind: RoadmapKind, to hue: String, worn: [ID<RoadmapStep>], in tree: ID<RoadmapEntry>, restored: Bool,
+                          checked: Bool) throws(Violation) -> Plan {
+    var predicted = [Prediction.update(RoadmapKind.self, kind.id, ["hue": .string(hue)])]
+    for step in worn { predicted.append(.update(RoadmapStep.self, step, ["color": .string(hue)])) }
+    var plan = try Plan(running: RecolourKindCommand(kind: kind.id, hue: hue), predicting: predicted)
+    if restored {
+      plan.undoBy(.fields(restoreCommand: Roadmap.Commands.restoreTree, targets: [UndoTarget.restored(kind.id, "hue")] + worn.map { UndoTarget.restored($0, "color") }))
+    }
+    if checked { plan.undoCheckedBy(KindRestore(tree: tree, kind: kind.id, hue: kind.hue)) }
+    return plan
   }
 }
 

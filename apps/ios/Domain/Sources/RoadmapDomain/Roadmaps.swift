@@ -239,7 +239,7 @@ public struct CreateRoadmap: ActAction {
     entry.undoBy(.command(Roadmap.Commands.undoCreateRoadmap, input: ["tree": tree.json], unchangedCreatedRecords: [.of(tree)],
                           unchangedCreatedScopes: [tree.tree]))
     var segments = [ScopedPlan(RoadmapEntry.scope, entry)]
-    for (index, chunk) in imported.chunks(reserving: 1 + legend.count).enumerated() {
+    for (index, chunk) in imported.units.chunked(reserving: 1 + legend.count).enumerated() {
       var plan = Plan()
       if index == 0 {
         plan.create(words, fields: ["title"])

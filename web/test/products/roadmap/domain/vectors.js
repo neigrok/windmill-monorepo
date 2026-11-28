@@ -21,6 +21,7 @@ import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/ro
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Contract, VECTOR_REPLICA, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
 import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, CoachPicture, WithdrawTurn, pendingProposal } from '../../../../src/products/roadmap/domain/conversation.js';
+import { ApplyProposal, ProposalUndone, RejectProposal, SettleApplying } from '../../../../src/products/roadmap/domain/apply.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -90,6 +91,10 @@ function actOf(input) {
       coach: new Id(given.coach, CoachMessage) });
     case 'MintProposal': return new MintProposal({ proposal: new Id(given.proposal, CoachProposal), treeId: given.treeId, thread: new Id(given.thread, CoachThread),
       message: new Id(given.message, CoachMessage), changes: given.changes, base: given.base });
+    case 'ApplyProposal': return new ApplyProposal(new Id(given.proposal, CoachProposal));
+    case 'SettleApplying': return new SettleApplying();
+    case 'RejectProposal': return new RejectProposal(new Id(given.proposal, CoachProposal));
+    case 'ProposalUndone': return new ProposalUndone(new Id(given.proposal, CoachProposal), given.undo);
     default: throw new Error(`no roadmap action ${action}`);
   }
 }
