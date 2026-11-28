@@ -176,7 +176,8 @@ export const CoachMessage = new EntityType({
 
 // A proposal (§7): the roadmap it changes, none where its record names none; the conversation and Coach's message that
 // minted it; its changes, each new step and kind under its id; its base, the copy's stamp of every register they touch;
-// its state, `pending` and then one of the four it never leaves; and whether the person undid it once applied.
+// its state, `pending` and then one of the four it never leaves; and whether the person undid it once applied. `undone`
+// is the registry's first writer's, so only its Undo writes it, and nothing writes it while it is false.
 export class CoachProposalValue {
   /**
    * @param {Id<CoachProposalValue>} id
@@ -195,7 +196,7 @@ export class CoachProposalValue {
     Object.freeze(this);
   }
 
-  /** @param {{ state?: ProposalState }} changes */
+  /** @param {{ state?: ProposalState, undone?: boolean }} changes */
   with(changes) {
     return new CoachProposalValue(this.id, { treeId: this.treeId, threadId: this.threadId, messageId: this.messageId, changes: this.changes, base: this.base,
       state: this.state, undone: this.undone, ...changes });
@@ -204,7 +205,7 @@ export class CoachProposalValue {
   /** @returns {Record<string, Json>} */
   fields() {
     return { treeId: this.treeId, threadId: this.threadId.json, messageId: this.messageId.json, changes: [...this.changes], base: [...this.base],
-      state: this.state, undone: this.undone };
+      state: this.state, ...(this.undone ? { undone: true } : {}) };
   }
 }
 

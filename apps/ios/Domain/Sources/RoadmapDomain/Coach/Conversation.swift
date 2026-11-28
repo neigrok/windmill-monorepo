@@ -191,7 +191,8 @@ public enum CoachProposalState: String, Sendable, CaseIterable, Equatable {
 
 // A proposal (§7): the roadmap it changes, none where its record names none; the conversation and Coach's message that
 // minted it; its changes, each new step and kind under its id; its base, the copy's stamp of every register they touch; its
-// state, `pending` and then one of the four it never leaves; and whether the person undid it once applied.
+// state, `pending` and then one of the four it never leaves; and whether the person undid it once applied. `undone` is the
+// registry's first writer's, so only its Undo writes it, and nothing writes it while it is false.
 public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
   public static let type = Roadmap.Types.coachProposal
   public static let scope = Roadmap.scope
@@ -204,7 +205,7 @@ public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
   public let changes: [JSON]
   public let base: [JSON]
   public var state: CoachProposalState
-  public let undone: Bool
+  public var undone: Bool
 
   public init(id: ID<CoachProposal>, treeId: String?, threadId: ID<CoachThread>, messageId: ID<CoachMessage>, changes: [JSON] = [], base: [JSON] = [],
               state: CoachProposalState = .pending, undone: Bool = false) {
@@ -227,8 +228,10 @@ public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
   }
 
   public var fields: [String: JSON] {
-    ["treeId": treeId.map { .string($0) } ?? .null, "threadId": threadId.json, "messageId": messageId.json, "changes": .array(changes),
-     "base": .array(base), "state": .string(state.rawValue), "undone": .bool(undone)]
+    var fields: [String: JSON] = ["treeId": treeId.map { .string($0) } ?? .null, "threadId": threadId.json, "messageId": messageId.json,
+                                  "changes": .array(changes), "base": .array(base), "state": .string(state.rawValue)]
+    if undone { fields["undone"] = .bool(true) }
+    return fields
   }
 
   public static let checks: [Check<CoachProposal>] = [
