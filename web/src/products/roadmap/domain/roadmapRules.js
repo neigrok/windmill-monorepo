@@ -239,16 +239,17 @@ export class HeldRecord {
     return valid.checked.filter((name) => !sameJson(before[name], valid.written[name]));
   }
 
-  // The revival a change plans: the record's life under the gesture's stamp and the fields it writes, and its Undo,
-  // which writes each field back to the value it held and the life where the change brought the record back. A record
-  // known only by its spent id was dead and its values are the server's alone, so its Undo deletes it again and keeps
-  // what the change wrote. A record that held no `ord` has none to write back: every create writes it.
+  // The revival a change plans, into `plan` where it joins other writes: the record's life under the gesture's stamp and
+  // the fields it writes, and its Undo, which writes each field back to the value it held and the life where the change
+  // brought the record back. A record known only by its spent id was dead and its values are the server's alone, so its
+  // Undo deletes it again and keeps what the change wrote. A record that held no `ord` has none to write back: every
+  // create writes it.
   /**
    * @param {import('../../../platform/domain-kit/validation.js').Valid<E>} valid
    * @param {readonly string[]} fields
+   * @param {Plan} [plan]
    */
-  reviving(valid, fields) {
-    const plan = new Plan();
+  reviving(valid, fields, plan = new Plan()) {
     plan.revive(valid, { fields: [...fields] });
     if (!this.holdsValues) {
       plan.undoBy(UndoRecipe.fields(Restore.tree, [{ target: UndoTarget.life(this.id), defaultValue: 'dead' }]));

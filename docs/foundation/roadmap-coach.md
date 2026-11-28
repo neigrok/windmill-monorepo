@@ -21,7 +21,11 @@ roadmap's entities with a turn's opening, end and withdrawal, the read of a conv
 replaces the one pending about its roadmap, the read of that pending one, and a roadmap's delete taking its
 conversations, in `web/src/products/roadmap/domain/conversation.js` and
 `apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
-`packages/api-contract/roadmap/domain/conversation-actions.json`. Signed out, the records reach the account at sign-in with
+`packages/api-contract/roadmap/domain/conversation-actions.json`; and a proposal decided, applied as the person's own act
+and settled, rejected, and marked undone once its Undo took something back (§7), in
+`web/src/products/roadmap/domain/apply.js` and `apps/ios/Domain/Sources/RoadmapDomain/Coach/Apply.swift`, proven by
+`packages/api-contract/roadmap/domain/apply-actions.json` and the `Roadmap Coach §7` scenes of `undo.json`. No surface offers
+Apply or Reject yet. Signed out, the records reach the account at sign-in with
 the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
 either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
@@ -464,7 +468,7 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 | `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `update_node` that names no field, a text a direct write sends that the domain cannot store, one that holds U+0000 or a lone surrogate or a subtask left blank, which names the step the write names, none for a new one |
 | `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
-| `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step` |
+| `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step`. An Apply is refused so, writing nothing, where its changes pass a cap only by the steps under such deletes, which free their slots when their holds end (§7) |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
 | `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text, links or subtasks, the roadmap's steps, links, subtasks or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps, links or subtasks is full, for `create_node`, `connect` and `update_node` alike |
@@ -569,40 +573,66 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
   to `pending`. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
   field, and `applied` outranks the other three. Of `rejected`, `stale` and `replaced`, written on two
   devices before they sync, the later written stands, as the engine joins equal ranks.
-- `undone` is set once, when the person undoes an applied proposal.
+- `undone` is set once, by the Undo of an applied proposal that took something back. Nothing writes it while it is
+  false, since the registry keeps its first writer's.
 - A roadmap has one pending proposal. Minting another marks every earlier one `replaced`, in the
   write that makes it. Where two devices each mint one before they sync, the one born later stays
   pending: a device reads the latest-born pending proposal about a roadmap as its pending one and
-  every earlier one as replaced, and the next one minted about the roadmap writes each `replaced`.
+  every earlier one as replaced, and the next one minted about the roadmap writes each `replaced`, as an Apply
+  or a Reject of an earlier one writes it.
 - Coach's message names the proposal it minted (`proposalId`, §9). In a conversation about all
   roadmaps a turn may mint one for each of two roadmaps, and a message then carries more than one;
   the card reads a message's proposals by their `messageId`.
 
-**Apply**, pressed by the person on the review:
+**Apply**, pressed by the person on the review, is the domain's `ApplyProposal`
+(`web/src/products/roadmap/domain/apply.js`, `RoadmapDomain/Coach/Apply.swift`), proven by
+`packages/api-contract/roadmap/domain/apply-actions.json`:
 
-1. The record must be `pending`. The device writes a row of its own, `applying`, naming the
-   proposal. A proposal with such a row on this device is not applied a second time.
+1. Only a pending proposal moves. One that is not pending, or whose `applying` row this device holds,
+   is left as it stands, and nothing is written. A pending one that is not its roadmap's pending one,
+   where two devices each minted one before they synced, becomes `replaced`, and nothing else is
+   written.
 2. The proposal is out of date when anything in `base` differs from the copy: a stamp that is not
    the one recorded, a step that has gone or come. The changes are then folded and validated again
-   over the standing roadmap as it is now; a set that no longer validates is out of date too. An
-   out-of-date proposal becomes `stale` and nothing is written.
+   over the standing roadmap as it is now, read of the proposal's roadmap and of the roadmaps its
+   reading reaches alone; a set that no longer validates is out of date too. An out-of-date proposal
+   becomes `stale` and nothing is written to the roadmap. A state that passes by itself never makes a
+   proposal stale: Apply is refused and writes nothing where the device has not finished bringing the
+   roadmap (`roadmap-unavailable`), or where the changes pass a cap only by the steps under a delete
+   the person can still undo (`roadmap-not-ready`). Apply of a proposal about a roadmap the person's
+   list no longer holds is refused as gone, and writes nothing.
 3. Otherwise the folded result is reduced to one write for each register and written as one act on
-   the device: one gesture over the roadmap's scope, for the structure, and the person's overlay of
-   it, for the marks (Roadmap on the sync engine K-2). The act's stamp is written to the device's
-   row.
-4. The record becomes `applied`, and the row is removed.
-5. Undo is offered for 6 s in the room's band. It reverts the act and sets `undone`. An undone
-   proposal is not offered again; the person asks Coach for another.
+   the device (Roadmap on the sync engine K-2). First comes the room's recolour of each kind the copy
+   holds, one `roadmap.recolourKind` each, in the changes' order. Then the structure, one gesture over
+   the roadmap's scope in as many intents as an import of it takes. Then the removed steps' deaths,
+   held 9 s as every step's delete is, so an Apply that removes a step is held. Last, the person's
+   overlay, for the marks. In the same transaction the device writes its own row
+   `applying:<proposal>`, whose `stamp` is null: written with the act, the row's being there says the
+   act landed.
+4. The record becomes `applied`, and the row is removed (`SettleApplying`), in a write of its own. The
+   record's state is no entry of the act, so an Undo in the act's hold cancels the act and leaves the
+   state as it is.
+5. Undo is offered for 6 s in the room's band: the kit's Undo of the act, across structure and marks.
+   A held Apply is cancelled in place; any other is restored, drawn at once and settled as its writes
+   are. The Undo reads the legend as it would leave it, each kind the act recoloured back on its hue
+   and each kind it made taken away, and is refused, taking nothing back, only where a kind outside
+   the act has come to wear a hue it would give back. Where the Undo took something back as the device
+   draws it, the record takes `undone` (`ProposalUndone`). An undone proposal is not offered again;
+   the person asks Coach for another.
 
 - **INV-3.** A proposal applies whole or not at all on the device. On the wire it is the person's
   own writes: structure and marks are separate intents, and a large act travels as several.
 - **INV-4.** An applied proposal is never set aside because the roadmap changed elsewhere. It merges
   as any two edits do, and nothing about a later sync returns it to the person for a second look.
-- A row found `applying` when the engine starts is settled by its act: the record becomes `applied`
-  when the copy holds that stamp, and the row is removed either way.
+- A row found `applying`, after a crash or written in another tab, is settled by its act, which landed
+  with it: the record becomes `applied`, and the row is removed.
 - Two devices that both apply one proposal before they sync write the same changes with the same
-  ids, and they merge as one.
-- Reject marks the record `rejected` and writes nothing to the roadmap.
+  ids. Its links and marks merge as one. The later device's creation of each new step and kind is
+  refused `id-taken`, since its twin was born at the other device's stamp ([sync engine](engine.md)
+  §4.3), and the step stands once, as the first device made it. Where one of them undoes it, `undone`
+  says that device took back what it could: the other device's writes that came after its own stand.
+- Reject (`RejectProposal`) marks a pending record `rejected` and writes nothing to the roadmap. It
+  leaves a proposal that is not pending as Apply does.
 - A roadmap made signed out keeps its id when a sign-in adds it to an account, and the conversations
   and proposals that name it keep naming it: they are records of the same signed-out work, which one
   answer adds or discards (§11). A subtree whose creation the server answers with the subtree its step
@@ -753,7 +783,10 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
     `roadmap_coach_write_undone`, which the tool host tells for each Undo of a direct write, since an
     Undo runs outside a turn, with the ability and what the Undo came to once the engine has settled
     it: `undone`, `skipped` where a later write stood in its way, or `unavailable` where the room no
-    longer holds the write.
+    longer holds the write;
+  - `roadmap_proposal_undone`, with `outcome`, what the Undo of an applied proposal came to in the
+    same words, `undone`, `skipped` or `unavailable` (`ProposalUndone`'s answer), told by the surface
+    that offered the Undo.
 - A direct write tells the room's Activity the row the room's own Board tells of the same change,
   the person's own (R-7) and told silently, since the person is in the conversation, not on the
   canvas: a new name, `renamed`, as the Board's step document tells it. The room tells no row of a
@@ -785,7 +818,7 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
 domain. Beyond what it lists, Coach needs of that domain:
 
 - an action that changes the web links of an existing step, for `update_node`;
-- one act that carries a proposal's folded changes, of different kinds, under one stamp, with
+- one act that carries a proposal's folded changes, of different kinds, under one gesture, with
   merging and splitting steps among them, and an Undo that takes back structure and marks together
   and says whether anything was taken back (§7);
 - diagnostics computed on the device and held to the server's by vectors, and a step's `unknown`

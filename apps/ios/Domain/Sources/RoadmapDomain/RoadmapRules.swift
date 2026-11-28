@@ -194,6 +194,12 @@ public struct HeldRecord<E: Writable>: Sendable {
   public let value: E
   public let state: State
 
+  // A record the device draws present, as a value the caller holds of it.
+  init(present value: E) {
+    self.value = value
+    state = .present
+  }
+
   init(_ blank: E, in repository: Repository<E>) throws {
     guard let record = try repository.record(blank.id, in: .drawn) else {
       value = blank
@@ -214,12 +220,12 @@ public struct HeldRecord<E: Writable>: Sendable {
     holdsValues ? valid.changed(from: value) : valid.checked
   }
 
-  // The revival a change plans: the record's life under the gesture's stamp and the fields it writes, and its Undo, which
-  // writes each field back to the value it held and the life where the change brought the record back. A record known only
-  // by its spent id was dead and its values are the server's alone, so its Undo deletes it again and keeps what the change
-  // wrote. A record that held no `ord` has none to write back.
-  func reviving(_ valid: Valid<E>, fields: [String]) -> Plan {
-    var plan = Plan()
+  // The revival a change plans, into `plan` where it joins other writes: the record's life under the gesture's stamp and the
+  // fields it writes, and its Undo, which writes each field back to the value it held and the life where the change brought
+  // the record back. A record known only by its spent id was dead and its values are the server's alone, so its Undo deletes
+  // it again and keeps what the change wrote. A record that held no `ord` has none to write back.
+  func reviving(_ valid: Valid<E>, fields: [String], into plan: Plan = Plan()) -> Plan {
+    var plan = plan
     plan.revive(valid, fields: fields)
     guard holdsValues else {
       plan.undoBy(.fields(restoreCommand: Roadmap.Commands.restoreTree, targets: [(target: .life(value.id), default: "dead")]))
