@@ -11,9 +11,9 @@ enum AppProject {
     static let product = product(at: "project.yml")
     static let probe = App(spec: "SyncProbe/project.yml", localPackages: ["Sync"], remotePackages: false)
 
-    // The app's row judging a spec at `spec`: the three packages, and remote packages of its own.
+    // The app's row judging a spec at `spec`: the four packages, and remote packages of its own.
     static func product(at spec: String) -> App {
-      App(spec: spec, localPackages: ["Sync", "Domain", "WindmillKit"], remotePackages: true)
+      App(spec: spec, localPackages: ["Sync", "Domain", "Agent", "WindmillKit"], remotePackages: true)
     }
 
     // The spec's directory, which XcodeGen resolves the spec's paths against.

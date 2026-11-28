@@ -50,7 +50,8 @@ class RoadmapCorpus extends ProductCorpus {
     const records = this.records(vector, scope);
     const confirmed = /** @type {any[]} */ (records.confirmed ?? records.stored ?? records.drawn ?? []);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn),
-      confirmed: viewRecords(confirmed).map((record, index) => ({ ...record, ...(confirmed[index]?.seq === undefined ? {} : { seq: confirmed[index].seq }) })),
+      confirmed: viewRecords(confirmed).map((record, index) => ({ ...record, ...(confirmed[index]?.seq === undefined ? {} : { seq: confirmed[index].seq }),
+        ...(confirmed[index]?.ru === undefined ? {} : { ru: confirmed[index].ru }) })),
       spent: records.spent ?? [], devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });
   }
 }
@@ -149,7 +150,27 @@ export function runAction(vector) {
   const input = vector.input;
   if (input.read !== undefined) return /** @type {Json} */ (/** @type {unknown} */ (readResult(vector)));
   if (input.action === 'SaveStepNote') return noteSave(vector);
-  const act = /** @type {import('../../../../src/platform/domain-kit/acts.js').ActAction<any, any, any>} */ (actOf(input));
+  return decideAct(vector, actOf(input));
+}
+
+// A read of one scope over a case's records.
+/**
+ * @param {Vector} vector
+ * @param {string} scope
+ * @param {(read: Reader) => any} body
+ * @returns {Json}
+ */
+export function readScope(vector, scope, body) {
+  return /** @type {Json} */ (corpus.read(vector, scope, body));
+}
+
+// An act's complete decision over a case's records, with each segment's Undo recipes as the engine journals them.
+/**
+ * @param {Vector} vector
+ * @param {any} act
+ * @returns {Json}
+ */
+export function decideAct(vector, act) {
   /** @type {any} */
   let decided = null;
   const form = /** @type {any} */ (corpus.act({ refusals: act.refusals, load: (read) => act.load(read), decide: (loaded, ids) => (decided = act.decide(loaded, ids)) },

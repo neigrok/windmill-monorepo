@@ -12,7 +12,7 @@ value/action scene with its records reversed.
 | File | Cases |
 |---|---|
 | `rules.json` | One complete rule book: two entity facts and 18 rules |
-| `values.json` | 141 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation and draft adoption |
+| `values.json` | 170 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation, draft adoption and Talk's mark |
 | `page-actions.json` | 44 cases: bound and anonymous saves, retirements, supersession, retained edits, confirmation proofs and reconciliation |
 | `echo-quotes.json` | 17 cases: NFC-equivalent quotations, original-body UTF-16 anchors, occurrence selection and real edits |
 
@@ -38,6 +38,7 @@ and expected text, not an implementation-generated digest or abbreviated body.
 | `{op:"PendingClaim.reconcileBody",joined,base,latest}` | `{body}` |
 | `{op:"PendingClaim.edit",pending,document,retiring}` | `{pending}` |
 | `{op:"EditorDraft.adopt",incoming,current}` | `{current,recovered}`; each member is a complete draft or null |
+| `{op:"deviceRow",row,value}` | `{admitted}`: whether the value domain the registry declares for the device row `row` admits `value` |
 
 Command `args` are the complete engine arguments: `day` and the four document fields, plus
 `stamp` for `SavePage` or `claimId` for `ClaimPage`. Malformed typed inputs, including impossible
@@ -51,6 +52,13 @@ Content stamps are `{ms,counter,actor}`; a durable content clock is only `{ms,co
 only `{ms:0,counter:0,actor:""}` permits an empty actor. These values are product data, independent
 of engine envelope stamps. Counter overflow carries into safe milliseconds; exhaustion fails
 without a new stamp.
+
+Talk's mark is the device row `talkTake` ([Journal Talk](../../../../docs/foundation/journal-talk.md)
+D-5, engine A.3): `{day,bytesBefore,pageDigest,sessions}`, each session `{callId,bytesSaved,heardAt}`.
+Its cases hold the declared shape at each bound, and refuse a fifth session, a malformed call id, day
+or page digest, and a missing or undeclared member. A runner answers them by its registry's value check (engine §2.4),
+with no product rule. An array domain states no minimum length, so no case asks for a mark with no
+session.
 
 The durable pending form is:
 
@@ -175,10 +183,10 @@ and echo-quotation expectation; no surface supplies expected values.
 | Corpus | Comparisons |
 |---|---:|
 | `rules.json` | 1 |
-| `values.json` | 141 |
+| `values.json` | 170 |
 | `page-actions.json` | 44 |
 | `echo-quotes.json` | 17 |
-| Total | 203 |
+| Total | 232 |
 
 The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 

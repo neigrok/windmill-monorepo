@@ -104,11 +104,14 @@ struct SyncSchemaTests {
   }
   @Test func journalDeviceRowsAreLocalOnlyAndPagesAreServerWritten() throws {
     let journal = try #require(SyncSchema.registry.product("journal"))
-    #expect(journal.device.count == 3)
+    #expect(journal.device.map(\.name) == ["carry", "contentClock", "pendingClaim", "talkTake"])
     #expect(journal.device.allSatisfy { $0.localOnly })
     #expect(journal.device.contains { $0.keyPattern.matches("carry:0123456789abcdef") })
     #expect(journal.device.contains { $0.keyPattern.matches("contentClock") })
     #expect(journal.device.contains { $0.keyPattern.matches("pendingClaim:a") })
+    let talkTake = try #require(journal.device.first { $0.name == "talkTake" })
+    #expect(talkTake.keyPattern.matches("talkTake"))
+    #expect(!talkTake.keyPattern.matches("talkTake:2026-11-28"))
     #expect(SyncSchema.registry.type(Journal.Types.page)?.fields.allSatisfy { $0.writer == .server } == true)
     #expect(SyncSchema.registry.types.filter { $0.scope == .product("journal") && $0.primary }.map(\.name) == [Journal.Types.page])
   }

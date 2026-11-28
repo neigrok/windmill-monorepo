@@ -185,6 +185,14 @@ final class AppModel {
                           role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), sync: sync,
                           clipboard: RoadmapFixture.clipboard(), handedFile: RoadmapFixture.chosenFile, exportFile: RoadmapFixture.exportFile)
     }
+    if let roadmap, let runtime, runtime.settings.roadmapCoach {
+      do {
+        let coach = try RoadmapCoach.make(runtime: runtime, telemetry: telemetry)
+        coach.room = roadmap
+        roadmap.coach = coach
+        coach.start()
+      } catch { telemetry.failure("roadmap-coach-turn", kind: "unexpected") }
+    }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
     welcome = preferences.string(forKey: "lastRoom") == nil && (!preferences.bool(forKey: "journalOpened") || preferences.bool(forKey: "roomWelcomeRequired"))

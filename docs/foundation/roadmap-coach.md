@@ -25,9 +25,13 @@ conversations, in `web/src/products/roadmap/domain/conversation.js` and
 and settled, rejected, and marked undone once its Undo took something back (§7), in
 `web/src/products/roadmap/domain/apply.js` and `apps/ios/Domain/Sources/RoadmapDomain/Coach/Apply.swift`, proven by
 `packages/api-contract/roadmap/domain/apply-actions.json` and the `Roadmap Coach §7` scenes of `undo.json`. No surface offers
-Apply or Reject yet. Signed out, the records reach the account at sign-in with
-the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
-either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+Apply or Reject yet. Signed out, the records reach the account at sign-in with the roadmaps they name, and the sign-in
+question on the web and the iPhone counts the conversations (§11). What a turn writes beyond its opening and end, its calls
+and receipts among them, and History's read are built on both domains (`turnRecords.js`, `TurnRecords.swift`, proven by
+`turn-records-actions.json`), and the iPhone claims the context's vectors too. On the iPhone a turn runs: Coach in the room,
+behind a build switch off in Release, runs on the Coach engine's Swift libraries with roadmap's profile over the phone's
+copy, with its composer, conversation, receipts and Undo, History and What Coach Read (`apps/ios/App/Sources/Roadmap/Coach/`);
+it offers no proposal yet. No turn runs on the web yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -705,6 +709,27 @@ composition. (R-4) They join the registry that holds a roadmap's structure
 A device also keeps rows of its own, which do not sync: the mark (§8), `applying` (§7) and a
 picture's original, as gym keeps one.
 
+A Coach message's `calls` and `receipts` are facts, written once with the turn's end, never a sentence and never a word of
+what a call answered (INV-5):
+
+- `calls`: each call the turn made, in order, the context first as the ability `context`: `{ability, treeId, outcome,
+  steps?, done?, nodeIds?, fields?}`, `treeId` null for a call about all roadmaps, `outcome` `ok` or the refusal code, and of
+  a read how many steps it answered, `done` how many of them were done where the read answered it (the context, and a
+  `get_tree` that asked each step's state), the steps it named by id (at most 50) and the fields it asked for. What Coach
+  Read (board 11.8) and the line under an answer are made from them, and say no done count where a call recorded none.
+- `receipts`: each direct write that landed (D-4), at most `MAX_WRITES`: `{ability, treeId, nodeId, label, change,
+  fields?, items?, prerequisites?}`, `label` the step's label after the write, the person's own roadmap data in their own
+  records, and `change` one of `completed`, `reset`, `changed` (with the `fields` changed, of `label`, `description` and
+  `links`, and the `items` added to its checklist), `created` (with the labels of the steps it follows) and `linked` (with the
+  label of the step now followed). A receipt's line is made from these and the app's words, never from the model's text, as
+  `packages/api-contract/roadmap/coach/receipts.json` holds it on every surface: at most eight words, a name cut a word at a
+  time where the line would pass them. A `coachWriteFate` names its receipt by index; one `undone` makes the line *Undone*.
+- `refusal`: the code a turn that could not answer ended with, its underscores written as hyphens, as the registry's pattern
+  takes a code (`subject_exhausted` is `subject-exhausted`).
+
+What a turn writes beyond its opening and end, and History's read, are proven by
+`packages/api-contract/roadmap/domain/turn-records-actions.json`.
+
 - A turn's states are gym's: `running`, then `completed`, `declined`, `failed`, `stopped` or
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
 - History is one list of every conversation, each tagged with its roadmap or with "All roadmaps",
@@ -810,7 +835,7 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
   iPhone, where the tool host throws it to its caller, by the wiring that calls it, as `roadmap_write`
   with the write `coachUndo`.
 - The backend logs nothing of a turn but the pass it signed.
-- They are listed in the web's and the iPhone's observability notes when built.
+- The iPhone's are listed in its observability document (`docs/IOS_OBSERVABILITY.md`); the web's will be in its notes when built.
 
 ## §14 What must be built beneath Coach
 

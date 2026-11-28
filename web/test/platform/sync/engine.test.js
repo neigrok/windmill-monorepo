@@ -1429,6 +1429,60 @@ test('a gym Coach round sits beside runningTurn, and a build whose registry know
   again.close();
 });
 
+// Talk's mark (Journal Talk D-5) is the journal's device row talkTake. It rides in the gesture of the save beside it and
+// never in a push, and a build whose registry declares no talkTake opens the store, carries the mark untouched and
+// cannot write it.
+test('Talk\'s mark stays in device/journal: the save beside it pushes without it, and a build that knows no talkTake carries it', async () => {
+  const directory = new URL('../../../../packages/api-contract/sync/', import.meta.url);
+  const read = (name) => JSON.parse(readFileSync(new URL(name, directory), 'utf8'));
+  const composition = read('composition.json');
+  const registries = Object.fromEntries(composition.registries.map((name) => [name, read(name)]));
+  const older = structuredClone(registries);
+  delete older['journal.registry.json'].products.journal.device.talkTake;
+  const mark = { day: '2026-11-28', bytesBefore: 120, pageDigest: '9dd9da01856b9b41',
+    sessions: [{ callId: 'talkSessionOne-0000001', bytesSaved: 48, heardAt: 1795824000000 }] };
+  const env = environment();
+  const reopen = async (parts) => {
+    env.options.registry = new Registry(composeRegistry(composition, parts));
+    const engine = await BrowserSyncEngine.open(env.options);
+    await engine.start();
+    await until(() => engine.leader);
+    return engine;
+  };
+
+  const current = await reopen(registries);
+  env.transport.response = async (endpoint) => {
+    if (endpoint !== 'hello') return { response: { status: 503, body: { retryAfterMs: 5000 } }, timing: {} };
+    const ready = readyHello(env);
+    ready.response.body.holdsRecords = { gym: false, journal: false, roadmap: false };
+    return ready;
+  };
+  env.transport.account = 'A'; await current.signIn('A'); await until(() => current.leader);
+  await current.commit('self/journal', [{ op: 'write', t: 'journalState', id: 'journalState', f: { placeholder: 'retired' } }],
+    { local: { talkTake: mark } });
+  await current.send();
+  const pushes = env.requests.filter(({ endpoint }) => endpoint === 'push').map(({ request }) => request);
+  const written = current.readDeviceRows('journal');
+  current.close();
+
+  const old = await reopen(older);
+  const carried = old.readDeviceRows('journal');
+  await assert.rejects(old.commit('self/journal', [], { local: { talkTake: null } }), /device row talkTake matches no row of journal/);
+  old.close();
+
+  const again = await reopen(registries);
+  assert.deepEqual({
+    written, carried, after: again.readDeviceRows('journal'),
+    pushed: pushes.map((request) => request.intents.map((intent) => intent.d.map((delta) => [delta.t, Object.keys(delta.f ?? {})]))),
+    pushedTheMark: pushes.some((request) => /talkTake|pageDigest|talkSessionOne/.test(jcs(request))),
+  }, {
+    written: { talkTake: mark }, carried: { talkTake: mark }, after: { talkTake: mark },
+    pushed: [[[['journalState', ['placeholder']]]]],
+    pushedTheMark: false,
+  });
+  again.close();
+});
+
 test('a product drops one kind of its device rows from every replica in one write, and reads its rows, the anon replica\'s records and whether an account\'s replica stays only through the engine', async () => {
   const env = environment();
   const engine = await open(env);

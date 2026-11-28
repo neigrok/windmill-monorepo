@@ -116,6 +116,12 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, 23a, 23b, 23c, 24c, 24d, apple_no_account, apple_expired, auth_pending |
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, open_roadmap (the Roadmap door, in a build that carries the room), dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry. Sign out and the answer to its alert (keep, discard, cancel) are screen you |
 | Rooms | `room_switched` | room: journal, gym, roadmap (in a build that carries the Roadmap room); emitted after switching |
+| Roadmap Coach, opened | `roadmap_coach_opened` | entry: foot (the composer focused at the foot of the Board or the Graph), step (a step's page, its Coach circle or composer), row (*Ask Coach* in a Board row's long-press menu). Emitted only where Coach is switched on (roadmap-ios.md §8). Roadmap Coach §13 |
+| Roadmap Coach, a question not asked | `roadmap_coach_ask_refused` | reason: offline (Send with no connection, the question kept in the field), or the access state a turn was withdrawn by before the service admitted it: allowanceUsed, capacityUsed, busy, signIn, update, switchedOff, didNotAnswer. Roadmap Coach §13 |
+| Roadmap Coach, a turn | `roadmap_coach_turn` | the engine's turn outcome: state (completed, declined, failed, stopped, interrupted), seat (anon, bound), truncated (true, false: the turn's own, false where it reached no end), code (bounded: the engine's codes and §6.1's, `unknown` past them), ability_calls, refusals and answer_bytes as bounded counts, duration_ms. Never the question, the answer or a result. Roadmap Coach §13 |
+| Roadmap Coach, an ability | `roadmap_coach_ability` | name (catalog roadmap/1's ability, `unoffered` for any other), outcome (ok, or the gate's or §6.1's refusal code), one for each call the engine runs, a direct write's one product event. Roadmap Coach §13 |
+| Roadmap Coach, Stop | `roadmap_coach_stopped` | common metadata alone, as Stop is pressed on a running turn. Roadmap Coach §13 |
+| Roadmap Coach, a direct write's Undo | `roadmap_coach_write_undone` | ability (set_progress, update_node, create_node, connect), outcome (undone, skipped, unavailable), told by the tool host once the engine has settled the band's *Undo*. Roadmap Coach §13 |
 | Roadmap room | `roadmap_room_opened` | common metadata alone; emitted each time the room comes to the front, from its door, the room menu or a launch that reopens it. No title, step text, count or id of a roadmap or a step is sent |
 | Roadmap Board, completing | `roadmap_board_complete` | door: swipe (the row's leading action), menu (the long-press menu); emitted once the mark is written on the phone. The web's event |
 | Roadmap step page, opening | `roadmap_board_step_open` | surface: document (a step's page, in the web's word); column: upNext, locked, done, the group the step stands in as its page opens; door: card (a Board row), step (a *Requires* or *Opens* row of another step's page), graph (the Graph's bar of the selected step), activity (a row of the roadmap's Activity), link (a link to the person's own roadmap that names the step), band (*Show* in the band of a line told once, 10.2 and 10.4). Emitted once as the page is pushed, and not when Back returns to it. The web's event |
@@ -569,8 +575,15 @@ forwarding or production Sentry receipt.
 
 ## Coach engine libraries
 
-The `Agent` and `WindmillPlatform` packages expose telemetry ports for their library integration;
-the app's existing Coach event and failure routes above remain its current wiring. `Agent.Telemetry`
+The `Agent` and `WindmillPlatform` packages expose telemetry ports for their library integration. The App's Roadmap Coach
+routes them (`App/Sources/Roadmap/Coach/RoadmapTurnHost.swift`, `CoachTelemetry`): `hostFailure()` reports `agent-host`
+(kind host), `AiDiagnostics` reports `ai-call` and `ai-pass` with their kinds, the ability and turn outcomes become
+`roadmap_coach_ability` and `roadmap_coach_turn` above, a failure of the App's own wiring around a turn (a seat it
+cannot read, its records written or withdrawn before the engine runs, or a profile that cannot be built) reports
+`roadmap-coach-turn` (kind storage or unexpected), and an Undo of a direct write that throws, or a settling Undo's read,
+once for each kind while the room lives, reports `roadmap_write` with write coachUndo, as History's delete reports it with
+write coachDelete. History's delete is held with the room's band and its Undo, and tells no event: Roadmap Coach §13 names
+none. The App's gym Coach keeps its own event and failure routes above. `Agent.Telemetry`
 receives one ability outcome with a profile-allowlisted name (unknown names become `unoffered`)
 and bounded refusal code, and one turn outcome with state, seat kind, bounded code, rounds,
 admitted executions, gate refusals, answer bytes and elapsed milliseconds. Host-returned codes

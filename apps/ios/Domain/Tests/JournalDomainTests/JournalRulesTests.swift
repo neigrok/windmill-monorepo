@@ -101,6 +101,12 @@ struct JournalRulesTests {
       let adopted = try EditorDraft.adopt(incoming.isNull ? nil : EditorDraft(json: incoming),
         current: current.isNull ? nil : EditorDraft(json: current))
       return ["current": adopted.current?.json ?? .null, "recovered": adopted.recovered?.json ?? .null]
+    case "deviceRow":
+      let name = try input.member("row").asString()
+      guard let row = SyncSchema.registry.product("journal")?.device.first(where: { $0.name == name }), let value = row.value else {
+        throw ContractError("the journal registry declares no value of a device row \(name)")
+      }
+      return ["admitted": .bool(value.admits(try input.member("value")))]
     case "PendingClaim.reconcileBody":
       return ["body": .string(JournalWriting.reconcileBody(try input.member("joined").asString(),
         base: try input.member("base").asString(), latest: try input.member("latest").asString()))]

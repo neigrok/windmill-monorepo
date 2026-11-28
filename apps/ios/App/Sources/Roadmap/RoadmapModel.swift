@@ -317,17 +317,23 @@ final class RoadmapModel {
       case pasteRefused
       // A change of the person's that met one made elsewhere, told once with Show (10.2, 10.4).
       case landed(Landed.Line)
+      // A direct write of Coach's, by its receipt (11.3), and its Undo taken (11.4).
+      case coachWrote(CoachReceipt)
+      case coachUndone
+      // A Coach conversation deleted in History, by its title (11.7).
+      case deletedConversation(String)
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, the act it takes back, and the kit's
     // Undo of that act, with the checks it is asked with.
     struct Undo: Equatable {
-      // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, or a roadmap's
-      // delete, with the roadmap where the room had it open, which its Undo opens again.
+      // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, a roadmap's
+      // delete, with the roadmap where the room had it open, which its Undo opens again, or a Coach conversation's delete.
       enum Act: Equatable {
         case step(String)
         case workspace(String)
         case roadmapDelete(reopens: String?)
+        case conversation
 
         // An act on steps or kinds keeps the kit's Undo of it past the engine's hold, so a step's delete is restored once
         // its hold has ended too; a roadmap's delete and a removal from a workspace are undone by their hold alone.
@@ -345,6 +351,8 @@ final class RoadmapModel {
 
     let says: Says
     let undo: Undo?
+    // A direct write of Coach's, whose Undo the tool host that wrote it takes (11.3).
+    var coach: CoachWrite?
     // The steps the act brought to where they stand, washed while the band stands: those a completion brought up next,
     // and a step the form made.
     let arrived: [String]
@@ -378,6 +386,11 @@ final class RoadmapModel {
     // A fork's copy opened: said once, with no Undo, since the copy is the person's own and Delete Roadmap removes it.
     init(forked steps: Int) {
       says = .forked(steps: steps); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+    }
+
+    // Coach's direct write: its receipt, or the Board's own sentence of a completion (11.18), with Undo for six seconds.
+    init(_ says: Says, coach write: CoachWrite, arrived: [String] = []) {
+      self.says = says; undo = nil; coach = write; self.arrived = arrived; lasts = RoadmapModel.bandLasts
     }
 
     // A landing line offered, its step washed while the band stands, with no Undo, for six seconds once it is seen.
@@ -541,6 +554,13 @@ final class RoadmapModel {
   let role: Role
   let sync: Sync
 
+  // Coach in the room, where it is switched on (`AppSettings.roadmapCoach`): the root's, which a roadmap gone into asks too.
+  var coach: RoadmapCoach? {
+    get { root === self ? ownCoach : root.coach }
+    set { ownCoach = newValue }
+  }
+  @ObservationIgnored private var ownCoach: RoadmapCoach?
+
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
        role: Role = .owner(nil), sync: Sync = .none, clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil },
@@ -659,6 +679,12 @@ final class RoadmapModel {
     do { try read() }
     catch { fail(error) }
     if case .owner = role { readSetAside() }
+    if root === self, let coach {
+      // Coach's records are read with the room's, so a conversation shows what the copy holds of it as it changes.
+      for type in [CoachThread.type, CoachMessage.type, CoachProposal.type, CoachWriteFate.type] { _ = try? snapshot(CoachThread.scope, type) }
+      coach.revision += 1
+      coach.follow()
+    }
     inside?.observe()
     links?.followPending(in: self)
     withObservationTracking {
@@ -1112,6 +1138,11 @@ final class RoadmapModel {
   // hue another kind has come to wear, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
     guard root === self else { return root.undo() }
+    if let write = band?.coach {
+      bandTime?.cancel()
+      stackBand = nil
+      return coach?.undo(write) ?? ()
+    }
     guard let receipt = band, let undo = receipt.undo else { return }
     bandTime?.cancel()
     stackBand = nil
@@ -1135,6 +1166,8 @@ final class RoadmapModel {
       case .roadmapDelete(let reopens):
         telemetry.event("roadmap_deletion", properties: ["step": "undo", "outcome": taken ? "cancelled" : "released"])
         if taken, let reopens { arriving = reopens }
+      // Roadmap Coach §13 names no event of a conversation's delete or its Undo.
+      case .conversation: break
       }
       if !taken { show(Band(unrestored: receipt.says)) }
     } catch {
@@ -1175,8 +1208,20 @@ final class RoadmapModel {
   func letBandGo() {
     bandTime?.cancel()
     let undo = stackBand?.undo
+    let write = stackBand?.coach
     stackBand = nil
     if let undo { forget(undo.gesture) }
+    if let write { coach?.forget(write) }
+  }
+
+  // Coach's direct write (11.3, 11.18): the band is its receipt, a completion in the Board's own words, with its Undo.
+  func offer(_ write: CoachWrite) {
+    guard root === self else { return root.offer(write) }
+    guard write.facts.change == .completed, case .open(let open) = phase, open.id.description == write.receipt.treeId else {
+      return show(Band(.coachWrote(write.facts), coach: write))
+    }
+    let upNext = open.graph.unlocks(write.receipt.nodeId)
+    show(Band(.completed(step: write.facts.label, upNext: upNext.compactMap { open.tree.step($0)?.label }, inPlace: false), coach: write, arrived: upNext))
   }
 
   // The engine lets go of every delete it holds, as the app leaves the front or the account changes: a note open on the

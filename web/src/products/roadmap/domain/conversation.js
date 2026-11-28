@@ -98,15 +98,17 @@ export class CoachPicture {
 /** @typedef {'person' | 'coach'} Role */
 
 // One message: the person's question, or Coach's answer with the state of its turn, `truncated`, the code a turn that
-// could not answer ended with, and the proposal it minted (§7; a message about all roadmaps may mint more than one, and
-// names the last, so a message's proposals are read by their `messageId`). The calls and receipts a turn records are m3's
-// to write.
+// could not answer ended with, the proposal it minted (§7; a message about all roadmaps may mint more than one, and
+// names the last, so a message's proposals are read by their `messageId`), and the calls and receipts its turn recorded as
+// it ended (`turnRecords.js`), as facts, null until then.
 export class CoachMessageValue {
   /**
    * @param {{ id: Id<CoachMessageValue>, threadId: Id<CoachThreadValue>, role: Role, replica?: string | null, text?: string, state?: MessageState,
-   *   truncated?: boolean, refusal?: string | null, proposalId?: Id<CoachProposalValue> | null, pictures?: readonly CoachPicture[], at: Instant }} message
+   *   truncated?: boolean, refusal?: string | null, proposalId?: Id<CoachProposalValue> | null, pictures?: readonly CoachPicture[], at: Instant,
+   *   calls?: readonly Json[] | null, receipts?: readonly Json[] | null }} message
    */
-  constructor({ id, threadId, role, replica = null, text = '', state = 'running', truncated = false, refusal = null, proposalId = null, pictures = [], at }) {
+  constructor({ id, threadId, role, replica = null, text = '', state = 'running', truncated = false, refusal = null, proposalId = null, pictures = [], at,
+    calls = null, receipts = null }) {
     this.id = id;
     this.threadId = threadId;
     this.role = role;
@@ -118,13 +120,16 @@ export class CoachMessageValue {
     this.proposalId = proposalId;
     this.pictures = Object.freeze([...pictures]);
     this.at = at;
+    this.calls = calls === null ? null : Object.freeze([...calls]);
+    this.receipts = receipts === null ? null : Object.freeze([...receipts]);
     Object.freeze(this);
   }
 
   /** @param {Partial<ConstructorParameters<typeof CoachMessageValue>[0]>} changes */
   with(changes) {
     return new CoachMessageValue({ id: this.id, threadId: this.threadId, role: this.role, replica: this.replica, text: this.text, state: this.state,
-      truncated: this.truncated, refusal: this.refusal, proposalId: this.proposalId, pictures: this.pictures, at: this.at, ...changes });
+      truncated: this.truncated, refusal: this.refusal, proposalId: this.proposalId, pictures: this.pictures, at: this.at, calls: this.calls,
+      receipts: this.receipts, ...changes });
   }
 
   get isCoach() { return this.role === 'coach'; }
@@ -136,7 +141,8 @@ export class CoachMessageValue {
     return { threadId: this.threadId.json, role: this.role, at: this.at.ms, text: this.text,
       ...(this.pictures.length ? { pictures: this.pictures.map((picture) => picture.json) } : {}),
       ...(this.isCoach ? { ...(this.replica === null ? {} : { replica: this.replica }), state: this.state, truncated: this.truncated, refusal: this.refusal,
-        ...(this.proposalId === null ? {} : { proposalId: this.proposalId.json }) } : {}) };
+        ...(this.proposalId === null ? {} : { proposalId: this.proposalId.json }), ...(this.calls === null ? {} : { calls: [...this.calls] }),
+        ...(this.receipts === null ? {} : { receipts: [...this.receipts] }) } : {}) };
   }
 }
 
@@ -145,11 +151,13 @@ export const CoachMessage = new EntityType({
   type: 'coachMessage', scope: RoadmapScopes.account, heldRemoval: true,
   decode: (f) => {
     const state = f.string('state', 'running');
+    const calls = f.json('calls');
+    const receipts = f.json('receipts');
     return new CoachMessageValue({ id: new Id(f.id, CoachMessage), threadId: f.ref('threadId', CoachThread),
       role: /** @type {Role} */ (f.string('role')), replica: f.optionalString('replica'),
       text: f.string('text', ''), state: MessageStates.all.find((known) => known === state) ?? 'running', truncated: f.bool('truncated', false),
       refusal: f.optionalString('refusal'), proposalId: f.optionalRef('proposalId', CoachProposal), pictures: f.optionalList('pictures', CoachPicture.decode) ?? [],
-      at: f.instant('at') });
+      at: f.instant('at'), calls: Array.isArray(calls) ? calls : null, receipts: Array.isArray(receipts) ? receipts : null });
   },
   checks: [
     new Check('role', (message) => { RoadmapSpecs.coachRole.apply(message.role, new Path('role')); return message; }),
@@ -241,8 +249,8 @@ export function pendingProposal(read, treeId) {
 
 /** @typedef {'undone' | 'refused'} Fate */
 
-// What became of one receipt's write after its turn ended (§6): undone, or refused by the server with its code. Writing
-// one is m3's.
+// What became of one receipt's write after its turn ended (§6): undone, or refused by the server with its code, written
+// by `RecordWriteFate` (`turnRecords.js`).
 export class CoachWriteFateValue {
   /** @param {Id<CoachWriteFateValue>} id @param {{ messageId: Id<CoachMessageValue>, receipt: number, fate: Fate, code?: string | null }} values */
   constructor(id, { messageId, receipt, fate, code = null }) {
@@ -253,6 +261,9 @@ export class CoachWriteFateValue {
     this.code = code;
     Object.freeze(this);
   }
+
+  /** @returns {Record<string, Json>} */
+  fields() { return { messageId: this.messageId.json, receipt: this.receipt, fate: this.fate, code: this.code }; }
 }
 
 /** @type {EntityType<CoachWriteFateValue, string>} */
@@ -344,20 +355,24 @@ export class OpenTurn {
   }
 }
 
-// §8 and §9: Coach's message takes its terminal state, its whole text, `truncated` and the code a turn that could not
-// answer ended with, in one write that lets go of the turn's mark. A turn its writer already ended is final.
+// §8 and §9: Coach's message takes its terminal state, its whole text, `truncated`, the code a turn that could not
+// answer ended with, and, where the turn kept them, the facts of its calls and receipts (`turnRecords.js`), in one write
+// that lets go of the turn's mark. A turn its writer already ended is final.
 export class EndTurn {
   /**
    * @param {Id<CoachMessageValue>} message
-   * @param {{ state: MessageState, text?: string | null, truncated?: boolean, refusal?: string | null }} end
+   * @param {{ state: MessageState, text?: string | null, truncated?: boolean, refusal?: string | null, calls?: readonly Json[] | null,
+   *   receipts?: readonly Json[] | null }} end
    */
-  constructor(message, { state, text = null, truncated = false, refusal = null }) {
+  constructor(message, { state, text = null, truncated = false, refusal = null, calls = null, receipts = null }) {
     precondition(MessageStates.isTerminal(state), 'a turn ends in a terminal state');
     this.message = message;
     this.state = state;
     this.text = text;
     this.truncated = truncated;
     this.refusal = refusal;
+    this.calls = calls === null ? null : Object.freeze([...calls]);
+    this.receipts = receipts === null ? null : Object.freeze([...receipts]);
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -373,10 +388,11 @@ export class EndTurn {
   decide({ message, marked, moment }) {
     if (message === null || !message.isCoach) return gone(CoachMessage.type, this.message.record);
     if (MessageStates.isWritersTerminal(message.state)) return ActDecision.unchanged(null);
-    const written = ['state', 'text', 'truncated', 'refusal'];
+    const kept = { ...(this.calls === null ? {} : { calls: this.calls }), ...(this.receipts === null ? {} : { receipts: this.receipts }) };
+    const written = ['state', 'text', 'truncated', 'refusal', ...Object.keys(kept)];
     const plan = new Plan();
-    plan.update(new Valid(message.with({ state: this.state, text: this.text ?? message.text, truncated: this.truncated, refusal: this.refusal }), moment, written),
-      { fields: written });
+    plan.update(new Valid(message.with({ state: this.state, text: this.text ?? message.text, truncated: this.truncated, refusal: this.refusal, ...kept }),
+      moment, written), { fields: written });
     if (marked) plan.device(TurnMark.key(this.message), null);
     return writeIn(RoadmapScopes.account, plan, null);
   }

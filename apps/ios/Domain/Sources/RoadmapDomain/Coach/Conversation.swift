@@ -99,8 +99,9 @@ public struct CoachPicture: ValueObject, Equatable {
 }
 
 // One message: the person's question, or Coach's answer with the state of its turn, `truncated`, the code a turn that could
-// not answer ended with, and the proposal it minted (§7; a message about all roadmaps may mint more than one, and names the
-// last, so a message's proposals are read by their `messageId`). The calls and receipts a turn records are m3's to write.
+// not answer ended with, the proposal it minted (§7; a message about all roadmaps may mint more than one, and names the
+// last, so a message's proposals are read by their `messageId`), and the calls and receipts its turn recorded as it ended
+// (`TurnRecords.swift`), as facts, nil until then, each receipt in its place even where this build does not read it.
 public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public static let type = Roadmap.Types.coachMessage
   public static let scope = Roadmap.scope
@@ -117,10 +118,12 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public var proposalId: ID<CoachProposal>?
   public var pictures: [CoachPicture]
   public let at: Instant
+  public var calls: [CoachCall]?
+  public var receipts: [HeldReceipt]?
 
   public init(id: ID<CoachMessage>, threadId: ID<CoachThread>, role: String, replica: String? = nil, text: String = "",
               state: CoachMessageState = .running, truncated: Bool = false, refusal: String? = nil, proposalId: ID<CoachProposal>? = nil,
-              pictures: [CoachPicture] = [], at: Instant) {
+              pictures: [CoachPicture] = [], at: Instant, calls: [CoachCall]? = nil, receipts: [HeldReceipt]? = nil) {
     self.id = id
     self.threadId = threadId
     self.role = role
@@ -132,14 +135,18 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
     self.proposalId = proposalId
     self.pictures = pictures
     self.at = at
+    self.calls = calls
+    self.receipts = receipts
   }
 
   public init(_ r: Fields) throws(DecodeError) {
     let state = CoachMessageState(rawValue: try r.string("state", default: CoachMessageState.running.rawValue)) ?? .running
+    let listed = { (field: String) -> [JSON]? in if case .array(let items)? = r.json(field) { items } else { nil } }
     self.init(id: ID(r.id), threadId: try r.ref("threadId", CoachThread.self), role: try r.string("role"), replica: try r.optionalString("replica"),
               text: try r.string("text", default: ""), state: state, truncated: try r.bool("truncated", default: false),
               refusal: try r.optionalString("refusal"), proposalId: try r.optionalRef("proposalId", CoachProposal.self),
-              pictures: try r.optionalList("pictures", of: CoachPicture.self) ?? [], at: try r.instant("at"))
+              pictures: try r.optionalList("pictures", of: CoachPicture.self) ?? [], at: try r.instant("at"),
+              calls: listed("calls")?.compactMap { try? CoachCall(json: $0) }, receipts: listed("receipts")?.map(HeldReceipt.init(json:)))
   }
 
   public var isCoach: Bool { role == "coach" }
@@ -155,6 +162,8 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
       fields["truncated"] = .bool(truncated)
       fields["refusal"] = .some(refusal.map { .string($0) } ?? .null)
       fields["proposalId"] = proposalId.map(\.json)
+      fields["calls"] = calls.map { .array($0.map(\.json)) }
+      fields["receipts"] = receipts.map { .array($0.map(\.json)) }
     }
     return fields.compactMapValues { $0 }
   }
@@ -253,8 +262,8 @@ public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
   }
 }
 
-// What became of one receipt's write after its turn ended (§6): undone, or refused by the server with its code. Writing
-// one is m3's.
+// What became of one receipt's write after its turn ended (§6): undone, or refused by the server with its code, written by
+// `RecordWriteFate` (`TurnRecords.swift`).
 public struct CoachWriteFate: ProductEntity, Removable, Equatable {
   public static let type = Roadmap.Types.coachWriteFate
   public static let scope = Roadmap.scope
@@ -386,22 +395,28 @@ public struct OpenTurn: ActAction {
   }
 }
 
-// §8 and §9: Coach's message takes its terminal state, its whole text, `truncated` and the code a turn that could not
-// answer ended with, in one write that lets go of the turn's mark. A turn its writer already ended is final.
+// §8 and §9: Coach's message takes its terminal state, its whole text, `truncated`, the code a turn that could not answer
+// ended with, and, where the turn kept them, the facts of its calls and receipts (`TurnRecords.swift`), in one write that
+// lets go of the turn's mark. A turn its writer already ended is final.
 public struct EndTurn: ActAction {
   public let message: ID<CoachMessage>
   public let state: CoachMessageState
   public let text: String?
   public let truncated: Bool
   public let refusal: String?
+  public let calls: [CoachCall]?
+  public let receipts: [CoachReceipt]?
 
-  public init(_ message: ID<CoachMessage>, state: CoachMessageState, text: String? = nil, truncated: Bool = false, refusal: String? = nil) {
+  public init(_ message: ID<CoachMessage>, state: CoachMessageState, text: String? = nil, truncated: Bool = false, refusal: String? = nil,
+              calls: [CoachCall]? = nil, receipts: [CoachReceipt]? = nil) {
     precondition(state.isTerminal, "a turn ends in a terminal state")
     self.message = message
     self.state = state
     self.text = text
     self.truncated = truncated
     self.refusal = refusal
+    self.calls = calls
+    self.receipts = receipts
   }
 
   public func load(_ read: ActReader) throws -> (message: CoachMessage?, marked: Bool, moment: Moment) {
@@ -418,7 +433,15 @@ public struct EndTurn: ActAction {
     if let text { ended.text = text }
     ended.truncated = truncated
     ended.refusal = refusal
-    let written = ["state", "text", "truncated", "refusal"]
+    var written = ["state", "text", "truncated", "refusal"]
+    if let calls {
+      ended.calls = calls
+      written.append("calls")
+    }
+    if let receipts {
+      ended.receipts = receipts.map(HeldReceipt.read)
+      written.append("receipts")
+    }
     var plan = Plan()
     plan.update(try Valid(ended, fields: written, at: loaded.moment), fields: written)
     if loaded.marked { plan.device(TurnMark.key(message), nil) }

@@ -288,6 +288,11 @@ step page and the step form, and a sheet for its answers.
   web: once gym's server Coach has closed (Roadmap Coach R-11). Until that day the composer is not
   shown.
 - [Roadmap Coach](roadmap-coach.md) specifies it for both surfaces.
+- It is built behind its own build switch, `WM_ROADMAP_COACH_ENABLED`: Debug builds carry it and Release never does, and a
+  Debug launch on a simulator turns it on only with `-roadmap-coach on`; switched off, the room is as without it (11.22a).
+  Its composer, a turn on the engine, a direct write's receipt and Undo, the conversation sheet, New Chat, History, What
+  Coach Read, Ask Coach from a Board row and a step's page, and the access states are built (`App/Sources/Roadmap/Coach/`);
+  the proposal card, its review and a photo are not, and the step form has no composer.
 
 ## §9 Forms, colour and words
 
@@ -368,7 +373,7 @@ makes it false.
   delete, each as one gesture with its Undo; New Step at a roadmap's cap of steps is refused where it is tapped; and a
   roadmap's kinds are added, named, described, recolored and removed in the Kinds sheet, from the title menu and from
   the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens,
-  the links it shares and the roadmap it opens, and has no Coach composer. A step's page holds the person's workspace of
+  the links it shares and the roadmap it opens, and has no Coach composer (§8). A step's page holds the person's workspace of
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
   domain, and its History, and its menu has no *Copy Link* but on a reader's cover; the note's
   field sets bold and italic alone, from the system's Format menu on iOS 26. A reader's cover shows what a step's
@@ -387,13 +392,13 @@ makes it false.
   land are listed in *Set Aside*, from the title menu's first row, with *Copy*, *Discard* and *Discard All*. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
-  *Fit*; it has no Find and draws no proposal; no Coach is built. A roadmap's link opens the room in Debug builds alone,
+  *Fit*; it has no Find and draws no proposal; Coach is §8's. A roadmap's link opens the room in Debug builds alone,
   whose entitlements claim the site's addresses: Release's entitlements and the App ID carry no associated domain. The
   app's onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, plays every Undo scene,
   and holds the plan grammar's read, its planting and grafting and its writer (`RoadmapDomain/Plan/`), held to every
-  case of `packages/api-contract/roadmap/plan/`: no Coach executor.
+  case of `packages/api-contract/roadmap/plan/`, and Coach's executor, context and records (`RoadmapDomain/Coach/`).
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of

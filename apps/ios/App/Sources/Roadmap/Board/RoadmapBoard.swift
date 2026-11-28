@@ -161,10 +161,12 @@ struct RoadmapBoard: View {
   }
 
   // A step's row, with why it stands in its group and its excerpt. A step the last act brought up next is washed while
-  // the band says so. While several are selected the row is chosen by a tap, a chosen one on the raised ground, and
-  // slides and presses for nothing.
+  // the band says so, and so is the step the composer asks about (11.17). While several are selected the row is chosen by
+  // a tap, a chosen one on the raised ground, and slides and presses for nothing.
   func row(_ row: RoadmapModel.Row, selecting: Bool, chosen: Bool) -> some View {
-    let arrived = roadmap.band?.arrived.contains(row.id) == true
+    let coach = roadmap.root.coach
+    let asked = coach.map { $0.focused && $0.about?.treeId == open.id.description && $0.about?.step == row.id } ?? false
+    let arrived = roadmap.band?.arrived.contains(row.id) == true || asked
     return RoadmapStepRow(roadmap: roadmap, row: row, door: .card, line: open.reason(row.card), excerpt: true)
       .listRowBackground(ZStack { chosen ? RoadmapPalette.raised : RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
       .swipeActions(edge: .leading, allowsFullSwipe: false) {
@@ -180,12 +182,17 @@ struct RoadmapBoard: View {
       .modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.swipe, .menu]))
   }
 
-  // 02.4: what a long press offers. Ask Coach and Copy Link wait for their screens.
+  // 02.4: what a long press offers; Copy Link waits for its screen.
   @ViewBuilder func menu(_ row: RoadmapModel.Row) -> some View {
     if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .menu) }.tint(RoadmapPalette.ink) }
     Button("Edit", systemImage: "pencil") { if let page = open.page(of: row.id) { roadmap.edit(page, from: .menu) } }.tint(RoadmapPalette.ink)
     Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .menu) }.tint(RoadmapPalette.ink)
     Button("Select", systemImage: "checkmark.circle") { roadmap.startSelecting(row.id, from: .menu) }.tint(RoadmapPalette.ink)
+    // 11.17: Ask Coach opens the composer about the step.
+    if let coach = roadmap.root.coach {
+      Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(in: roadmap, about: (row.id, row.step.label), from: .row) }
+        .tint(RoadmapPalette.ink).accessibilityIdentifier("roadmap-ask-coach")
+    }
     if row.deletes {
       Divider()
       Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .menu) }

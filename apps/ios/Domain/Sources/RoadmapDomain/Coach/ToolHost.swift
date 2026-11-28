@@ -42,7 +42,7 @@ public final class RoadmapToolHost {
   let runner: ActionRunner
   let about: String?
   let standing: () throws -> StandingRoadmaps
-  let told: (_ ability: String, _ undo: WriteReceipt.Undo) -> Void
+  let told: (_ receipt: WriteReceipt, _ undo: WriteReceipt.Undo) -> Void
   // Each act the host keeps the engine holding: a landed write's, until its Undo is asked or its receipt forgotten, and an
   // Undo's own, until the engine has settled it.
   var held: [String] = []
@@ -50,9 +50,9 @@ public final class RoadmapToolHost {
 
   // `runner` is the room's act runner over the phone's copy; `about` the roadmap the conversation is about, none for all of
   // the person's; `standing` reads the standing roadmap, by default the copy's through the runner; and `told` hears what
-  // each Undo came to, by the ability it takes back.
+  // each Undo came to, by the receipt it takes back.
   public init(runner: ActionRunner, about: String?, standing: (() throws -> StandingRoadmaps)? = nil,
-              told: @escaping (_ ability: String, _ undo: WriteReceipt.Undo) -> Void) {
+              told: @escaping (_ receipt: WriteReceipt, _ undo: WriteReceipt.Undo) -> Void) {
     self.runner = runner
     self.about = about
     self.standing = standing ?? { try StandingRoadmaps(reading: runner) }
@@ -122,12 +122,12 @@ public final class RoadmapToolHost {
   // whose act it let go of; one it settled is told first, and its act let go of last.
   func settle(_ receipt: WriteReceipt, _ result: InverseResult) throws {
     let finish = { (undo: WriteReceipt.Undo, inverse: String) throws in
-      self.told(receipt.ability, undo)
+      self.told(receipt, undo)
       self.hold(inverse)
       try self.letGo(inverse)
     }
     switch result {
-    case .unavailable: told(receipt.ability, .unavailable)
+    case .unavailable: told(receipt, .unavailable)
     case .pending(let request, let inverse, _):
       hold(inverse)
       settling.append(Settling(receipt: receipt, request: request))

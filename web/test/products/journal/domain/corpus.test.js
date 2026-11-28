@@ -7,6 +7,7 @@ import { Reader, Views } from '../../../../src/platform/domain-kit/reading.js';
 import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { Fault, Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { checkDomain } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { JournalRefusals, JournalRules, refusalForm } from '../../../../src/products/journal/domain/journalRules.js';
 import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand, SaveWords } from '../../../../src/products/journal/domain/writing.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
@@ -64,6 +65,11 @@ class JournalCorpus extends ProductCorpus {
           const current = input.current === null ? null : EditorDraft.fromJSON(input.current);
           const adopted = EditorDraft.adopt(incoming, current);
           return { current: adopted.current?.json ?? null, recovered: adopted.recovered?.json ?? null };
+        }
+        case 'deviceRow': {
+          const row = this.book.registry.products.journal.device[input.row];
+          if (!row?.value) throw new ContractError(`the journal registry declares no value of a device row ${input.row}`);
+          return { admitted: checkDomain(row.value, input.value) === null };
         }
         case 'PendingClaim.reconcileBody': return { body: PendingClaim.reconcileBody(input.joined, input.base, input.latest) };
         case 'PendingClaim.edit': {
