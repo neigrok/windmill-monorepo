@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
 import { deletable } from '../board/acts.js';
-import { readEffects } from '../model/effects.js';
+import { readEffects } from '../model/domainReads.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
 import { StepPanel } from './StepPanel.jsx';

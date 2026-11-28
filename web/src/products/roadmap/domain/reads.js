@@ -5,10 +5,11 @@ import { RoadmapTree } from './records.js';
 import { FollowGraph } from './graph.js';
 import { HUES } from './roadmapRules.js';
 
+// A roadmap's legend, read from its kinds and the colours its steps wear: a RoadmapTree's, or any roadmap's held so.
 export class LegendRead {
-  /** @param {RoadmapTree} tree */
-  constructor(tree) {
-    this.kinds = tree.kinds.filter((kind) => kind.present);
+  /** @param {{kinds: import('./records.js').Kind[], nodes: {present: boolean, color: string}[]}} roadmap */
+  constructor(roadmap) {
+    this.kinds = roadmap.kinds.filter((kind) => kind.present);
     /** @type {Map<string,import('./records.js').Kind[]>} */
     this.byHue = new Map();
     for (const kind of this.kinds) {
@@ -16,21 +17,39 @@ export class LegendRead {
       this.byHue.get(kind.hue)?.push(kind);
     }
     for (const kinds of this.byHue.values()) kinds.sort((a, b) => Stamp.compare(a.born, b.born) || compareText(a.id, b.id));
-    const worn = new Set(tree.nodes.filter((node) => node.present).map((node) => node.color));
+    /** @type {Map<string, number>} */
+    const worn = new Map();
+    for (const node of roadmap.nodes) if (node.present) worn.set(node.color, (worn.get(node.color) ?? 0) + 1);
     // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue
-    // a present step wears that no kind claims, in the palette's order, with no kind.
-    /** @type {{hue: string, kind: import('./records.js').Kind | null}[]} */
+    // a present step wears that no kind claims, in the palette's order, with no kind; each with the present steps that
+    // wear it.
+    /** @type {{hue: string, kind: import('./records.js').Kind | null, steps: number}[]} */
     this.shown = [
-      ...this.kinds.filter((kind) => this.byHue.get(kind.hue)?.[0] === kind).map((kind) => ({ hue: kind.hue, kind })),
-      ...HUES.filter((hue) => worn.has(hue) && !this.byHue.has(hue)).map((hue) => ({ hue, kind: null })),
+      ...this.kinds.filter((kind) => this.byHue.get(kind.hue)?.[0] === kind).map((kind) => ({ hue: kind.hue, kind, steps: worn.get(kind.hue) ?? 0 })),
+      ...HUES.filter((hue) => worn.has(hue) && !this.byHue.has(hue)).map((hue) => ({ hue, kind: null, steps: worn.get(hue) ?? 0 })),
     ];
+    const named = this.shown.filter(({ kind }) => kind !== null && kind.label !== '');
+    // The six kinds a step may wear: the named ones in the legend's order, then each hue none of them has, in the
+    // palette's order.
+    this.choices = [...named.map(({ hue, kind }) => ({ hue, kind })),
+      ...HUES.filter((hue) => !named.some((entry) => entry.hue === hue)).map((hue) => ({ hue, kind: null }))];
+    // The hue a kind added takes: the first of the palette no entry of the legend has.
+    this.free = HUES.find((hue) => !this.shown.some((entry) => entry.hue === hue)) ?? null;
+    // The kinds the Board's filter offers: the entries present steps wear, none where they wear fewer than two hues.
+    const wearing = this.shown.filter(({ steps }) => steps > 0);
+    this.filters = wearing.length < 2 ? [] : wearing;
+    // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+    this.removable = this.kinds.filter((kind) => !worn.has(kind.hue));
   }
 
   result() {
     const hues = [...this.byHue].sort((a, b) => compareText(a[0], b[0]));
+    /** @param {{hue: string, kind: import('./records.js').Kind | null}} entry */
+    const named = ({ hue, kind }) => ({ hue, id: kind?.id ?? null });
     return { ids: this.kinds.map((kind) => kind.id), owners: hues.map(([hue, kinds]) => ({ hue, id: kinds[0]?.id ?? '' })),
       collisions: hues.filter(([, kinds]) => kinds.length > 1).map(([hue, kinds]) => ({ hue, owner: kinds[0]?.id ?? '', others: kinds.slice(1).map((kind) => kind.id).sort(compareText) })),
-      shown: this.shown.map(({ hue, kind }) => ({ hue, id: kind?.id ?? null })),
+      shown: this.shown.map((entry) => ({ ...named(entry), steps: entry.steps })), choices: this.choices.map(named), free: this.free,
+      filters: this.filters.map(named), removable: this.removable.map((kind) => kind.id),
     };
   }
 }
@@ -54,7 +73,33 @@ export function selectNodes(tree, filter = {}) {
   return ranked.sort((a, b) => a.rank - b.rank).map((match) => match.id);
 }
 
-/** @typedef {{sort?:'roadmap'|'newest'|'oldest',kinds?:string[],search?:string,branch?:string|null,doneExpanded?:boolean}} BoardQuery */
+/** @typedef {{sort?:'roadmap'|'newest'|'oldest',kinds?:string[],search?:string,branch?:string|null,doneExpanded?:boolean,reveal?:string|null}} BoardQuery */
+
+// A Board query's parts over a graph, each as it keeps the step at a slot: the branch it stays in, the hues it keeps and
+// the words it finds in a label or a description.
+/** @param {FollowGraph} graph @param {BoardQuery} query */
+function queryParts(graph, query) {
+  const branch = graph.branch(query.branch ?? '');
+  const needle = (query.search ?? '').trim().toLowerCase();
+  const hues = new Set(query.kinds ?? []);
+  const nodeAt = (/** @type {number} */ slot) => /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
+  return { branch, needle, hues, keeps: {
+    kinds: (/** @type {number} */ slot) => !hues.size || hues.has(nodeAt(slot).color),
+    search: (/** @type {number} */ slot) => !needle || nodeAt(slot).label.toLowerCase().includes(needle) || nodeAt(slot).description.toLowerCase().includes(needle),
+    branch: (/** @type {number} */ slot) => branch === null || branch.has(nodeAt(slot).id),
+  } };
+}
+
+// The parts of a query that alone hide the step it reveals, each as it reads cleared; null where it reveals none or the
+// step is not present.
+/** @param {FollowGraph} graph @param {BoardQuery} query @param {ReturnType<typeof queryParts>} parts */
+function revealed(graph, query, parts) {
+  const slot = graph.slot.get(query.reveal ?? '');
+  if (slot === undefined) return null;
+  /** @type {Record<string, string[]|string|null>} */
+  const cleared = { kinds: [], search: '', branch: null };
+  return Object.fromEntries(Object.entries(parts.keeps).filter(([, keeps]) => !keeps(slot)).map(([part]) => [part, cleared[part] ?? null]));
+}
 
 export class BoardRead {
   /** @param {FollowGraph} graph @param {BoardQuery} query */
@@ -62,10 +107,9 @@ export class BoardRead {
     this.graph = graph;
     this.sort = query.sort ?? 'roadmap';
     if (!['roadmap', 'newest', 'oldest'].includes(this.sort)) throw new TypeError('Unknown Board sort');
-    const branch = graph.branch(query.branch ?? '');
+    const parts = queryParts(graph, query);
+    const { branch, needle, hues } = parts;
     this.branch = branch === null ? null : query.branch ?? null;
-    const needle = (query.search ?? '').trim().toLowerCase();
-    const hues = new Set(query.kinds ?? []);
     this.recovery = needle ? hues.size ? 'both' : 'search' : hues.size ? 'kinds' : null;
     this.expanded = query.doneExpanded ?? false;
     this.overall = { done: graph.stateAt.reduce((done, state) => done + (state === 2 ? 1 : 0), 0), total: graph.ids.length };
@@ -75,10 +119,11 @@ export class BoardRead {
     // Each card's slot in the graph, so a sort reads its keys by index.
     /** @type {number[]} */
     this.slots = [];
+    this.revealing = revealed(graph, query, parts);
+    const { kinds: ofKind, search: found, branch: inBranch } = parts.keeps;
     for (let slot = 0; slot < graph.nodes.length; slot++) {
       const node = /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
-      if ((branch !== null && !branch.has(node.id)) || (hues.size && !hues.has(node.color))
-        || (needle && !node.label.toLowerCase().includes(needle) && !node.description.toLowerCase().includes(needle))) continue;
+      if (!inBranch(slot) || !ofKind(slot) || !found(slot)) continue;
       const state = graph.states.valueAt(slot);
       const unlocked = state === 'complete' ? [] : graph.unlocksAt(slot);
       this.slots.push(slot);
@@ -88,6 +133,10 @@ export class BoardRead {
       });
     }
   }
+
+  // The parts of `query` that alone hide the step it reveals, read without the Board's cards.
+  /** @param {FollowGraph} graph @param {BoardQuery} query */
+  static revealing(graph, query) { return revealed(graph, query, queryParts(graph, query)); }
 
   result() {
     const graph = this.graph;
@@ -108,7 +157,7 @@ export class BoardRead {
       const folded = name === 'done' && !this.expanded && ids.length > 12;
       return { name, count: ids.length, ids, shown: folded ? ids.slice(0, 12) : ids, folded };
     });
-    return { overall: this.overall, sort: this.sort, branch: this.branch, recovery: this.recovery, columns, cards: this.cards };
+    return { overall: this.overall, sort: this.sort, branch: this.branch, recovery: this.recovery, columns, cards: this.cards, revealing: this.revealing };
   }
 }
 
@@ -161,17 +210,28 @@ export function landingFacts(graph, edges) {
   });
 }
 
-// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+// A draft's two sides of one step: the steps it would require and the steps it would open.
+/** @typedef {{requires: string[], opens: string[]}} StepLinks */
+
+// What deleting `ids`, resetting one, attaching a roadmap to one or linking one would do (the corpus README's
+// `effects`); each fact past the starting steps walks the graph when asked. `links` are a draft's sides of the one step,
+// by default what it follows and what follows it as stored; `attach` is a roadmap attached to it, complete or not.
 export class EffectsRead {
   /** @type {FollowGraph} */
   #graph;
   /** @type {number[]} */
   #chosen;
-  /** @type {boolean} */
-  #marked;
+  /** @type {number} */
+  #only;
+  /** @type {string|null} */
+  #drafted;
+  /** @type {StepLinks|null} */
+  #links;
+  /** @type {{complete: boolean}|null} */
+  #attach;
 
-  /** @param {FollowGraph} graph @param {string[]} ids */
-  constructor(graph, ids) {
+  /** @param {FollowGraph} graph @param {string[]} ids @param {{links?: StepLinks|null, attach?: {complete: boolean}|null}} [asked] */
+  constructor(graph, ids, { links = null, attach = null } = {}) {
     const slots = ids.flatMap((id) => {
       const slot = graph.slot.get(id);
       return slot === undefined ? [] : [slot];
@@ -180,11 +240,14 @@ export class EffectsRead {
     const present = slots.length === ids.length;
     this.#graph = graph;
     this.#chosen = [...chosen];
+    this.#only = present && chosen.size === 1 ? this.#chosen[0] ?? -1 : -1;
+    this.#drafted = new Set(ids).size === 1 ? ids[0] ?? null : null;
+    this.#links = links;
+    this.#attach = attach;
     this.kept = graph.starting.length === 1 ? graph.starting[0] ?? null : null;
+    this.under = graph.starting[0] ?? null;
     this.takesEveryStart = graph.starting.length > 0 && graph.starting.every((id) => chosen.has(graph.slot.get(id) ?? -1));
     this.deletable = ids.length > 0 && present && !this.takesEveryStart;
-    const [only = -1] = this.#chosen;
-    this.#marked = present && chosen.size === 1 && graph.done[only] === 1 && graph.tree.index.markedDone[only] === 1;
   }
 
   get follow() {
@@ -205,9 +268,59 @@ export class EffectsRead {
     return followers.sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
   }
 
-  get relocks() { return this.#marked ? this.follow.filter((id) => this.#graph.states.get(id) === 'available') : []; }
+  // Whether the one step holds a complete mark, counted or set aside.
+  get #marked() { return this.#only >= 0 && this.#graph.tree.marks.get(this.#graph.ids[this.#only] ?? '')?.status === 'complete'; }
+
+  // The followers that stand Up next only while the one step stands complete.
+  get #upNextFollowers() { return this.follow.filter((id) => this.#graph.states.get(id) === 'available'); }
+
+  get relocks() {
+    const counted = this.#only >= 0 && this.#graph.done[this.#only] === 1 && this.#graph.tree.index.markedDone[this.#only] === 1;
+    return counted ? this.#upNextFollowers : [];
+  }
+
+  // A complete mark the graph does not count, because the step opens or owns a roadmap that is not complete: the steps
+  // it alone would open, which lock while it stands aside.
+  get setAside() {
+    const only = this.#only;
+    if (!this.#marked || this.#graph.tree.index.markedDone[only] === 1 || this.#graph.done[only] === 1) return null;
+    return this.#graph.unlocksAt(only);
+  }
+
+  // What attaching a roadmap does to the steps after a marked step: a roadmap that is not complete sets the mark aside,
+  // so the steps that stood Up next by the step's completion lock again.
+  get attachRelocks() {
+    if (this.#attach === null || !this.#marked) return null;
+    return this.#attach.complete || this.#graph.done[this.#only] !== 1 ? [] : this.#upNextFollowers;
+  }
+
+  // The present steps a new link of the one step would close a loop with: `requires`, the steps it may not come to
+  // follow, are itself and every step reached onward from the steps it opens; `opens`, the steps it may not come to
+  // lead to, are itself and every step reached back from the steps it requires. Live links are walked through absent
+  // steps, never through the step itself. A step the roadmap does not hold yet is read by a draft's sides alone.
+  get loops() {
+    const graph = this.#graph;
+    const own = graph.rawSlot.get(this.#drafted ?? '');
+    if (this.#only < 0 && (this.#links === null || this.#drafted === null)) return null;
+    /** @param {string[]|undefined} sides @param {number[][]} onward */
+    const reached = (sides, onward) => {
+      const passed = new Set(own === undefined ? [] : [own]);
+      const pending = sides === undefined ? [...(onward[own ?? -1] ?? [])] : sides.flatMap((side) => {
+        const slot = graph.slot.get(side);
+        return slot === undefined ? [] : [slot];
+      });
+      for (let vertex = pending.pop(); vertex !== undefined; vertex = pending.pop()) {
+        if (passed.has(vertex)) continue;
+        passed.add(vertex);
+        pending.push(...(onward[vertex] ?? []));
+      }
+      return [...passed].filter((vertex) => vertex < graph.ids.length).sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
+    };
+    return { requires: reached(this.#links?.opens, graph.children), opens: reached(this.#links?.requires, graph.parents) };
+  }
 
   result() {
-    return { kept: this.kept, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow, relocks: this.relocks };
+    return { kept: this.kept, under: this.under, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow,
+      relocks: this.relocks, setAside: this.setAside, attachRelocks: this.attachRelocks, loops: this.loops };
   }
 }

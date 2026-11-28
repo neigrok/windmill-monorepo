@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { useStepPage } from '../../../../src/products/roadmap/room/useStepPage.js';
 import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
 
 test('Select closes the page, selects, reveals through the held tree and issues keys that survive a cleared request', async (t) => {
   navigationBrowser(t);
@@ -14,7 +15,7 @@ test('Select closes the page, selects, reveals through the held tree and issues 
     { id: 'wind', label: 'Wind', color: 'olive', prerequisites: ['course'] },
     { id: 'held', label: 'Held', color: 'terracotta', prerequisites: ['course'] },
   ] });
-  const boardTree = tree.without(['held']);
+  const boardTree = standingWithout(tree, ['held']);
   const calls = [];
   let query = new BoardQuery({ search: 'Course', kinds: ['olive'], sort: 'newest', branch: 'course' });
   let request = null;

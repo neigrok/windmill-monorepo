@@ -19,7 +19,15 @@ import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/produ
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
+import { Contract, VECTOR_REPLICA, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, CoachPicture, WithdrawTurn, pendingProposal } from '../../../../src/products/roadmap/domain/conversation.js';
+import { ApplyProposal, ProposalUndone, RejectProposal, SettleApplying } from '../../../../src/products/roadmap/domain/apply.js';
+import { ActDecision } from '../../../../src/platform/domain-kit/acts.js';
+import { precondition } from '../../../../src/platform/domain-kit/values.js';
+import { ProposalAbilities } from '../../../../src/products/roadmap/domain/abilities/proposals.js';
+import { readReached } from '../../../../src/products/roadmap/domain/abilities/standing.js';
+import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -43,7 +51,7 @@ class RoadmapCorpus extends ProductCorpus {
     const confirmed = /** @type {any[]} */ (records.confirmed ?? records.stored ?? records.drawn ?? []);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored: viewRecords(records.stored ?? records.drawn),
       confirmed: viewRecords(confirmed).map((record, index) => ({ ...record, ...(confirmed[index]?.seq === undefined ? {} : { seq: confirmed[index].seq }) })),
-      spent: records.spent ?? [], devices: device, firstPullComplete, mintId });
+      spent: records.spent ?? [], devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });
   }
 }
 const corpus = new RoadmapCorpus(roadmapBook, RoadmapRules.spec);
@@ -81,6 +89,18 @@ function actOf(input) {
     case 'MoveStepLink': return MoveStepLink(given.tree, given.link, given.below);
     case 'DeleteStepLink': return DeleteStepLink(given.tree, given.link);
     case 'ClearLanding': return new ClearLanding(given.tree, given.told);
+    case 'OpenTurn': return new OpenTurn({ thread: given.thread === undefined ? null : new Id(given.thread, CoachThread), about: given.about ?? null,
+      question: given.question, pictures: (given.pictures ?? []).map((/** @type {any} */ picture) => new CoachPicture(picture.id, picture.mediaType, picture.localOnly ?? false)) });
+    case 'EndTurn': return new EndTurn(new Id(given.message, CoachMessage), { state: given.state, text: given.text ?? null, truncated: given.truncated ?? false,
+      refusal: given.refusal ?? null });
+    case 'WithdrawTurn': return new WithdrawTurn({ thread: new Id(given.thread, CoachThread), person: new Id(given.person, CoachMessage),
+      coach: new Id(given.coach, CoachMessage) });
+    case 'MintProposal': return new MintProposal({ proposal: new Id(given.proposal, CoachProposal), treeId: given.treeId, thread: new Id(given.thread, CoachThread),
+      message: new Id(given.message, CoachMessage), changes: given.changes, base: given.base });
+    case 'ApplyProposal': return new ApplyProposal(new Id(given.proposal, CoachProposal));
+    case 'SettleApplying': return new SettleApplying();
+    case 'RejectProposal': return new RejectProposal(new Id(given.proposal, CoachProposal));
+    case 'ProposalUndone': return new ProposalUndone(new Id(given.proposal, CoachProposal), given.undo);
     default: throw new Error(`no roadmap action ${action}`);
   }
 }
@@ -104,6 +124,16 @@ function noteSave(vector) {
 function readResult(vector) {
   const input = vector.input;
   if (input.read === 'cannotLand') return { result: cannotLand(input.input.notices, roadmapRegistry) };
+  if (input.read === 'conversation') {
+    return corpus.read(vector, RoadmapScopes.account, (read) => {
+      const conversation = Conversation.read(read, new Id(input.input.thread, CoachThread));
+      return conversation === null ? null : { thread: conversation.thread.id.json, messages: conversation.messages.map((message) => message.id.json),
+        fates: conversation.fates.map((fate) => fate.id.json) };
+    });
+  }
+  if (input.read === 'pendingProposal') {
+    return corpus.read(vector, RoadmapScopes.account, (read) => pendingProposal(read, input.input.treeId)?.id.json ?? null);
+  }
   if (input.read !== 'landing') throw new Error(`no roadmap read ${input.read}`);
   return corpus.read(vector, RoadmapScopes.tree(input.input.tree), (read) => {
     const landing = landingOf(input.input.tree, read);
@@ -136,10 +166,11 @@ export function runAction(vector) {
 // K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
 // binding, then their Undo and Redo, each by the Undo handle its receipt or the Redo before it carries. A step names a
 // role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back names each minted id by the first
-// role that holds it, and any other minted id `<new>`.
+// role that holds it, and any other minted id `<new>`. A proposal is minted as a turn mints one, the ability over the
+// phone's copy and then MintProposal, and an applied one undone as a surface undoes it, the act's Undo and then its mark.
 /** @param {Vector} vector */
 export async function runScene(vector) {
-  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account, anonymous: vector.input.signedOut === true });
   /** @type {Record<string, Harness>} */
   const phones = { a };
   /** @type {Record<string, { input: any, result: any, undo: import('../../../../src/platform/domain-kit/runner.js').UndoHandle | null, requestId: string | null }>} */
@@ -238,10 +269,35 @@ export async function runScene(vector) {
           if (undo !== null) role.undo = undo;
           outcomes.push(inverse(result));
         }
+      } else if (step.propose) {
+        const { treeId, changes } = bind(step.propose);
+        const standing = await phone.runner.runAct(/** @type {any} */ ({ refusals: RoadmapRefusals, load: (/** @type {any} */ read) => readReached(read, treeId),
+          decide: (/** @type {any} */ copy) => ActDecision.unchanged(copy) }));
+        precondition(standing.kind === 'unchanged', 'a standing roadmap is read');
+        /** @param {'coachProposal' | 'node' | 'kind'} type */
+        const minted = (type) => String((type === 'coachProposal' ? phone.runner.mint(CoachProposal) : type === 'node'
+          ? phone.runner.mint(RoadmapStep, RoadmapScopes.tree(treeId)) : phone.runner.mint(RoadmapKind, RoadmapScopes.tree(treeId))).record);
+        const proposed = /** @type {any} */ (ProposalAbilities.propose_roadmap_change(standing.result, { treeId, changes }, treeId, minted));
+        if (!proposed.proposal) throw new Error(`the scene's proposal is refused: ${JSON.stringify(proposed.refused)}`);
+        const proposal = String(proposed.result.proposalId);
+        const outcome = await phone.runner.runAct(new MintProposal({ proposal: new Id(proposal, CoachProposal), treeId, thread: new Id(String(bind(step.thread)), CoachThread),
+          message: new Id(String(bind(step.message)), CoachMessage), changes: proposed.proposal.changes, base: proposed.proposal.base }));
+        if (step.as) roles[step.as] = { input: { treeId, changes }, result: { proposal, changes: proposed.proposal.changes }, undo: null, requestId: null };
+        outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
+      } else if (step.undoProposal) {
+        const role = roles[step.undoProposal];
+        if (role?.undo == null) throw new Error(`${step.undoProposal} applied no act`);
+        const undone = await phone.runner.undo(role.undo);
+        if (undone.kind !== 'unavailable') role.requestId = undone.requestId;
+        const marked = await phone.runner.runAct(new ProposalUndone(new Id(String(role.input.proposal), CoachProposal), undone));
+        outcomes.push({ inverse: inverse(undone), outcome: marked.kind === 'refused' ? { refused: refusalForm(marked.refusal) } : marked.result });
       } else if (step.read) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {
         outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.undo?.actId)) });
+      } else if (step.conversation) {
+        const conversation = phone.runner.read(RoadmapScopes.account, (read) => Conversation.read(read, new Id(String(bind(step.conversation)), CoachThread)));
+        outcomes.push({ conversation: conversation === null ? null : { messages: conversation.messages.length, fates: conversation.fates.length } });
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
@@ -274,7 +330,7 @@ export function runRead(input) {
     }
     if (input.operation === 'effects') {
       const graph = account.graph(input.tree);
-      return graph === null ? null : new EffectsRead(graph, input.ids).result();
+      return graph === null ? null : new EffectsRead(graph, input.ids, { links: input.links ?? null, attach: input.attach ?? null }).result();
     }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
@@ -289,7 +345,7 @@ export function runRead(input) {
   if (input.operation === 'graph') return graph.result(input.subjects);
   if (input.operation === 'board') return new BoardRead(graph, input.query).result();
   if (input.operation === 'diagnostics') return diagnose(graph);
-  if (input.operation === 'effects') return new EffectsRead(graph, input.ids).result();
+  if (input.operation === 'effects') return new EffectsRead(graph, input.ids, { links: input.links ?? null, attach: input.attach ?? null }).result();
   if (input.operation === 'landing') return landingFacts(graph, input.edges);
   throw new Error(`Unclaimed roadmap read operation: ${input.operation}`);
 }

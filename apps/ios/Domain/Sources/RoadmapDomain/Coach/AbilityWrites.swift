@@ -10,31 +10,6 @@ import SyncSchema
 // changes something (8); but `connect` asks whether the step already follows the step it names before it asks whether the
 // link closes a loop, since a link that stands closes none. A new step's id is drawn last, once the call is taken (6).
 
-extension CoachRefusal.Code {
-  // §6.1, §6 rule 4: what the door would refuse of the texts a write sends, by the spec it applies to each, none where it
-  // takes every one. A text the domain cannot store, one that holds U+0000, or one it takes no blank of, a subtask's, is
-  // `invalid-input`, before any cap; one past its cap, measured as its spec measures it after the trim it applies, is
-  // `over-limit`. A blank address is the address rule's (rule 5). A lone surrogate, which no store takes either, never
-  // reaches Swift: its decoder refuses one first.
-  init?(refusing texts: [(String?, TextSpec)]) {
-    var codes: [CoachRefusal.Code] = []
-    for (text, spec) in texts {
-      guard let text else { continue }
-      do throws(Violation) {
-        _ = try spec.apply(text, at: Path(spec.path))
-      } catch {
-        switch error.reason {
-        case .tooLong: codes.append(.overLimit)
-        case .nul: codes.append(.invalidInput)
-        default: if spec.path != RoadmapSpecs.linkUrl.path { codes.append(.invalidInput) }
-        }
-      }
-    }
-    guard let first = codes.first else { return nil }
-    self = codes.contains(.invalidInput) ? .invalidInput : first
-  }
-}
-
 extension StandingRoadmaps {
   // §6 rules 1 to 3: the roadmap a call names, where the device holds it whole and the person may write it in this
   // conversation. A step the call names under a delete the person can still undo is not ready, the first in the order
@@ -45,20 +20,6 @@ extension StandingRoadmaps {
     guard roadmap.tree.own else { throw CoachRefusal(.notOwner, treeId) }
     guard about.map({ treeId.utf8.elementsEqual($0.utf8) }) == true else { throw CoachRefusal(.outOfScope, treeId) }
     return roadmap
-  }
-}
-
-extension StandingRoadmap {
-  // §6 rule 4: whether more steps, links or subtasks would pass the sync registry's caps of a roadmap, which counts what it
-  // holds alive as the engine does: each step the room shows and each under a delete the person can still undo, until its
-  // hold ends, each link, and each subtask of its checklists, a removed step's included.
-  func passesCaps(steps: Int = 0, links: Int = 0, subtasks: Int = 0) -> Bool {
-    let cap = { (type: String) -> Int in
-      guard let cap = SyncSchema.registry.type(type)?.cap else { preconditionFailure("the sync registry caps \(type)") }
-      return cap
-    }
-    return graph.ids.count + held.count + steps > cap(RoadmapStep.type) || tree.index.edges.count + links > cap(RoadmapLink.type)
-      || subtaskCount + subtasks > cap(Subtask.type)
   }
 }
 

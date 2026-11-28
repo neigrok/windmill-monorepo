@@ -7,7 +7,7 @@ the table marks as the server's, by JCS, in `backend/test/products/roadmap/domai
 which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
 claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `effects`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
-`*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
+`*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace`, `landing`, `conversation` and `apply`), each action case with its records
 reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
 The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
@@ -37,14 +37,14 @@ ID byte order.
 | `account` | Trees by ID with standing, place/path/title, counts, completion and openings; pointer-loop components | yes |
 | `progress` | Effective completed IDs and dates under openings, null for an unread/hidden tree | yes |
 | `guides` | Nearest eight nonempty guides including own, displayed farthest first, ID byte ties | yes |
-| `legend` | Authored kind IDs, hue owners and collisions, and the legend shown, which a paste reads over: each hue's owner in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order, with a null id | yes |
+| `legend` | Authored kind IDs, hue owners and collisions, and the legend shown, which a paste reads over: each hue's owner in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order, with a null id, each with the present steps that wear it (`steps`); the six hues a step may wear, the named kinds of the legend shown in its order, then each hue none of them has, in the palette's order, with a null id (`choices`); the hue a kind added takes, the first of the palette no entry has, null once all six are had (`free`); the entries present steps wear, none where they wear fewer than two hues (`filters`); and the present kinds whose hue no present step wears, which may be removed, in the kinds' order (`removable`) | yes |
 | `search` | MCP node IDs, with independent kind/color filters and relevance order | yes |
-| `board` | Overall progress, query facts, three columns, folding and structured card reasons | no |
+| `board` | Overall progress, query facts, three columns, folding and structured card reasons; and, for the step a query reveals, each part of it that alone hides the step, as it reads cleared (`revealing`: `{kinds?: [], search?: "", branch?: null}`, null where it reveals none or the step is not present) | no |
 | `diagnostics` | Bounded graph errors and warnings | yes |
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
-| `effects` | What deleting `ids` or resetting one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; whether `ids` take every starting step of a roadmap that has any (`takesEveryStart`; false where every step is in a loop); whether `ids` may be deleted (`deletable`), not when empty, naming a step that is not present, or taking every starting step; the present steps outside `ids` that follow one of them, in authored order, a step never its own follower (`follow`); and, for one step the graph counts complete by a mark its tree counts (none on a step that owns a subtree or opens a roadmap), those of them Up next, which a Reset returns to Locked (`relocks`) | no |
+| `effects` | What deleting `ids`, resetting one, attaching a roadmap to one or linking one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; the first of them in authored order, where a paste lands (`under`, null where none); whether `ids` take every starting step of a roadmap that has any (`takesEveryStart`; false where every step is in a loop); whether `ids` may be deleted (`deletable`), not when empty, naming a step that is not present, or taking every starting step; the present steps outside `ids` that follow one of them, in authored order, a step never its own follower (`follow`); and, for one step: those of them Up next, which a Reset returns to Locked, where the graph counts it complete by a mark its tree counts (none on a step that owns a subtree or opens a roadmap) (`relocks`); where it holds a complete mark the graph does not count, because it opens or owns a roadmap that is not complete, the steps it alone would open, which stand Locked while the mark is set aside (`setAside`, null otherwise); where `attach` names a roadmap attached to it and it holds a complete mark, what the attach returns from Up next to Locked: those of its followers Up next where the roadmap is not complete and the graph counts the step complete now, else none (`attachRelocks`, null otherwise); and the present steps a new link of it would close a loop with (`loops`, also for one step the roadmap does not hold yet where `links` are given, null otherwise): `requires`, the steps it may not come to follow, itself and every step reached onward from the steps it opens, and `opens`, the steps it may not come to lead to, itself and every step reached back from the steps it requires, each in authored order, over live links through absent steps and never through the step itself; the steps it requires and opens are `links`' where given, a draft's sides, else as stored | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
@@ -144,10 +144,11 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 `{operation, trees, tree: id, step?}` for `activity`,
 `{operation, id, listed, tree, overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and
 `queued` the overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for `board` and
-`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids}` for `effects`, or
-`{operation, trees, tree: id, ids}` over the account's graph of that roadmap, and
+`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids, links?, attach?}` for `effects`, or
+`{operation, trees, tree: id, ids, links?, attach?}` over the account's graph of that roadmap (`links`: `{requires: [id], opens: [id]}`;
+`attach`: `{complete}`), and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
-it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
+it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded,reveal}` or MCP's `{query,color,kind}`.
 Optional query fields have the defaults in `reads.js`.
 
 The read modules are `records.js` (normalized values, authored ordering, the device's landing note, and each
@@ -174,7 +175,9 @@ legacy Board's `SkillTree` does. Other size timings are reported, not assigned n
 
 Every gesture of the spec's §5 is an act on the kit (§9.5) in `web/src/products/roadmap/domain/`:
 `roadmaps.js` (`tree`, `meta`), `steps.js` (`node`, `edge`, and the import), `kinds.js`, `progress.js`
-(`progress`, `pointer`), `workspace.js` (`subtask`, `stepLink`, `stepNote`) and `landing.js` (§6), with
+(`progress`, `pointer`), `workspace.js` (`subtask`, `stepLink`, `stepNote`), `landing.js` (§6) and
+`conversation.js` (Roadmap Coach's `coachThread`, `coachMessage`, `coachProposal` and `coachWriteFate`, roadmap-coach.md §9) and
+`apply.js` (a proposal the person decides, roadmap-coach.md §7), with
 `roadmapRules.js` (specs, limits, the genesis kinds, `RoadmapRefusals`) and `ruleBook.js` (the book over
 the registry its caller composes). Files:
 
@@ -188,6 +191,8 @@ the registry its caller composes). Files:
 | `progress-actions.json` | Complete and Reset; a step that opens or owns a roadmap takes no mark; pointers |
 | `workspace-actions.json` | Subtasks and links in their step's order; the note saved as text |
 | `landing-actions.json` | The landing read and its clearing, by the server's order of a link and a delete; the one list of what cannot land |
+| `conversation-actions.json` | A Coach turn's records: its opening, its end and its withdrawal, a proposal minted, the read of one conversation and of a roadmap's pending proposal |
+| `apply-actions.json` | A proposal the person decides: Apply as one act and the stale, replaced and settled states around it, its row settled, Reject, and the mark of an Undo that took something back |
 | `undo.json` | Each gesture's Undo and Redo on the kit's harness over the reference server with roadmap's binding (K-3) |
 
 **Scenes.** An action case is, as the kit's act form reads it (`ProductCorpus.act`), `{action, input, scopes: {<scope>: {drawn, stored?, confirmed?, spent?}}, device?, ids?, now,
@@ -214,7 +219,7 @@ Before the tree scope's first pull completes nothing has landed.
 | Action | Input | Result |
 |---|---|---|
 | `CreateRoadmap` | `{title, steps?: {steps: [{key, label, icon?, color?, description?, links?}], links: [[fromKey, toKey]]}, kinds?: [{hue, label?, description?}]}` | `{tree, steps: {key: id}}`; the `tree` record, then its tree scope: the title, the genesis kinds at `a0`–`a2` or the legend `kinds` under minted ids at `a0`, `a1`, … in its order (a kind refused as one made is, or wearing a hue a kind before it wears, at `kinds.<n>`), and the steps, chunked |
-| `DeleteRoadmap` | `{tree}` | `null`; held; the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
+| `DeleteRoadmap` | `{tree}` | `null`; held; with the root's record, each `coachThread` and each `coachProposal` the device draws about the root or a subtree under it, in id order, conversations first (their messages and write fates are the server's consequence, engine A.1; a Coach record the device cannot decode, or one that names no roadmap, is left out and stops nothing), and the device's notes of the root and of every subtree under it (`landing:<T>`) removed in the same segment, unheld; a subtree's record refuses `notARoot` |
 | `SetVisibility` | `{tree, visibility}` | `null`; a write of the root's `meta.visibility` under `roadmap.captureTree`, predicting the root's `reach` and the `reach` of every standing subtree of its branch (`scopedPredict`); the visibility the root holds writes nothing; a subtree refuses `notARoot` |
 | `CreateSubtree` | `{tree, step}` | `{subtree}`; `roadmap.createSubtree` in `self/roadmap`, predicting the subtree's record, its `meta` (`root`, `parent`, `depth`, `reach`) and genesis kinds, and the step's `branch`; a step the device knows as deleted (dead in `drawn`, or a spent id) is revived in a segment before it and noted; a step that owns a subtree answers it unchanged; a pointer refuses `stepOpensARoadmap`, a depth past eight `depthLimit` |
 | `WriteRoadmap` | `{tree, title?, guide?}` | `null`; the changed fields of `meta` |
@@ -224,7 +229,7 @@ Before the tree scope's first pull completes nothing has landed.
 | `DeleteStep` | `{tree, step}` | `null`; held; the step's death alone |
 | `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by; an added link is noted with the name of the step it comes from |
 | `ImportSteps` | `{tree, imported, under?, done?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it; the landing note takes the name of each step a link comes from; each key of `done` takes the person's `mark`, complete, in a segment of the same act in their overlay |
-| `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null` |
+| `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null`; a change writes the kind's words, `label` and `description`, and a hue it is given is a recolour's, no part of it |
 | `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step the device holds wearing the old hue, present or not, by id; a kind the device knows as deleted is revived in a segment before it, and of one it knows only by its spent id it predicts the kind's hue alone, the server recolouring the steps |
 | `Complete`, `Reset` | `{tree, step, outOfOrder?, opensStanding?}`, `{tree, step}` | `null`; the step's `mark`; `opensStanding`, read by the caller from the account, says the step's pointer opens a standing roadmap |
 | `SetPointer`, `ClearPointer` | `{tree, step, opens}`, `{tree, step}` | `null` |
@@ -233,6 +238,16 @@ Before the tree scope's first pull completes nothing has landed.
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
 | `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; written in `self/roadmap`: the note less what was told and less what has landed and says nothing, or no row; no row at all where the roadmap is gone from the person's list (its `tree` record dead or absent in `drawn` once `self/roadmap`'s first pull completes) |
 | read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the links whose lines the note says, each with `removed` (`[{id, name}]`, the absent steps it is linked from) and each `followed` entry with its `name`; a step the device holds is named by its label, one deleted elsewhere by the note's name, and by `null` where the note holds none; and its revived steps now present |
+| `OpenTurn` | `{thread?, about?: {treeId, stepId?}, question, pictures?: [{id, mediaType, localOnly?}]}` | `{thread, person, coach}`; in `self/roadmap`, a new `coachThread` where `about` names what it is about (`treeId` null for every roadmap), titled by the question or `Photo`, the person's `coachMessage` and Coach's running one with the replica, and the device row `runningTurn:<coach>` `{callId: null, bytesBefore: 0}`; a named conversation the device does not draw is `gone`; a `treeId` that is not a roadmap's id (`t_` and sixteen hex digits) is `coachThread.treeId`; a question past 8,000 UTF-8 bytes, or blank with no picture, is `coachMessage.question` |
+| `EndTurn` | `{message, state, text?, truncated?, refusal?}` | `null`; Coach's message takes `state`, `text` (its own where none is given), `truncated` and `refusal`, and its `runningTurn:<message>` row goes where the device holds one; a message its writer ended is `unchanged`; a person's or unknown message is `gone` |
+| `WithdrawTurn` | `{thread, person, coach}` | the ids of the pictures forgotten; held; the turn's two messages, its conversation where it held nothing else, the `picture:<id>` rows of their pictures kept on the device, and the turn's `runningTurn` row |
+| `MintProposal` | `{proposal, treeId, thread, message, changes, base}` | the proposal's id; in `self/roadmap`, the `coachProposal` under the id the tool host drew, `pending`, with the conversation and Coach's message that minted it and the changes and base `propose_roadmap_change` answered (roadmap-coach.md §7), Coach's message naming it (`proposalId`), and every other proposal pending about `treeId` taking `replaced`, in id order; a message the device does not draw as Coach's in `thread` is `gone`, an id the device holds `taken` |
+| read `conversation` | `{thread}` | `{thread, messages, fates}`: the ids of the conversation's messages in the order they were said (by `at`, the person's before Coach's, then by id) and of each message's write fates, by `receipt` then id; `null` where the device does not draw the conversation, its own delete still held included, whatever messages and fates it still holds |
+| read `pendingProposal` | `{treeId}` | the id of the roadmap's pending proposal: of the proposals the device draws about `treeId` in state `pending`, the latest born, by birth and then id; `null` where none is |
+| `ApplyProposal` | `{proposal}` | the state the proposal stands in. Only a pending proposal moves: one the device does not draw, or that names no roadmap, is `gone`; one whose `applying:<proposal>` row the device holds answers `applied`, and one not pending its state, both `unchanged`; a pending one that is not its roadmap's pending one is written `replaced`. Over the proposal's roadmap and those its reading reaches, as the standing roadmap reads them (a roadmap the device does not hold whole refuses `other` `roadmap-unavailable`, one the person's whole list does not hold, or holds deleted, is `gone`): a base register whose stamp is not the copy's, or changes that no longer fold over it, write `stale` and nothing else, but changes that pass a cap only by the steps under a delete the person can still undo refuse `other` `roadmap-not-ready` and write nothing; otherwise the act, `applied`: the fold's reduction (`ProposalFold.reduced`), each recolour of a kind the copy holds a `roadmap.recolourKind` segment in the changes' order, predicting the steps that wear its hue as the copy and the recolours before it leave them, the first carrying the act's one Undo check of the legend as the whole Undo leaves it; the kinds, steps and links that end otherwise, chunked as an import's, a changed step or kind revived with the fields it writes; the removed steps' deaths, held; the marks in the overlay; and in `self/roadmap` the device row `applying:<proposal>` `{stamp: null}` and the landing note of the new steps and links; each segment with its Undo |
+| `SettleApplying` | `{}` | the ids of the proposals whose `applying:` rows the device holds, in id order; each drawn proposal not `applied` written `applied`, and every row removed; `unchanged []` with no row |
+| `RejectProposal` | `{proposal}` | the state the proposal stands in: as `ApplyProposal`'s first checks, then `rejected` |
+| `ProposalUndone` | `{proposal, undo}` | what the Undo came to, `undo` its `InverseResult` without its ids: `undone` where it took something back (`cancelled` and `changed`, `pending` and `localChanged`, `settled` with `appliedCount` above 0), and the proposal, `applied` and not yet undone, written `undone: true`; else `skipped` or `unavailable`, `unchanged`; `gone` for a proposal the device does not draw |
 | read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, made, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note); `made` where the refused content, or a dependent folded into it, creates its subject (its life made alive at its own `born`) |
 
 Limits refuse before anything is written, in this order where a case meets several: the bounds of
@@ -274,16 +289,24 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | Delete a subtask or a link | none: the type is terminal. The delete is held nine seconds, and `cancelHeld` in the hold is its one Undo | — |
 | Create a roadmap | `roadmap.undoCreateRoadmap {tree}` over the record and its tree scope, unchanged since: the roadmap dies while nothing changed in it, its owner's overlay included. Each tree segment is the Undo's evidence (`evidenceForUndo`, `undo: []`), journaled so its receipts prove the scope | none: a new roadmap is a new creation |
 | Create a subtree | `roadmap.undoCreateSubtree {tree, step, subtree}` over the step's `branch`, the subtree's record and its tree scope; a step revived before it, its life | `redoCreateSubtree`: the product's slots (`redoCreateSubtree(creation, fresh)` in `roadmaps.js`) plant a new subtree under a fresh id while the `branch` is still the one the Undo cleared (R-8) |
-| Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold | — |
+| Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold, which brings back the Coach conversations and proposals it took | — |
 | Save a step's note | the note's `text`, from the text the draft was saved from (`""` for a first note): `StepNote` saves reversibly, so each save is an act; it skips where a write the device had not seen changed the note | writes the saved text back |
 | The landing note | none: device rows are the device's | — |
+| Apply a proposal | each segment's: a recolour's as a kind's recolour, the act checked once, refused only while a kind outside it wears a hue a kind of it is given back; a new kind, step or link `createdRecord`, but a step the act makes and removes none; a changed kind or step its fields; a link made alive again or removed its life; a removed step its life; a mark `roadmap.restoreOverlay` of it. An Apply that removes a step is held, and an Undo in its hold cancels it in place | none: an undone proposal is not offered again |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
-binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+binding, and in Swift over the model server with `RoadmapServerRules`; a scene with `signedOut: true` plays on phones that
+are signed out, whose replica sends nothing. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots; an Undo or a Redo takes the Undo handle of its role's receipt, or of the
-Redo before it), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
-input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
-`{cancelHeld}`, and an inspection's visible records. In what a scene reads back, a minted id (`t_` and sixteen hex
+Redo before it), `{device: <name>}`, `{inspect: {scope, t, fields}}`, `{conversation: <thread>}`, `{propose: {treeId, changes},
+thread, message, as?}`, a proposal minted as a turn mints one, `propose_roadmap_change` over the phone's copy with ids the runner
+mints and then `MintProposal` in `thread` on Coach's `message`, its role's result `{proposal, changes}` (the record's changes,
+each new step and kind under its id), or `{undoProposal: <role>}`, an applied proposal undone as a surface undoes it: the Undo
+of its role's `ApplyProposal`, then `ProposalUndone` with what it came to. An
+input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a proposal minted's, a save's result kind, the `InverseResult` without its ids, an undone proposal's
+`{inverse, outcome}`, the Undo's result without its ids and `ProposalUndone`'s answer,
+`{cancelHeld}`, an inspection's visible records, and `{conversation}`: null where the read `conversation` draws none, else
+`{messages, fates}`, how many of each it reads. In what a scene reads back, a minted id (`t_` and sixteen hex
 digits, or sixteen of `0-9a-z`) is named by the first role whose result holds it, `$role` or `$role.path`, and one no role
 holds is `<new>`; every other string stands as it is. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:

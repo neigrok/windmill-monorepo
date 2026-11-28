@@ -4,7 +4,7 @@ import { DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
 import { Opening, Openings } from '../model/Opening.js';
 import { SkillTree } from '../model/SkillTree.js';
-import { UnlockRules } from '../model/UnlockRules.js';
+import { domainReading } from '../model/domainReads.js';
 import { deviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { PlaceStore } from '../persistence/PlaceStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
@@ -87,12 +87,11 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
       const owner = seed.mine === true && !shared && !demo;
       const sits = seed.place ?? null;
       const nextTree = new SkillTree(seed);
-      const states = UnlockRules.derive(nextTree, overlay);
+      const { states, completed } = domainReading(nextTree, overlay);
       const model = nextTree.toRenderModel(structure.layoutPositions(nextTree), states);
 
       const mountedScene = sceneRef.current;
       const remembers = !demo && desktopEditorRef.current;
-      const completed = UnlockRules.completed(nextTree, overlay);
       const sinceIds = ReturnLedger.since(completed, remembers ? returnLedger.load(seed.id) : null, states);
       if (sinceIds.length) mountedScene?.armReturnRecap(sinceIds, welcomeBackToast({ count: sinceIds.length }));
 

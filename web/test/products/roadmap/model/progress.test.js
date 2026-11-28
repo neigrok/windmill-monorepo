@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { advanceProgress, progressChanges, milestoneAnnouncement } from '../../../../src/products/roadmap/model/progress.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
+import { domainReading } from '../../../../src/products/roadmap/model/domainReads.js';
 
 test('completion stamps a batch at one instant without mutating the prior overlay', () => {
   const before = { completed: new Set(['a']), completedAt: { a: 50 } };
@@ -23,7 +23,7 @@ test('reset clears completion and its timestamp and locks dependent steps again'
   const next = advanceProgress(before, ['a'], 'none', 900);
 
   assert.deepEqual(next, { completed: new Set(), completedAt: {} });
-  assert.deepEqual(UnlockRules.derive(tree, next), new Map([['a', 'available'], ['b', 'locked']]));
+  assert.deepEqual(domainReading(tree, next).states, new Map([['a', 'available'], ['b', 'locked']]));
 });
 
 test('legacy in-progress data cannot override prerequisite rules', () => {
@@ -33,7 +33,7 @@ test('legacy in-progress data cannot override prerequisite rules', () => {
   ] });
   const legacy = { completed: new Set(), inProgress: new Set(['a', 'b']), startedAt: { a: 100, b: 200 } };
 
-  assert.deepEqual(UnlockRules.derive(tree, legacy), new Map([['a', 'available'], ['b', 'locked']]));
+  assert.deepEqual(domainReading(tree, legacy).states, new Map([['a', 'available'], ['b', 'locked']]));
   assert.throws(() => advanceProgress(legacy, ['a'], 'active', 900), /Unknown progress status/);
 });
 

@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { SkillTree } from '../src/products/roadmap/model/SkillTree.js';
-import { UnlockRules } from '../src/products/roadmap/model/UnlockRules.js';
+import { domainReading } from '../src/products/roadmap/model/domainReads.js';
 import { LAYOUTS, loadLayoutEngine } from '../src/products/roadmap/layout/index.js';
 import { BODY_WU, WORKING_ZOOM, MIN_BODY_PX } from '../src/products/roadmap/theme.js';
 import { loadDogfoodTree } from '../test/products/roadmap/fixtures/dogfoodTree.js';
@@ -40,7 +40,7 @@ function fixtures() {
         const progress = {
           completed: new Set(data.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
         };
-        rows.push({ name: `${shape}-${count}`, tree, states: UnlockRules.derive(tree, progress), anchorId: null });
+        rows.push({ name: `${shape}-${count}`, tree, states: domainReading(tree, progress).states, anchorId: null });
       }
     }
   }

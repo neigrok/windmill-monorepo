@@ -5,6 +5,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { createPortal } from 'react-dom';
 import { SignInDialog } from './SignInDialog.jsx';
 import { requestMagicLink } from './AuthClient.js';
+import { API_BASE } from '../apiBase.js';
 import { useAuth } from './AuthProvider.jsx';
 import { readNavigation, subscribeNavigation, replaceLocation } from '../navigation.js';
 import { track } from '../../telemetry/beacon.js';
@@ -87,6 +88,13 @@ export function SignInDoorProvider({ children }) {
     return result;
   }, [request]);
 
+  // Continue with Google tells one `sign_in_google` as the browser leaves for Google's consent, a top-level navigation and
+  // not a fetch, since the OAuth redirect must leave the SPA; Google's answer comes back as a new page.
+  const google = useCallback(() => {
+    track('sign_in_google', { outcome: 'started' });
+    window.location.href = `${API_BASE}/v1/auth/google/start`;
+  }, []);
+
   // With several skinned surfaces mounted, the door belongs to the innermost.
   const host = useMemo(
     () => hosts.reduce((inner, element) => (inner && !inner.contains(element) ? inner : element), null),
@@ -99,7 +107,7 @@ export function SignInDoorProvider({ children }) {
     <DoorContext.Provider value={value}>
       {children}
       {request && createPortal(
-        <SignInDialog open resume={request.resume} onClose={() => setRequest(null)} onSend={send} />,
+        <SignInDialog open resume={request.resume} onClose={() => setRequest(null)} onSend={send} onGoogle={google} />,
         host ?? document.body,
       )}
     </DoorContext.Provider>

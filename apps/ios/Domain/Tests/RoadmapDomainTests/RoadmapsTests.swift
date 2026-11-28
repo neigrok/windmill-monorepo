@@ -36,8 +36,9 @@ struct RoadmapsTests {
     }
   }
 
-  static func phone() -> Harness {
-    Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), rules: RoadmapServerRules())
+  // A phone signed in, or signed out, whose replica is the device's own and sends nothing.
+  static func phone(signedOut: Bool = false) -> Harness {
+    Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: signedOut ? nil : "acct-1", rules: RoadmapServerRules())
   }
 
   // A root of one step, made on the phone and taken by the server.

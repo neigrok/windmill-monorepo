@@ -1,7 +1,7 @@
 // @ts-check
 
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
-import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
+import { DecodeError, EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan, Prediction, UndoRecipe, UndoTarget } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
@@ -13,6 +13,7 @@ import { GENESIS_KINDS, HeldRecord, Restore, RoadmapChecks, RoadmapLimits, Roadm
 import { RoadmapStep, StepsImport, readNote, readTree } from './steps.js';
 import { StepMark, StepPointer } from './progress.js';
 import { RoadmapTree } from './records.js';
+import { CoachProposal, CoachThread } from './conversation.js';
 
 /** @typedef {{ tree: string, step: string }} RoadmapParent */
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -242,7 +243,9 @@ export class CreateRoadmap {
 
 // §5 Delete a roadmap: held nine seconds, and permanent once the hold ends (R-7). A subtree goes with the step
 // that owns it, so only a root's record is deleted here. The device's notes (§6) of the roadmap and of every subtree
-// under it go at once, and an Undo within the hold does not bring them back.
+// under it go at once, and an Undo within the hold does not bring them back. Roadmap Coach §9: the conversations about
+// the roadmap and about every subtree under it, and the proposals about them, go in the same hold; the server's rule
+// takes their messages and write fates.
 export class DeleteRoadmap {
   /** @param {string} tree */
   constructor(tree) {
@@ -262,19 +265,34 @@ export class DeleteRoadmap {
           if (each.parent?.tree === id && !under.includes(subtree)) under.push(subtree);
         }
       }
+      // The drawn Coach records of a type about the roadmap or a subtree under it, in id order. A record this build cannot
+      // read names no roadmap it can tell, so the delete leaves it to the server's rule (engine A.1) and goes on.
+      /** @template {{ id: Id<any>, treeId: string | null }} E @param {EntityType<E, string>} type */
+      const about = (type) => account.views.visible('drawn', type.type).flatMap((record) => {
+        try {
+          const value = type.decode(Fields.record(record));
+          return value.treeId !== null && under.includes(value.treeId) ? [value.id] : [];
+        } catch (error) {
+          if (error instanceof DecodeError) return [];
+          throw error;
+        }
+      }).sort(Id.compare);
       return {
         roadmap: account.repository(Roadmap).find(this.id, 'drawn'),
         notes: under.map(RoadmapScopes.landing).filter((key) => account.device(key) !== null),
+        conversations: about(CoachThread),
+        proposals: about(CoachProposal),
       };
     });
   }
 
-  /** @param {{ roadmap: RoadmapValue | null, notes: string[] }} loaded */
-  decide({ roadmap, notes }) {
+  /** @param {ReturnType<DeleteRoadmap['load']>} loaded */
+  decide({ roadmap, notes, conversations, proposals }) {
     if (roadmap === null) return ActDecision.unchanged(null);
     if (roadmap.parent !== null) return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('not-a-root', this.id.ref, null, 'predicted')));
     const plan = new Plan();
     plan.remove(this.id);
+    for (const id of [...conversations, ...proposals]) plan.remove(id);
     for (const key of notes) plan.device(key, null);
     return writeIn(RoadmapScopes.account, plan, null);
   }

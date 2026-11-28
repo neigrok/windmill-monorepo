@@ -120,6 +120,25 @@ test('a sign-in’s Discard asks again before it deletes: its words’ confirmat
   });
 });
 
+test('a sign-in question its words say in one sentence (Roadmap Coach 10.4) shows no list and no note, and its Discard asks again in its words', async (t) => {
+  const { AccountDecision } = await loadScreen('shell/auth/SyncDecisions.jsx');
+  page(t, { wide: true });
+  const lead = 'This browser has 2 roadmaps and 3 conversations from before you signed in. Your account already has roadmaps. Add them, or discard them from this browser.';
+  const words = { title: 'Add to your account?', lead, items: [], note: null,
+    discard: { title: 'Discard 2 roadmaps and 3 conversations?', body: 'They are deleted from this browser. You can’t undo this.' }, onStep() {} };
+  const view = renderHook(t, () => AccountDecision({ question: { ...question, product: 'roadmap', words }, busy: false, error: false, onDecision() {}, onCancel() {} }));
+  const asked = { ...shownIn(view.tree), lists: elementsOf(view.tree).filter((element) => element.type === 'ul').length };
+  elementsOf(view.tree).find((element) => element.props.size === 'lg' && textOf(element.props.children) === 'Discard').props.onClick();
+  const { title, lead: body, answers } = shownIn(view.tree);
+  view.unmount();
+  assert.deepEqual({ asked, confirming: { title, body, answers } }, {
+    asked: { layout: 'wm-decision wm-decision--dialog', title: 'Add to your account?', lead, items: [], notes: [], lists: 0,
+      answers: [['Cancel sign-in', 'ghost', false], ['Discard', 'secondary', false], ['Add', 'secondary', false]] },
+    confirming: { title: 'Discard 2 roadmaps and 3 conversations?', body: 'They are deleted from this browser. You can’t undo this.',
+      answers: [['Cancel', 'secondary', false], ['Discard', 'danger', false]] },
+  });
+});
+
 test('below 744px a sign-in is a page with Add over Discard over Cancel sign-in, and its confirmation Discard over Cancel', async (t) => {
   const { AccountDecision } = await loadScreen('shell/auth/SyncDecisions.jsx');
   page(t, { wide: false });

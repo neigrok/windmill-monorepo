@@ -1,14 +1,71 @@
 import DomainKit
 import SyncAPI
 import SyncCore
+import SyncSchema
 
 // Roadmap Coach D-2, §3, §5: the standing roadmap, the roadmaps the room reads as it shows them, as the plain data every
 // ability takes, and what every ability reads of it: whether a call may read the roadmap it names, and each step of that
 // roadmap as the room shows it.
 
+// The stamps of one record's registers, as the device's copy holds them or a turn's read returned them (§5, §7): the
+// record's scope, type and id (`[from, to]` for a link), the stamp of its life, none for a type with none, and of each field
+// it holds, by name.
+public struct RecordStamps: Sendable {
+  public let scope: String
+  public let t: String
+  public let id: JSON
+  public let life: String?
+  public let f: [String: String]
+
+  public init(scope: String, t: String, id: JSON, life: String?, f: [String: String]) {
+    self.scope = scope
+    self.t = t
+    self.id = id
+    self.life = life
+    self.f = f
+  }
+
+  // The stamps of a record a view holds, in its scope.
+  init(_ record: Record, in scope: ScopeRef) {
+    self.init(scope: scope.description, t: record.type, id: record.id.json, life: record.life?.stamp.text, f: record.stamps.mapValues(\.text))
+  }
+
+  // The key it is found by: its scope, type and id.
+  var key: String { RecordStamps.key(scope, t, id) }
+
+  static func key(_ scope: String, _ t: String, _ id: JSON) -> String { scope + " " + t + " " + id.jcsText }
+}
+
+// §6 rule 4: the sync registry's caps of a roadmap's steps, links and kinds, and of the subtasks of its owner's checklists.
+enum RoadmapCaps {
+  static let steps = cap(RoadmapStep.type)
+  static let links = cap(RoadmapLink.type)
+  static let kinds = cap(RoadmapKind.type)
+  static let subtasks = cap(Subtask.type)
+
+  static func cap(_ type: String) -> Int {
+    guard let cap = SyncSchema.registry.type(type)?.cap else { preconditionFailure("the sync registry caps \(type)") }
+    return cap
+  }
+}
+
+// What reads the device's copy one scope at a time: the runner outside an act, or an act's reader during its load.
+protocol CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
+}
+
+extension ActionRunner: CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T { try read(scope, body) }
+}
+
+extension ActReader: CopyReading {
+  func reading<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T { try inScope(scope, body) }
+}
+
 // Every roadmap the device holds as the room shows it: the account the domain reads over them, each roadmap's completed
 // steps as the room shows them, the steps under a delete the person can still undo, the person's checklists, whether the
-// device holds the person's whole list, and the roadmaps whose completion waits on one the device has not brought.
+// device holds the person's whole list, the stamps of the registers they were read from, and the roadmaps whose completion
+// waits on one the device has not brought.
 public struct StandingRoadmaps: Sendable {
   // A step under a delete the person can still undo: its roadmap holds it as not present.
   public struct Held: Sendable {
@@ -41,6 +98,9 @@ public struct StandingRoadmaps: Sendable {
   // Each step's items in its checklist's order, a removed step's included.
   let subtasks: [ChecklistItem]
   let listRead: Bool
+  // The stamps of every register the roadmaps were read from: the person's list record, each record of a roadmap's tree
+  // scope, and the marks and pointers of its owner's overlay.
+  public let stamps: [RecordStamps]
   // §5 Each standing roadmap's completed steps and their dates as the room shows them, by its id.
   let progress: ByText<Progress>
   // §5 The roadmaps whose completion waits on a roadmap the device has not brought, by their ids.
@@ -48,7 +108,7 @@ public struct StandingRoadmaps: Sendable {
 
   // `trees` is every roadmap the device holds. One the person only reads carries as its marks what the room shows of the
   // owner's: on a step that owns a subtree the device does not hold, the server's word of that subtree.
-  public init(trees: [RoadmapTree], held: [Held] = [], subtasks: [ChecklistItem] = [], listRead: Bool = true) {
+  public init(trees: [RoadmapTree], held: [Held] = [], subtasks: [ChecklistItem] = [], listRead: Bool = true, stamps: [RecordStamps] = []) {
     let account = RoadmapAccount(trees)
     var progress = ByText<Progress>()
     for tree in account.trees {
@@ -63,36 +123,99 @@ public struct StandingRoadmaps: Sendable {
     self.held = held
     self.subtasks = subtasks
     self.listRead = listRead
+    self.stamps = stamps
     self.progress = progress
     uncertain = Self.uncertain(in: account, progress: progress)
   }
 
   // D-2 from the device's copy, as the room reads it: each roadmap of the person's list from its tree scope and their
   // overlay of it, whole once the device has pulled all three, a step under a delete the person can still undo absent from
-  // it (`drawn` holds the delete, `stored` the step); and the person's checklists.
+  // it (`drawn` holds the delete, `stored` the step); the person's checklists; and the stamps of every register read.
   public init(reading runner: ActionRunner) throws {
-    let (entries, listRead) = try runner.read(RoadmapEntry.scope) { (list: Reader) throws -> ([Record], Bool) in
+    let (entries, listRead) = try Self.list(from: runner)
+    self.init(copies: try entries.map { try Copy($0, listRead: listRead, from: runner) }, listRead: listRead)
+  }
+
+  // D-2 of one roadmap of the person's own and of the roadmaps its reading reaches, through an act's reader: the roadmaps
+  // above it and those its steps own or open, and theirs in turn, each where the person's list holds it. An act that reads
+  // one roadmap so reads none of the others the device holds. It carries no owner marks: those are what the room read of a
+  // roadmap the person only reads, which no reading of the person's own roadmap reaches.
+  init(reaching treeId: String, reading read: ActReader) throws {
+    let (entries, listRead) = try Self.list(from: read)
+    let listed = ByText<Record>(entries.map { (Array($0.id.description.utf8), $0) }) { _, last in last }
+    var copies: [Copy] = []
+    var copied = Set<[UInt8]>()
+    var pending = [treeId]
+    while let id = pending.popLast() {
+      guard copied.insert(Array(id.utf8)).inserted, let entry = listed[id] else { continue }
+      let copy = try Copy(entry, listRead: listRead, from: read)
+      copies.append(copy)
+      let named = [copy.tree.parent?.tree, copy.tree.meta?.root] + copy.tree.nodes.map(\.branch) + copy.tree.pointers.map { Optional($0.opens) }
+      pending += named.compactMap { $0 }
+    }
+    self.init(copies: copies, listRead: listRead)
+  }
+
+  // The person's list as the device holds it, and whether it holds the whole of it.
+  static func list(from read: some CopyReading) throws -> (entries: [Record], read: Bool) {
+    try read.reading(RoadmapEntry.scope) { (list: Reader) throws -> ([Record], Bool) in
       (try list.repository(RoadmapEntry.self).records(in: .drawn), try list.firstPullComplete())
     }
-    var trees: [RoadmapTree] = []
-    var held: [Held] = []
-    var subtasks: [ChecklistItem] = []
-    for listed in entries {
+  }
+
+  // One roadmap of the person's list as the device's copy holds it: its tree, the steps under a delete the person can still
+  // undo, their checklists, and the stamps of every register read.
+  struct Copy {
+    let tree: RoadmapTree
+    let held: [Held]
+    let subtasks: [ChecklistItem]
+    let stamps: [RecordStamps]
+
+    init(_ listed: Record, listRead: Bool, from read: some CopyReading) throws {
       let id = ID<RoadmapEntry>(listed.id)
-      let (records, treeRead, kept) = try runner.read(id.tree) { (scope: Reader) throws -> ([Record], Bool, [String]) in
+      let (records, treeRead, kept) = try read.reading(id.tree) { (scope: Reader) throws -> ([Record], Bool, [String]) in
         let steps = scope.repository(RoadmapStep.self)
         let shown = Set(try steps.records(in: .drawn).filter(\.isVisible).map(\.id))
         let kept = try steps.records(in: .stored).filter { $0.isVisible && !shown.contains($0.id) }.map(\.id.description)
         return (try scope.records(in: .drawn), try scope.firstPullComplete(), kept)
       }
-      let (overlay, overlayRead, items) = try runner.read(id.overlay) { (scope: Reader) throws -> ([Record], Bool, [Subtask]) in
+      let (overlay, overlayRead, items) = try read.reading(id.overlay) { (scope: Reader) throws -> ([Record], Bool, [Subtask]) in
         (try scope.records(in: .drawn), try scope.firstPullComplete(), try scope.repository(Subtask.self).all(in: .drawn))
       }
-      trees.append(try RoadmapTree(id: id, listed: listed, tree: records, overlay: overlay, read: listRead && treeRead && overlayRead))
-      held += kept.map { Held(tree: id.description, step: $0) }
-      subtasks += items.map { ChecklistItem(tree: id.description, step: $0.step.description, label: $0.label, done: $0.done) }
+      tree = try RoadmapTree(id: id, listed: listed, tree: records, overlay: overlay, read: listRead && treeRead && overlayRead)
+      held = kept.map { Held(tree: id.description, step: $0) }
+      subtasks = items.map { ChecklistItem(tree: id.description, step: $0.step.description, label: $0.label, done: $0.done) }
+      stamps = [RecordStamps(listed, in: RoadmapEntry.scope)] + records.map { RecordStamps($0, in: id.tree) }
+        + overlay.filter { $0.type == StepMark.type || $0.type == StepPointer.type }.map { RecordStamps($0, in: id.overlay) }
     }
-    self.init(trees: trees, held: held, subtasks: subtasks, listRead: listRead)
+  }
+
+  init(copies: [Copy], listRead: Bool) {
+    self.init(trees: copies.map(\.tree), held: copies.flatMap(\.held), subtasks: copies.flatMap(\.subtasks), listRead: listRead,
+              stamps: copies.flatMap(\.stamps))
+  }
+
+  // These standing roadmaps as they stand once every delete the person can still undo has let go of its step's slot.
+  var releasingHolds: StandingRoadmaps {
+    StandingRoadmaps(trees: account.trees, held: [], subtasks: subtasks, listRead: listRead, stamps: stamps)
+  }
+
+  // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading
+  // reaches: those above it and those its steps open, and theirs in turn. A proposal's fold reads its scratch copy so, at the
+  // cost of the roadmaps it reads rather than of every roadmap the device holds.
+  func replacing(_ tree: RoadmapTree) -> StandingRoadmaps {
+    var reached = ByText<RoadmapTree>()
+    reached[tree.id] = tree
+    var pending = [tree]
+    while let next = pending.popLast() {
+      let named = [next.parent?.tree, next.meta?.root] + next.nodes.map(\.branch) + next.pointers.map { Optional($0.opens) }
+      for case let id? in named where reached[id] == nil {
+        guard let opened = account.byId[id] else { continue }
+        reached[id] = opened
+        pending.append(opened)
+      }
+    }
+    return StandingRoadmaps(trees: Array(reached.values), held: held, subtasks: subtasks, listRead: listRead, stamps: stamps)
   }
 
   // §10, §6 rule 1: the roadmap a call names, where it is the conversation's (`about`) or one of the person's own and the
@@ -265,6 +388,14 @@ struct StandingRoadmap {
       for prerequisite in prerequisites { waiting[prerequisite].append(slot) }
     }
     return waiting
+  }
+
+  // §6 rule 4: whether more steps, links or subtasks would pass the caps of the roadmap, which counts what it holds alive as
+  // the engine does: each step the room shows and each under a delete the person can still undo, until its hold ends, each
+  // link, and each subtask of its checklists, a removed step's included.
+  func passesCaps(steps: Int = 0, links: Int = 0, subtasks: Int = 0) -> Bool {
+    graph.ids.count + held.count + steps > RoadmapCaps.steps || tree.index.edges.count + links > RoadmapCaps.links
+      || subtaskCount + subtasks > RoadmapCaps.subtasks
   }
 
   // The step the room shows under `id`, none where it shows none: a step removed, or under a delete the person can still

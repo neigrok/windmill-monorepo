@@ -6,11 +6,12 @@ import SyncCore
 import Testing
 
 // K-3, undo.json: each scene played on the kit's harness over the model server with roadmap's rules, its acts and a note's
-// draft saves, then their Undo and Redo, outcome for outcome as the corpus README's Undo section states them.
+// draft saves, then their Undo and Redo, outcome for outcome as the corpus README's Undo section states them. A proposal is
+// minted as a turn mints one, and an applied one undone as a surface undoes it.
 struct UndoTests {
   @Test(arguments: try Contract.vectors("roadmap/domain/undo.json"))
   func scene(_ vector: Vector) throws {
-    var scene = UndoScene()
+    var scene = UndoScene(signedOut: vector.input["signedOut"] == true)
     let outcomes = try scene.play(try vector.input.member("steps").asArray())
     #expect(outcomes == vector.expect, "\(vector)\n  got    \(outcomes.jcsText)\n  expect \(vector.expect.jcsText)")
   }
@@ -27,8 +28,12 @@ struct UndoScene {
     var requestId: String?
   }
 
-  var phones = ["a": RoadmapsTests.phone()]
+  var phones: [String: Harness]
   var roles: [(name: String, role: Role)] = []
+
+  init(signedOut: Bool = false) {
+    phones = ["a": RoadmapsTests.phone(signedOut: signedOut)]
+  }
 
   mutating func play(_ steps: [JSON]) throws -> JSON {
     var outcomes: [JSON] = []
@@ -92,6 +97,41 @@ struct UndoScene {
       if let undo = redone.undo { roles[index].role.undo = undo }
       return redone.result.form
     }
+    if let propose = step["propose"] {
+      let input = try bound(propose)
+      let treeId = try input.member("treeId").asString()
+      let tree = ID<RoadmapEntry>(RecordID(treeId))
+      let answer = RoadmapProposals.answer(input, over: try StandingRoadmaps(reading: phone.runner), about: treeId) { (mint: ProposalMint) -> String in
+        switch mint {
+        case .coachProposal: phone.runner.mint(CoachProposal.self).description
+        case .node: phone.runner.mint(RoadmapStep.self, in: tree.tree).description
+        case .kind: phone.runner.mint(RoadmapKind.self, in: tree.tree).description
+        }
+      }
+      guard case .minted(let proposal, let result) = answer else { throw ContractError("the scene's proposal is refused: \(answer)") }
+      let id: ID<CoachProposal> = ID(RecordID(try result.member("proposalId").asString()))
+      let mint = MintProposal(proposal: id, treeId: treeId, thread: ID(try RecordID(json: bound(step.member("thread")))),
+                              message: ID(try RecordID(json: bound(step.member("message")))),
+                              changes: proposal.changes, base: proposal.base.map(\.json))
+      let outcome: JSON = switch try phone.runner.runAct(mint) {
+      case .committed: "committed"
+      case .unchanged: "unchanged"
+      case .refused(let refusal): ["refused": refusal.form]
+      }
+      try remember(step, Role(input: input, result: ["proposal": id.json, "changes": .array(proposal.changes)], undo: nil))
+      return outcome
+    }
+    if let name = step["undoProposal"] {
+      let (index, role) = try self.role(name)
+      guard let act = role.undo else { throw ContractError("\(name) applied no act") }
+      let undone = try phone.runner.undo(act)
+      roles[index].role.requestId = undone.requestId ?? role.requestId
+      let marked: JSON = switch try phone.runner.runAct(ProposalUndone(try role.input.id("proposal"), undo: undone)) {
+      case .committed(let outcome, _), .unchanged(let outcome): .string(outcome.rawValue)
+      case .refused(let refusal): ["refused": refusal.form]
+      }
+      return ["inverse": undone.form, "outcome": marked]
+    }
     if let name = step["read"] {
       guard let requestId = try self.role(name).role.requestId else { throw ContractError("\(name) was not undone") }
       return try phone.runner.inverseResult(requestId).form
@@ -99,6 +139,11 @@ struct UndoScene {
     if let name = step["cancelHeld"] {
       guard let act = try self.role(name).role.undo else { throw ContractError("\(name) committed no act") }
       return ["cancelHeld": .bool(try phone.runner.cancelHeld(act.actId))]
+    }
+    if let thread = step["conversation"] {
+      let id: ID<CoachThread> = ID(try RecordID(json: try bound(thread)))
+      let conversation = try phone.runner.read(CoachThread.scope) { try Conversation.read($0, thread: id) }
+      return ["conversation": conversation.map { ["messages": .of($0.messages.count), "fates": .of($0.fates.count)] } ?? .null]
     }
     if let inspect = step["inspect"] {
       let type = try inspect.member("t").asString()

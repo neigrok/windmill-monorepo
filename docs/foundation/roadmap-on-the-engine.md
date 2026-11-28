@@ -178,7 +178,8 @@ product inverses, each all or nothing on the evidence the engine builds from the
   `reach` of every subtree of its branch: the visibility where it stands, `private` elsewhere.
 - A step's death that ends a subtree's standing writes `reach` `private` on every subtree under it,
   and the step's revival writes it back.
-- A roadmap's death kills every subtree under it. A root's also deletes each step of the owner's
+- A roadmap's death kills every subtree under it, and the Roadmap Coach conversations and proposals
+  about each ([Roadmap Coach](roadmap-coach.md) §9). A root's also deletes each step of the owner's
   other roadmaps whose pointer opened it.
 
 ## §5 Gestures and reading
@@ -207,8 +208,9 @@ Every gesture is an action on the domain kit, the same in each language.
   step follows what that step followed, with nothing written, on every device and on the server
   alike. Removing a followed link that is read through an absent step retires the link from that
   step.
-- **Delete a roadmap** is held, and writes the `tree` record's death. The server does the rest
-  (§4). Undo cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
+- **Delete a roadmap** is held, and writes the `tree` record's death and the death of each Coach
+  conversation and proposal about it or a subtree under it. The server does the rest (§4). Undo
+  cancels it only during its 9-second hold; after the hold ends the deletion is permanent.
 - **Complete and Reset** write the step's `progress` mark. A step that owns a subtree, or whose
   pointer opens a standing roadmap, is complete exactly when that roadmap is, and the gesture
   refuses to mark it. Whether the pointer opens a standing roadmap is read first, from the scopes
@@ -247,13 +249,19 @@ Every gesture is an action on the domain kit, the same in each language.
   engine's lineage rule decides: added without asking to an account that holds no roadmaps, and
   otherwise by the person's Add or Discard. At sign-out it asks Keep or Discard for what is unsent.
   The silent adoption and the silent wipe the web does today both end. A Discard covers exactly the
-  work its question names (engine §7.10). The sign-in question names every roadmap the signed-out
-  work changes: the browser's own by name, and another's by its changes ("{roadmap} · N changes"),
-  each by the name the browser showed it signed out and never by one another account's replica
-  holds; its Discard takes all of it, and the old stores (§8.2) of each roadmap the carry-over
-  carried into it, while their entries hold what they held as the question was asked. A roadmap made
-  and deleted signed out stays deleted either way and goes unnamed, and work that changes no roadmap
-  of the browser's own is added without asking.
+  work its question names or counts (engine §7.10). Where the work holds no conversation, the sign-in
+  question names every roadmap the signed-out work changes: the browser's own by name, and another's
+  by its changes ("{roadmap} · N changes"), each by the name the browser showed it signed out and
+  never by one another account's replica holds. Where the work holds [Roadmap
+  Coach](roadmap-coach.md)'s conversations, it names none: it counts, in one sentence, the device's own
+  roadmaps, its conversations that still stand and, on the web, the changes to another's roadmaps, and
+  its Discard asks again in the same count (Roadmap Coach 10.4 on the web, Roadmap · iOS 10.7 on the
+  iPhone). Either way its Discard takes all of the work, and the old stores (§8.2) of each roadmap the
+  carry-over carried into it, while their entries hold what they held as the question was asked.
+  Conversations and proposals are records of that work, so one answer takes them with the roadmaps
+  they name, which keep their ids. A roadmap or a conversation made
+  and deleted signed out stays deleted either way and goes uncounted, and work that changes no roadmap
+  of the browser's own is added without asking, its conversations with it.
   The sign-out question names, beside the replica's unsent changes, the account's roadmaps the
   browser's old stores still hold (§8.2), each with its changes, and is asked where only those wait;
   its Discard takes exactly those, while their entries hold what it counted. Work a question did not
@@ -450,9 +458,23 @@ items it carried, and each record it set aside for §6's one list.
 - **A creation keeps its old stores until the server takes it.** The `anon` replica sends nothing,
   so a roadmap carried there keeps them until a sign-in adds it to an account and the server takes
   it, or a sign-in's Discard takes them with the work they were carried into (§5). Where the server
-  refuses its id as taken or spent, the roadmap is placed again as that account's from its old
-  stores whole, carried as changes to the roadmap the account's list holds, and the refusal's notice
-  goes.
+  refuses its id as taken or spent, the roadmap is placed again by the rules above, from its old
+  stores whole, once the refusal has settled: no entry it made an orphan still awaits its result,
+  so nothing the carry writes is held back behind one and folds into the refusal's notice. One the
+  account's list holds is carried to it as changes. Where the roadmap is placed, the act that places
+  it also writes again the [Roadmap Coach](roadmap-coach.md) records the notice holds about it: the
+  conversations and proposals that name it, the messages of those conversations or carrying those
+  proposals, and those messages' write fates. Each is written register by register, only where the
+  notice holds a register later than the device's, so a later write the device drew stands; one the
+  device holds in no way, which the notice made and left alive, is made again; one the device draws
+  and the notice ends later is removed; and each conversation and proposal names the roadmap's new
+  place. One the device holds dead, spent or with its removal held is left so, and none an orphan the
+  server took made is made again. The ledger names the refusal, and its notice goes once that act
+  has written them, on that run or on the next should that one end first, unless the notice also
+  holds Coach records of another roadmap that only it holds: then it stays. One made signed out that
+  names nobody and that the account's list does not hold waits, as the first point says, and its
+  notice keeps the records. The one list shows none of these refusals,
+  and none is a failure: the carry-over reports what it cannot write again.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list
@@ -525,7 +547,7 @@ What changes is built only from boards marked ✅ Ready for dev:
 - **Vectors.** `packages/api-contract/roadmap/domain/` holds the rules, the actions of §5, what a
   device tells by §6, and the reads: what a step follows through absent steps, its state, what it
   owes and unlocks, what an opened roadmap comes to, standing, the guides above a roadmap, the
-  Board's groups and order, what a delete or a Reset would do, the legend and a hue two kinds wear,
+  Board's groups and order, what a delete, a Reset, an attach or a new link would do, the legend and a hue two kinds wear,
   search, sort and filter, and diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
   vector first.
 - **The engine's corpus** gains E-1 to E-4 on its test product, and roadmap's commands and

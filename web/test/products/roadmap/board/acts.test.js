@@ -4,7 +4,7 @@ import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
 import { HeldDelete, StepSelection, deletable, editGesture, completionOutcome, creationOutcome } from '../../../../src/products/roadmap/board/acts.js';
-import { readEffects } from '../../../../src/products/roadmap/model/effects.js';
+import { domainReading, readEffects } from '../../../../src/products/roadmap/model/domainReads.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -53,10 +53,19 @@ test('held delete projection equals committed BulkDelete and its cost names the 
     [['solo', 'other'], ['dock', 'other'], ['solo', 'other'], []]);
   const projected = held.projected(tree);
   lattice.join(materialize({ kind: 'BulkDelete', nodeIds: held.ids }, lattice, clock));
-  assert.deepEqual(projected.nodes, lattice.toTreeData().nodes);
+  assert.deepEqual(projected.nodes, lattice.toTreeData().nodes, 'where each follower of the held step followed nothing else, the hold reads as the delete commits');
   assert.equal(new HeldDelete(['wind', 'dock'], 'unused').message, '2 steps deleted');
   assert.ok(Object.isFrozen(held));
   assert.ok(Object.isFrozen(held.ids));
+});
+
+test('a held delete is read through, as the domain reads a delete (D-5): a step following it beside another step still owes what it followed', () => {
+  const tree = treeOf([{ id: 'plan', label: 'Plan', prerequisites: [] }, { id: 'rig', label: 'Rig the boat', prerequisites: [] },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['rig'] }, { id: 'race', label: 'Enter a race', prerequisites: ['plan', 'sail'] }]);
+  const projected = new HeldDelete(['sail'], 'Learn to sail').projected(tree);
+  const marks = { completed: new Set(['plan']), completedAt: {} };
+  assert.deepEqual(projected.nodesById.get('race').prerequisites, ['plan', 'rig']);
+  assert.deepEqual([new Board(projected, marks).columnOf('race'), domainReading(projected, marks).states.get('rig')], ['locked', 'available']);
 });
 
 test('StepSelection toggles immutably and prunes to the pane order after filtering or regrouping', () => {

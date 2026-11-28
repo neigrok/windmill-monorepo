@@ -9,10 +9,9 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../domain/roadmapRules.js';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
-import { readEffects } from '../model/effects.js';
+import { readEffects } from '../model/domainReads.js';
 import { StepFacts, offersCompletion, titleOf } from './StepFacts.js';
 import { Sheet, handleMenuKey } from '../board/BoardControls.jsx';
-import { treeAttachment } from '../model/UnlockRules.js';
 import { StepIcons } from './StepIcons.jsx';
 import { TreePicker } from './TreePicker.jsx';
 import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
@@ -412,7 +411,7 @@ export function StepDetail({
       step={titleOf(facts.step)}
       treeId={tree.treeId}
       standing={facts.opening?.treeId ?? ''}
-      attachment={(complete) => treeAttachment(tree, { completed }, id, { complete })}
+      attachment={(complete) => readEffects(tree, [id], { completed }, { attach: { complete } }).attachRelocks}
       trees={treeActs.trees}
       layout={phone ? 'phone' : 'page'}
       headingId={pickerTitleId}

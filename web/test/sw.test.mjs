@@ -145,6 +145,27 @@ test('hashed assets use complete generations before touching the network', async
   assert.deepEqual(worker.entries(ASSET_CACHE), [['/assets/new.js', '/assets/new.js']]);
 });
 
+test('a script or style whose name carries no hash is asked of the network each time, and answers from its last copy with no connection', async () => {
+  let online = true, version = 'OLD';
+  const worker = boot({ cached: { ...oldGeneration(), [ASSET_CACHE]: { '/appearance.js': reply('KEPT-BEFORE'), '/assets/lazy.js': reply('KEPT-HASHED'),
+    '/fonts/nunito.woff2': reply('KEPT-FACE') } },
+    fetches: (url) => { if (!online) throw new TypeError('offline'); return reply(`${version}:${url}`); } });
+  assert.equal((await worker.handle(`${ORIGIN}/appearance.js`, { destination: 'script' })).body, 'OLD:/appearance.js');
+  version = 'NEW';
+  assert.equal((await worker.handle(`${ORIGIN}/appearance.js`, { destination: 'script' })).body, 'NEW:/appearance.js');
+  assert.equal((await worker.handle(`${ORIGIN}/chrome.css`, { destination: 'style' })).body, 'NEW:/chrome.css');
+  assert.deepEqual(worker.network.map(({ key, options }) => [key, options.cache]),
+    [['/appearance.js', 'no-cache'], ['/appearance.js', 'no-cache'], ['/chrome.css', 'no-cache']]);
+  assert.equal((await worker.handle(`${ORIGIN}/assets/lazy.js`, { destination: 'script' })).body, 'KEPT-HASHED');
+  assert.equal((await worker.handle(`${ORIGIN}/fonts/nunito.woff2`, { destination: 'font' })).body, 'KEPT-FACE');
+  assert.equal((await worker.handle(`${ORIGIN}/assets/old.js`, { destination: 'script' })).body, 'OLD-ASSET');
+  assert.equal(worker.network.length, 3);
+  online = false;
+  assert.equal((await worker.handle(`${ORIGIN}/appearance.js`, { destination: 'script' })).body, 'NEW:/appearance.js');
+  assert.equal((await worker.handle(`${ORIGIN}/chrome.css`, { destination: 'style' })).body, 'NEW:/chrome.css');
+  await assert.rejects(worker.handle(`${ORIGIN}/never-seen.js`, { destination: 'script' }), /offline/);
+});
+
 test('model weights are kept in their own cache after first use and answer from it with no connection', async () => {
   let online = true;
   const worker = boot({ fetches: (url) => {

@@ -81,11 +81,12 @@ struct OpenedSection: View {
     }.accessibilityLabel(Text("More")).accessibilityIdentifier("roadmap-step-roadmap-more")
   }
 
-  // The rule, and where the owner's Done mark is set aside what that costs: the steps the step opened alone lock again.
+  // The rule, and where the owner's Done mark is set aside what that costs: the steps the step opened alone lock again,
+  // as the domain reads it.
   var footer: String? {
     guard let rule = opening.rule(of: row, in: open, detaches: roadmap.owns) else { return nil }
-    guard row.marked else { return rule }
-    return "\(rule) \(RoadmapModel.Opened.markAside(relocks: open.graph.unlocks(row.id).count))"
+    guard let aside = open.setAside(of: row) else { return rule }
+    return "\(rule) \(RoadmapModel.Opened.markAside(relocks: aside.count))"
   }
 }
 

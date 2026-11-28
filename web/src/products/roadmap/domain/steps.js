@@ -187,9 +187,19 @@ function keyAfter(ords) {
  */
 function siblingOrds(tree, parent) {
   const live = tree.edges.filter((edge) => edge.present);
-  return tree.nodes.filter((node) => node.present
-    && (parent === null ? !live.some((edge) => edge.to === node.id) : live.some((edge) => edge.from === parent && edge.to === node.id)))
-    .map((node) => node.ord || null);
+  const led = new Set(live.filter((edge) => parent === null || edge.from === parent).map((edge) => edge.to));
+  return tree.nodes.filter((node) => node.present && (parent === null ? !led.has(node.id) : led.has(node.id))).map((node) => node.ord || null);
+}
+
+// The order key a new step takes, the room's and a proposal's alike: after the steps its first prerequisite leads to, or
+// after the first steps, and after the keys `after` holds, those of the steps a split makes before it.
+/**
+ * @param {RoadmapTree} tree
+ * @param {string | null} prerequisite
+ * @param {string[]} [after]
+ */
+export function newStepOrd(tree, prerequisite, after = []) {
+  return keyAfter([...siblingOrds(tree, prerequisite), ...after]);
 }
 
 // The first new link on a loop among what steps follow: a loop that holds a present step. A loop of absent
@@ -264,14 +274,17 @@ class ImportPlan {
   chunks(reserved = 0) { return importChunks(this.units, reserved); }
 }
 
-// §5 Import and paste: chunks of at most IMPORT_CHUNK records and half the engine's push limit, a step's
-// prerequisites in its chunk or an earlier one. The first chunk keeps room for `reserved` records.
+// §5 Import and paste, and a proposal applied: chunks of at most IMPORT_CHUNK records and half the engine's push limit,
+// each unit whole and in its order, so a step's prerequisites come in its chunk or an earlier one. The first chunk keeps
+// room for `reserved` records.
 /**
- * @param {ImportUnit[]} units
+ * @template {{ count: number, bytes: number }} U
+ * @param {U[]} units
  * @param {number} reserved
+ * @returns {U[][]}
  */
 export function importChunks(units, reserved = 0) {
-  /** @type {ImportUnit[][]} */
+  /** @type {U[][]} */
   const chunks = [[]];
   let count = reserved;
   let bytes = 0;
@@ -404,7 +417,7 @@ function loadTree(read, tree, named) {
  * @param {string[]} froms
  * @param {Map<string, string>} [made]
  */
-function linkedNames(tree, froms, made = new Map()) {
+export function linkedNames(tree, froms, made = new Map()) {
   return [...new Set(froms)].flatMap((id) => {
     const name = tree.nodesById.get(id)?.label ?? made.get(id);
     return name === undefined ? [] : [{ id, name }];
@@ -448,7 +461,7 @@ export class CreateStep {
       return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('id-taken', { t: RoadmapStep.type, id: this.id }, null, 'predicted')));
     }
     const id = this.id ?? String(ids.mint(RoadmapStep, scope).record);
-    const ord = keyAfter(siblingOrds(tree, this.prerequisites[0] ?? null));
+    const ord = newStepOrd(tree, this.prerequisites[0] ?? null);
     const step = new Valid(new RoadmapStepValue(new Id(id, RoadmapStep), { ...this.step, ord }), moment);
     const made = this.prerequisites.map((from) => new Valid(new RoadmapLinkValue(from, id), moment));
     const refused = full(steps, 1, step.id.ref) ?? full(links, made.length, made[0]?.id.ref ?? null);

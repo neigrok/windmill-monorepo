@@ -1,28 +1,21 @@
-// Three derived columns; filter, search and branch narrow the cards, never the states or progress.
+// Three columns of the domain's Board (`BoardRead`): filter, search and branch narrow the cards, never the states or
+// progress.
 
-import { DEFAULT_NODE_COLOR } from '../theme.js';
-import { COLUMN_OF_STATE, UnlockRules, unmetPrerequisitesOf, owedCounts, unlocksOf } from '../model/UnlockRules.js';
+import { COLUMN_OF_STATE, domainReading, readBoard, readRevealing } from '../model/domainReads.js';
 
 export const BOARD_SORTS = ['roadmap', 'newest', 'oldest'];
 export const DONE_RECENT_LIMIT = 12;
 
 
+// A card of the domain's Board with its step: what a Locked card needs and an Up next card opens, by step.
 class BoardCard {
-  constructor(tree, states, owed, step) {
-    const state = states.get(step.id);
-    const opens = state === 'complete' ? [] : unlocksOf(tree, states, step.id);
-    const unmet = state === 'locked' ? unmetPrerequisitesOf(tree, states, step.id) : [];
-
-    this.step = step;
-    this.opening = step.opening ?? null;
-    this.column = COLUMN_OF_STATE[state];
-    this.unlockCount = opens.length;
-    this.needs = state === 'locked'
-      ? { need: unmet[0], extra: unmet.length - 1, toGo: owed.get(step.id) }
-      : null;
-    this.unlocks = state === 'available' && opens.length > 0
-      ? { first: opens[0], extra: opens.length - 1 }
-      : null;
+  constructor(tree, card) {
+    this.step = tree.nodesById.get(card.id);
+    this.opening = this.step.opening ?? null;
+    this.column = card.column;
+    this.unlockCount = card.unlockCount;
+    this.needs = card.needs && { need: tree.nodesById.get(card.needs.first), extra: card.needs.extra, toGo: card.needs.toGo };
+    this.unlocks = card.unlocks && { first: tree.nodesById.get(card.unlocks.first), extra: card.unlocks.extra };
   }
 
   get id() { return this.step.id; }
@@ -30,9 +23,10 @@ class BoardCard {
 }
 
 class BoardColumn {
-  constructor(name, cards) {
+  constructor(name, cards, shown) {
     this.name = name;
     this.cards = cards;
+    this.shown = shown;
   }
 
   get count() { return this.cards.length; }
@@ -65,30 +59,9 @@ export class BoardQuery {
     return new BoardQuery({ ...this, ...change });
   }
 
-  predicate(tree) {
-    const branchExists = this.branch !== null && tree?.nodesById.has(this.branch);
-    const scope = branchExists ? new Set([
-      this.branch,
-      ...tree.ancestorsOf(this.branch).map((step) => step.id),
-      ...tree.descendantsOf(this.branch).map((step) => step.id),
-    ]) : null;
-    const hues = new Set(this.kinds);
-    const needle = this.search.trim().toLowerCase();
-    return (step) => {
-      if (scope !== null && !scope.has(step.id)) return false;
-      if (hues.size > 0 && !hues.has(step.color ?? DEFAULT_NODE_COLOR)) return false;
-      if (needle === '') return true;
-      return (step.label ?? '').toLowerCase().includes(needle)
-        || (step.description ?? '').toLowerCase().includes(needle);
-    };
-  }
-
+  // The query with each part that alone hides `step` cleared, as the domain reads them; itself where none does.
   revealing(step, tree) {
-    const cleared = {};
-    for (const [key, empty] of [['kinds', []], ['search', ''], ['branch', null]]) {
-      const restriction = new BoardQuery({ [key]: this[key] });
-      if (!restriction.predicate(tree)(step)) cleared[key] = empty;
-    }
+    const cleared = readRevealing(tree, { ...this, reveal: step.id }) ?? {};
     if (Object.keys(cleared).length === 0) return this;
     return this.with(cleared);
   }
@@ -118,36 +91,22 @@ export class BoardQuery {
   }
 }
 
-// Comparators return 0 on a tie and the sort is stable, so ties keep the projection's authored order.
+// The domain's Board of the room's roadmap, its cards by step.
 export class Board {
   constructor(tree, progress, options = new BoardQuery()) {
     const query = options instanceof BoardQuery ? options : new BoardQuery(options);
-    const { sort, branch } = query;
+    const read = readBoard(tree, progress, { sort: query.sort, kinds: query.kinds, search: query.search, branch: query.branch }).result();
+    const cards = new Map(read.cards.map((card) => [card.id, new BoardCard(tree, card)]));
 
     this.treeId = tree.id;
-    this.states = UnlockRules.derive(tree, progress);
-    this.overall = {
-      done: tree.nodes.filter((step) => this.states.get(step.id) === 'complete').length,
-      total: tree.nodes.length,
-    };
-    this.sort = sort;
-    this.branch = branch !== null && tree.nodesById.has(branch) ? tree.nodesById.get(branch) : null;
-
-    const shown = tree.nodes.filter(query.predicate(tree));
-    const owed = owedCounts(tree, this.states);
-    const cards = shown.map((step) => new BoardCard(tree, this.states, owed, step));
-    const inColumn = (name) => cards.filter((card) => card.column === name);
-
-    const completedAt = progress.completedAt ?? {};
-    const byRoadmap = (a, b) => a.toGo - b.toGo || b.unlockCount - a.unlockCount;
-    const byCreated = (a, b) => unknownLast(a.step.createdMs ?? null, b.step.createdMs ?? null,
-      (msA, msB) => (sort === 'newest' ? msB - msA : msA - msB));
-    const byNewestCompletion = (a, b) => unknownLast(completedAt[a.id] ?? null, completedAt[b.id] ?? null, (atA, atB) => atB - atA);
-    const unfinishedOrder = sort === 'roadmap' ? byRoadmap : byCreated;
-
-    this.locked = new BoardColumn('locked', inColumn('locked').sort(unfinishedOrder));
-    this.upNext = new BoardColumn('upNext', inColumn('upNext').sort(unfinishedOrder));
-    this.done = new BoardColumn('done', inColumn('done').sort(byNewestCompletion));
+    this.states = domainReading(tree, progress).states;
+    this.overall = read.overall;
+    this.sort = read.sort;
+    this.branch = read.branch === null ? null : tree.nodesById.get(read.branch);
+    const columns = new Map(read.columns.map((column) => [column.name, new BoardColumn(column.name, column.ids.map((id) => cards.get(id)), column.shown.length)]));
+    this.locked = columns.get('locked');
+    this.upNext = columns.get('upNext');
+    this.done = columns.get('done');
   }
 
   get columns() { return [this.locked, this.upNext, this.done]; }
@@ -159,8 +118,8 @@ export class Board {
   // The cards a column shows: above twelve, Done folds to its twelve newest completions and a Show all row until expanded.
   shownCards(name, { doneExpanded = false } = {}) {
     const column = this[name];
-    const folded = name === 'done' && !doneExpanded && column.count > DONE_RECENT_LIMIT;
-    return { cards: folded ? column.cards.slice(0, DONE_RECENT_LIMIT) : column.cards, folded, total: column.count };
+    const folded = !doneExpanded && column.shown < column.count;
+    return { cards: folded ? column.cards.slice(0, column.shown) : column.cards, folded, total: column.count };
   }
 
   recentDone() {
@@ -184,9 +143,4 @@ export function regroup(previous, next) {
   }
   for (const id of previous.states.keys()) if (!next.states.has(id)) leaving.add(id);
   return { arrived, leaving, moved };
-}
-
-function unknownLast(valueA, valueB, compare) {
-  if (valueA === null || valueB === null) return (valueA === null) - (valueB === null);
-  return compare(valueA, valueB);
 }

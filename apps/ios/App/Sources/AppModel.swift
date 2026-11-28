@@ -103,6 +103,8 @@ final class AppModel {
   var journalAdoptionPages: Int?
   // The roadmaps made signed out that still stand, which the sign-in question names: one made and deleted is not named.
   var roadmapsMadeSignedOut: Int?
+  // The Coach conversations made signed out that still stand, which the sign-in question names beside them (10.7).
+  var conversationsMadeSignedOut: Int?
   var appearance: Appearance
   var updateRequiredAtSignIn = false
   var updateAlert = false
@@ -989,6 +991,7 @@ final class AppModel {
       counts[room] = decision.counts
       if room == .journal, let journalAdoptionPages { counts[room]?[Page.type] = journalAdoptionPages }
       if room == .roadmap, let roadmapsMadeSignedOut { counts[room]?[RoadmapEntry.type] = roadmapsMadeSignedOut }
+      if room == .roadmap, let conversationsMadeSignedOut { counts[room]?[RoadmapDomain.CoachThread.type] = conversationsMadeSignedOut }
     }
   }
 
@@ -1040,7 +1043,7 @@ final class AppModel {
 
   func setSignInSession(_ session: SignInSession?) {
     signInSession = session
-    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil
+    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil; conversationsMadeSignedOut = nil
     guard let session, !session.isComplete else { clearAdoptionAnswers(); return }
     if let data = preferences.data(forKey: "roomAdoption"),
       let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account {
@@ -1067,18 +1070,22 @@ final class AppModel {
       } catch { reportBoundary("auth_adopt", error: error) }
     }
     // Added or discarded, a roadmap made and deleted signed out stays deleted, so with none standing the work joins the
-    // account unasked, as the web's room answers it.
+    // account unasked, its conversations with it, as the web's room answers it. A conversation made and deleted is not named.
     if session.decisions.contains(where: { $0.product == Room.roadmap.rawValue }), adoptionAnswers[Room.roadmap.rawValue] == nil {
       do {
-        let standing = try runner.read(RoadmapEntry.scope) { try $0.repository(RoadmapEntry.self).all(in: .drawn).count { $0.parent == nil } }
+        let (standing, conversations) = try runner.read(RoadmapEntry.scope) {
+          (try $0.repository(RoadmapEntry.self).all(in: .drawn).count { $0.parent == nil }, try $0.repository(RoadmapDomain.CoachThread.self).all(in: .drawn).count)
+        }
         roadmapsMadeSignedOut = standing
+        conversationsMadeSignedOut = conversations
         if standing == 0 { adoptionAnswers[Room.roadmap.rawValue] = .add }
       } catch { reportBoundary("auth_adopt", error: error) }
     }
   }
 
   func clearAdoptionAnswers() {
-    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil; preferences.removeObject(forKey: "roomAdoption")
+    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil; conversationsMadeSignedOut = nil
+    preferences.removeObject(forKey: "roomAdoption")
   }
 
   func saveAdoptionAnswers(_ answers: [String: LineageAnswer], session: SignInSession) throws {

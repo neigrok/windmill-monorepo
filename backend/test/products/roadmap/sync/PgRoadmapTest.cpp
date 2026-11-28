@@ -10,6 +10,10 @@
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
 #include "test/testing.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 // Roadmap in the production composition over Postgres (roadmap-on-the-engine.md §7, §8.1): withheld, as a deployment
 // that leaves ROADMAP_ENGINE_ENABLED unset runs it, the account's roadmap reads as holding nothing and takes no write;
 // served, as production runs it, the same tables answer what they hold and admit a person's roadmap. Gym's and
@@ -182,4 +186,73 @@ TEST(a_roadmaps_activity_keeps_one_row_a_gesture_that_leaves_a_deed_with_who_mad
       [3, "A", "gesture:g-two", "Batch", {"commands": [
           {"kind": "RenameNode", "payload": {"id": "basics", "label": "Foundations"}},
           {"kind": "AddEdge", "payload": {"from": "ownership", "to": "traits"}}]}, ""]])")));
+}
+
+// Roadmap Coach §9 over Postgres: a conversation one replica writes reaches the account's other replica through the
+// server, and no other account's pull; the roadmap's death, written by that other replica, takes the conversation and
+// its messages from the tables.
+TEST(a_coach_conversation_reaches_every_replica_of_its_account_and_no_other_and_goes_with_its_roadmap) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world(test::WorldProduct::roadmap);
+  const Json::Value root = parseJson(R"({"t": "tree", "id": "t_00000000000000c1", "born": "1000:0:r_aaaaaaaaaaaa",
+      "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "seq": 1, "rc": 100, "ru": 100})");
+  Json::Value state = parseJson(R"({"epoch": "ep-1", "clock": {"ms": 3000, "counter": 0}, "accounts": {"A": {"name": "Ann"}, "B": {"name": "Bob"}},
+      "scopes": {"acct:A/roadmap": {"kind": "product", "owner": "A", "state": "alive", "seq": 1, "counters": {}}}})");
+  state["rows"]["acct:A/roadmap"].append(root);
+  state["scopes"]["acct:A/roadmap"]["digest"] = scopeDigest({root}).hex();
+  world.seed(state);
+  const auto served = productCatalog(RoadmapServing::served);
+  Admission admission(*served, world.store(), world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService sync(*served, world.store(), admission, clock);
+  TimeBudget budget(60'000);
+  auto pushed = [&](const std::string& replica, const std::string& intent) {
+    Json::Value request(Json::objectValue);
+    request["replica"] = replica;
+    request["account"] = world.account("A").str();
+    request["ackThrough"] = 0;
+    request["intents"].append(parseJson(intent));
+    return sync.push(Credential::sent(world.account("A")), jcs(request), budget).body["results"];
+  };
+  // Each record of `self/roadmap` the account's pull answers, as `<type> <id> <life>`, in that order.
+  auto pulled = [&](const std::string& account) {
+    const SyncReply reply = sync.pull(Credential::sent(world.account(account)), R"({"scopes": [{"scope": "self/roadmap", "cursor": null}]})");
+    std::vector<std::string> records;
+    for (const Json::Value& page : reply.body["pages"]) {
+      for (const Json::Value& row : page["rows"]) records.push_back(row["t"].asString() + " " + row["id"].asString() + " " + row["life"][0].asString());
+    }
+    std::sort(records.begin(), records.end());
+    Json::Value listed(Json::arrayValue);
+    for (const std::string& record : records) listed.append(record);
+    return jcs(listed);
+  };
+
+  const Json::Value opened = pushed("rp_000000000000000000000000000000c1", R"({"n": 1, "scope": "self/roadmap", "gestureId": "g-ask", "d": [
+      {"t": "coachThread", "id": "thread0c1", "born": "2000:0:r_cccccccccccc", "life": ["alive", "2000:0:r_cccccccccccc"],
+       "f": {"treeId": ["t_00000000000000c1", "2000:0:r_cccccccccccc"], "stepId": [null, "2000:0:r_cccccccccccc"],
+             "title": ["What should I do next?", "2000:0:r_cccccccccccc"]}},
+      {"t": "coachMessage", "id": "message0c1", "born": "2000:0:r_cccccccccccc", "life": ["alive", "2000:0:r_cccccccccccc"],
+       "f": {"threadId": ["thread0c1", "2000:0:r_cccccccccccc"], "role": ["person", "2000:0:r_cccccccccccc"],
+             "text": ["What should I do next?", "2000:0:r_cccccccccccc"], "at": [2000, "2000:0:r_cccccccccccc"]}},
+      {"t": "coachMessage", "id": "message0c2", "born": "2000:0:r_cccccccccccc", "life": ["alive", "2000:0:r_cccccccccccc"],
+       "f": {"threadId": ["thread0c1", "2000:0:r_cccccccccccc"], "role": ["coach", "2000:0:r_cccccccccccc"],
+             "replica": ["rp_000000000000000000000000000000c1", "2000:0:r_cccccccccccc"], "text": ["", "2000:0:r_cccccccccccc"],
+             "state": ["running", "2000:0:r_cccccccccccc"], "truncated": [false, "2000:0:r_cccccccccccc"],
+             "refusal": [null, "2000:0:r_cccccccccccc"], "at": [2000, "2000:0:r_cccccccccccc"]}}]})");
+
+  CHECK_EQ(jcs(opened), jcs(parseJson(R"([{"n": 1, "s": "ok", "seq": 2}])")));
+  CHECK_EQ(pulled("A"), jcs(parseJson(R"(["coachMessage message0c1 alive", "coachMessage message0c2 alive", "coachThread thread0c1 alive",
+      "tree t_00000000000000c1 alive"])")));
+  CHECK_EQ(pulled("B"), "[]");
+
+  const Json::Value deleted = pushed("rp_000000000000000000000000000000c2", R"({"n": 1, "scope": "self/roadmap", "d": [
+      {"t": "tree", "id": "t_00000000000000c1", "born": "1000:0:r_aaaaaaaaaaaa", "life": ["dead", "3000:0:r_dddddddddddd"]}]})");
+
+  CHECK_EQ(jcs(deleted), jcs(parseJson(R"([{"n": 1, "s": "ok", "seq": 3}])")));
+  const Json::Value after = world.dump();
+  Json::Value left(Json::arrayValue);
+  for (const Json::Value& row : after["rows"]["acct:A/roadmap"]) left.append(row["t"].asString() + " " + row["life"][0].asString());
+  CHECK_EQ(jcs(left), jcs(parseJson(R"(["tree dead"])")));
 }

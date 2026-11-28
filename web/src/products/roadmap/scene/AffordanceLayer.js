@@ -9,12 +9,12 @@ const PORT_COUNT = 2;
 const GRACE_MS = 260; // grace after deselect, so the plus stays reachable
 
 export class AffordanceLayer {
-  constructor(canvas, { camera, pick, onCreate, onConnect, onReconnect, onFadeNodes, onRestoreNodes } = {}) {
+  constructor(canvas, { camera, pick, loopsOf, onCreate, onConnect, onReconnect, onFadeNodes, onRestoreNodes } = {}) {
     this.onCreate = onCreate;
     this.container = document.createElement('div');
     this.container.className = 'st-affordances';
     canvas.parentElement.appendChild(this.container);
-    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, onConnect, onReconnect, onFadeNodes, onRestoreNodes });
+    this.connectGesture = new ConnectGesture(canvas, this.container, { camera, pick, loopsOf, onConnect, onReconnect, onFadeNodes, onRestoreNodes });
 
     this.plus = document.createElement('div');
     this.plus.className = 'st-plus';

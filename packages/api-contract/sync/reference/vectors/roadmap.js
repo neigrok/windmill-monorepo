@@ -346,15 +346,18 @@ function limits() {
   ];
 }
 
+// A conversation about R with a turn ended, its proposal and a write fate, and a conversation about all roadmaps.
+const conversations = () => [
+  rec('coachThread', 'thread0001', 7, { ...alive(a(2000)), f: { treeId: [R, a(2000)], title: ['Plan my week', a(2000)] } }),
+  rec('coachMessage', 'message0001', 7, { ...alive(a(2000)), f: { threadId: ['thread0001', a(2000)], role: ['person', a(2000)], text: ['Plan my week', a(2000)], at: [2000, a(2000)] } }),
+  rec('coachMessage', 'message0002', 8, { ...alive(a(2100)), f: { threadId: ['thread0001', a(2100)], role: ['coach', a(2100)], text: ['Done.', a(2200)], state: ['completed', a(2200)], at: [2100, a(2100)] } }),
+  rec('coachProposal', 'proposal001', 8, { ...alive(a(2200)), f: { threadId: ['thread0001', a(2200)], messageId: ['message0002', a(2200)], treeId: [R, a(2200)] } }),
+  rec('coachWriteFate', 'fate000001', 8, { ...alive(a(2300)), f: { messageId: ['message0002', a(2300)], receipt: [0, a(2300)], fate: ['undone', a(2300)] } }),
+  rec('coachThread', 'thread0002', 8, { ...alive(a(2400)), f: { treeId: [null, a(2400)], title: ['All roadmaps', a(2400)] } }),
+];
+
 function coach() {
-  const turn = stateWith((scopes) => scopes[ACCOUNT].rows.push(
-    rec('coachThread', 'thread0001', 7, { ...alive(a(2000)), f: { treeId: [R, a(2000)], title: ['Plan my week', a(2000)] } }),
-    rec('coachMessage', 'message0001', 7, { ...alive(a(2000)), f: { threadId: ['thread0001', a(2000)], role: ['person', a(2000)], text: ['Plan my week', a(2000)], at: [2000, a(2000)] } }),
-    rec('coachMessage', 'message0002', 8, { ...alive(a(2100)), f: { threadId: ['thread0001', a(2100)], role: ['coach', a(2100)], text: ['Done.', a(2200)], state: ['completed', a(2200)], at: [2100, a(2100)] } }),
-    rec('coachProposal', 'proposal001', 8, { ...alive(a(2200)), f: { threadId: ['thread0001', a(2200)], messageId: ['message0002', a(2200)], treeId: [R, a(2200)] } }),
-    rec('coachWriteFate', 'fate000001', 8, { ...alive(a(2300)), f: { messageId: ['message0002', a(2300)], receipt: [0, a(2300)], fate: ['undone', a(2300)] } }),
-    rec('coachThread', 'thread0002', 8, { ...alive(a(2400)), f: { treeId: [null, a(2400)], title: ['All roadmaps', a(2400)] } }),
-  ));
+  const turn = stateWith((scopes) => scopes[ACCOUNT].rows.push(...conversations()));
   const message = (f) => ({ scope: 'self/roadmap', d: [{ t: 'coachMessage', id: 'message0002', born: a(2100), f }] });
   return [
     admitted('a message\'s text is final once its writer ended the turn: turn-final', turn, message({ text: ['Changed', a(5000)] })),
@@ -363,6 +366,30 @@ function coach() {
     admitted('a conversation\'s death kills its messages, their write fates and its proposals, and no other conversation', turn,
       { scope: 'self/roadmap', d: [{ t: 'coachThread', id: 'thread0001', born: a(2000), life: ['dead', a(5000)] }] }),
     admitted('a message\'s death kills its write fates', turn, { scope: 'self/roadmap', d: [{ t: 'coachMessage', id: 'message0002', born: a(2100), life: ['dead', a(5000)] }] }),
+  ];
+}
+
+// Roadmap Coach §9: a roadmap's death takes the conversations about it and about every subtree it takes, and the
+// proposals about them in a conversation about all roadmaps; a conversation about all roadmaps, and one about another
+// roadmap, stay.
+function roadmapDeaths() {
+  const state = stateWith((scopes) => scopes[ACCOUNT].rows.push(...conversations(),
+    rec('coachThread', 'thread0003', 9, { ...alive(a(2500)), f: { treeId: [S, a(2500)], stepId: ['lifetimes', a(2500)], title: ['Lifetimes?', a(2500)] } }),
+    rec('coachMessage', 'message0003', 9, { ...alive(a(2500)), f: { threadId: ['thread0003', a(2500)], role: ['person', a(2500)], text: ['Lifetimes?', a(2500)], at: [2500, a(2500)] } }),
+    rec('coachThread', 'thread0004', 9, { ...alive(a(2600)), f: { treeId: [Y, a(2600)], title: ['Reading list', a(2600)] } }),
+    rec('coachProposal', 'proposal002', 9, { ...alive(a(2700)), f: { threadId: ['thread0002', a(2700)], messageId: ['message0002', a(2700)], treeId: [R, a(2700)] } }),
+    rec('coachProposal', 'proposal003', 9, { ...alive(a(2800)), f: { threadId: ['thread0002', a(2800)], messageId: ['message0002', a(2800)], treeId: [Y, a(2800)] } }),
+  ));
+  const death = (tree, born, stamp, more = []) => ({ scope: 'self/roadmap', d: [{ t: 'tree', id: tree, born, life: ['dead', stamp] }, ...more] });
+  const killed = (t, id, born) => ({ t, id, born, life: ['dead', a(5000)] });
+  return [
+    admitted('a root\'s death kills the conversations about it and about every subtree under it, with their messages, write fates and proposals, and its proposals in a conversation about all roadmaps', state,
+      death(R, a(1000), a(5000))),
+    admitted('a root\'s death the device wrote with its conversations and proposals takes nothing more of Coach\'s', state,
+      death(R, a(1000), a(5000), [killed('coachThread', 'thread0001', a(2000)), killed('coachThread', 'thread0003', a(2500)), killed('coachProposal', 'proposal001', a(2200)),
+        killed('coachProposal', 'proposal002', a(2700))])),
+    admitted('the server\'s door deleting a subtree kills the conversations about it and every subtree under it, and none about the root', state,
+      death(S, srv(2000), null), DOOR),
   ];
 }
 
@@ -430,12 +457,60 @@ function clientVectors() {
   const redirected = stepsVector('a step that already owns a subtree answers it: the write map renames the proposed subtree, and the work queued in it follows', {
     device, steps: [...queued, { op: 'pushResponse', deviceNow: 6000, response: owner.response }, { op: 'push', deviceNow: 6001 }],
   });
-  return [settled, redirected];
+
+  const followed = conversationAbout(NEW, 5001);
+  const asked = [planted('ownership', R, NEW, 5000), followed.opened, followed.proposed, { op: 'push', deviceNow: 5003 }];
+  const joined = served(server, runSteps({ device, steps: asked }, roadmapRegistry).returns.at(-1), 6000);
+  const following = stepsVector('a conversation and a pending proposal queued about a proposed subtree follow the write map to the subtree the step owns', {
+    device, steps: [...asked, { op: 'pushResponse', deviceNow: 6000, response: joined.response }, { op: 'push', deviceNow: 6001 }],
+  });
+
+  const lost = conversationAbout(Z, 5001);
+  const everyRoadmap = { op: 'commit', scope: 'self/roadmap', deviceNow: 5003, changes: [
+    { op: 'create', t: 'coachThread', id: 'thread0010', f: { treeId: null, stepId: null, title: 'What next?' } }] };
+  const refusing = [planted('basics', R, Z, 5000), lost.opened, lost.ended, everyRoadmap, { op: 'push', deviceNow: 5004 }];
+  const spent = served(server, runSteps({ device, steps: refusing }, roadmapRegistry).returns.at(-1), 6000);
+  const folded = stepsVector('a refused subtree folds the conversation about it with the messages its own entry holds and a later update of one, and the next push sends only the conversation about every roadmap', {
+    device, steps: [...refusing, { op: 'pushResponse', deviceNow: 6000, response: spent.response }, { op: 'push', deviceNow: 6001 }],
+  });
+
+  const chain = [planted('basics', R, Z, 5000),
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5001, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachThread', id: 'thread0019', f: { treeId: Z, stepId: null, title: 'Chain' } },
+      { op: 'create', t: 'coachMessage', id: 'message0019', f: { threadId: 'thread0019', role: 'coach', replica: REPLICA, at: 5001 } },
+      { op: 'create', t: 'coachWriteFate', id: 'fate00000019', f: { messageId: 'message0019', receipt: 1, fate: 'undone' } },
+      { op: 'create', t: 'coachThread', id: 'thread0020', f: { treeId: null, stepId: null, title: 'Free' } },
+      { op: 'create', t: 'coachMessage', id: 'message0020', f: { threadId: 'thread0020', role: 'person', text: 'Hi', at: 5001 } }] },
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5002, opts: { atomic: true }, changes: [
+      { op: 'update', t: 'coachWriteFate', id: 'fate00000019', f: { code: 'x' } },
+      { op: 'update', t: 'coachMessage', id: 'message0020', f: { text: 'Hello' } }] },
+    { op: 'push', deviceNow: 5003 }];
+  const chainAnswer = served(server, runSteps({ device, steps: chain }, roadmapRegistry).returns.at(-1), 6000);
+  const chained = stepsVector('a chain of three Coach records in one entry folds whole with a later update of its last; the independent conversation and its message stay and are sent', {
+    device, steps: [...chain, { op: 'pushResponse', deviceNow: 6000, response: chainAnswer.response }, { op: 'push', deviceNow: 6001 }],
+  });
+  return [settled, redirected, following, folded, chained];
+}
+
+// A turn about `tree` as roadmap's domain writes it: the conversation with the person's question and Coach's message in
+// one act, then Coach's answer ending the turn, or a pending proposal on it in one act.
+function conversationAbout(tree, deviceNow) {
+  const thread = { op: 'create', t: 'coachThread', id: 'thread0009', f: { treeId: tree, stepId: null, title: 'What goes in here?' } };
+  const question = { op: 'create', t: 'coachMessage', id: 'message0008', f: { threadId: 'thread0009', role: 'person', text: 'What goes in here?', at: deviceNow } };
+  const answer = { op: 'create', t: 'coachMessage', id: 'message0009', f: { threadId: 'thread0009', role: 'coach', replica: REPLICA, at: deviceNow } };
+  return {
+    opened: { op: 'commit', scope: 'self/roadmap', deviceNow, opts: { atomic: true }, changes: [thread, question, answer] },
+    ended: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
+      { op: 'update', t: 'coachMessage', id: 'message0009', f: { state: 'completed', text: 'Start with the clouds.' } }] },
+    proposed: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachProposal', id: 'proposal0009', f: { treeId: tree, threadId: 'thread0009', messageId: 'message0009', base: [], changes: [], state: 'pending' } },
+      { op: 'update', t: 'coachMessage', id: 'message0009', f: { proposalId: 'proposal0009' } }] },
+  };
 }
 
 export function files() {
   return {
-    'roadmap/admit.json': [...commands(), ...visibilities(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach()],
+    'roadmap/admit.json': [...commands(), ...visibilities(), ...inverses(), ...consequences(), ...revivals(), ...access(), ...guides(), ...limits(), ...coach(), ...roadmapDeaths()],
     'roadmap/client.json': clientVectors(),
   };
 }

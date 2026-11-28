@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { UnlockRules } from '../../../../src/products/roadmap/model/UnlockRules.js';
+import { domainReading } from '../../../../src/products/roadmap/model/domainReads.js';
 
 const FIXTURE_URL = new URL('./dogfood-tree.json', import.meta.url);
 
@@ -20,5 +20,5 @@ export function loadDogfoodTree() {
   const progress = {
     completed: new Set(data.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
   };
-  return { tree, progress, states: UnlockRules.derive(tree, progress) };
+  return { tree, progress, states: domainReading(tree, progress).states };
 }

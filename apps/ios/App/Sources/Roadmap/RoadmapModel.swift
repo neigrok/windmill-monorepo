@@ -49,8 +49,6 @@ final class RoadmapModel {
     let deletes: Bool
     // The roadmap the step opens, or the subtree it owns, as the room shows it; none for an ordinary step.
     let opening: Opened?
-    // The owner's Done mark on the step, which its opening sets aside until it is detached.
-    let marked: Bool
 
     var id: String { step.id }
   }
@@ -139,6 +137,8 @@ final class RoadmapModel {
     let legend: RoadmapLegend
     // Its guide and the guides of the roadmaps above it, as the domain reads them.
     let guides: [Guide]
+    // The person owns it: a reader's cover offers no act on it and holds no mark of theirs.
+    let owned: Bool
 
     // Nil for a roadmap that does not stand or is not read yet. A roadmap the person does not own, on a reader's cover,
     // offers no Complete, Reset or Delete on any step.
@@ -158,8 +158,7 @@ final class RoadmapModel {
           step: held, card: card, kind: owners[Array(held.color.utf8)],
           opensStanding: read.map { $0.opening.kind == .pointer && account.location(of: $0.opening.tree).standing == .standing } ?? false,
           completes: owned && card.column == .upNext && read == nil, resets: owned && card.column == .done && read == nil,
-          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true), opening: opening,
-          marked: owned && opening.map { $0.face != .complete } == true && tree.mark(on: held.id)?.isComplete == true))
+          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true), opening: opening))
       }) { first, _ in first }
       id = ID(RecordID(listed.id))
       self.listed = listed
@@ -170,6 +169,7 @@ final class RoadmapModel {
       self.workspaces = workspaces
       self.legend = legend
       guides = account.guides(listed.id)
+      self.owned = owned
       groups = [BoardRead.Column.Name.upNext, .locked, .done].compactMap { (name: BoardRead.Column.Name) -> Group? in
         let held = (board.columns.first { $0.name == name }?.ids ?? []).compactMap { (step: String) -> Row? in rows[Array(step.utf8)] }
         return held.isEmpty ? nil : Group(id: name, rows: held)
@@ -188,8 +188,12 @@ final class RoadmapModel {
 
     func step(_ id: String) -> Row? { rows[Array(id.utf8)] }
 
-    // What a delete of these steps or a Reset of one would do, as the domain reads it.
-    func effects(of steps: some Sequence<String>) -> EffectsRead { EffectsRead(graph, ids: Array(steps)) }
+    // What a delete of these steps, a Reset of one or a draft's links of one would do, as the domain reads it.
+    func effects(of steps: some Sequence<String>, links: EffectsRead.Links? = nil) -> EffectsRead { EffectsRead(graph, ids: Array(steps), links: links) }
+
+    // The owner's Done mark on a step its opening sets aside, until it is detached: the steps it alone would open, which
+    // stand Locked meanwhile, as the domain reads it; none on a reader's cover or where the step holds no such mark.
+    func setAside(of row: Row) -> [String]? { owned ? effects(of: [row.id]).setAside : nil }
 
     // A step's page; none for a step the roadmap does not hold.
     func page(of step: String) -> OpenStep? {

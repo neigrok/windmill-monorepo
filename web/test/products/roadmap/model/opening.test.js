@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Opening, Openings, TreePlace } from '../../../../src/products/roadmap/model/Opening.js';
+import { Opening, Openings, TreePlace, takesMark } from '../../../../src/products/roadmap/model/Opening.js';
 
 const facts = (opening) => ({ ...opening, dangling: opening.dangling, leads: opening.leads, face: opening.face, gauge: opening.gauge });
 
@@ -270,3 +270,13 @@ test('a tree read says where the tree sits: a root has no way up, a subtree its 
   ].map((answer) => TreePlace.fromWire(answer)), [null, null, null, null, null]);
 });
 
+test('no step that opens a tree takes a hand mark, whatever its tree has come to', () => {
+  const openings = [
+    Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false }),
+    Opening.fromWire({ treeId: 't_read', title: 'Reading list', state: 'complete', done: 12, total: 12, loop: false }),
+    Opening.fromWire({ treeId: 't_gone', missing: true }),
+    Opening.unread('t_opened'),
+  ];
+  assert.deepEqual(openings.map((opening) => takesMark({ id: 'sail', opening })), [false, false, false, false]);
+  assert.equal(takesMark({ id: 'run' }), true);
+});

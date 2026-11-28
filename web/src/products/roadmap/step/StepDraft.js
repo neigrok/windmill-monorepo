@@ -1,4 +1,4 @@
-import { COLUMN_OF_STATE, UnlockRules } from '../model/UnlockRules.js';
+import { COLUMN_OF_STATE, domainReading, readEffects } from '../model/domainReads.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { COLUMN_TITLES, COMPOSER, PICKER, STEP_DETAIL, afterStep, placementPreview } from '../copy.js';
 
@@ -34,15 +34,16 @@ export class StepDraft {
     return new StepDraft({ ...this, prerequisites });
   }
 
+  // Where the draft lands, read from the room's reading of the roadmap: Done where the step it edits stands complete,
+  // else Locked while a step it requires is not.
   placement(tree, completed) {
     const draft = this.reconcile(tree);
-    const nodes = [...tree.nodes, draft];
-    const states = UnlockRules.derive({ nodes }, { completed });
+    const reading = domainReading(tree, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
-    const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
+    const unmet = prerequisites.filter((step) => reading.states.get(step.id) !== 'complete');
     const unmetLabels = unmet.map((step) => step.label?.trim() ? step.label : STEP_DETAIL.unnamed);
     const preview = placementPreview({ prerequisites, unmet: unmetLabels });
-    const column = COLUMN_OF_STATE[states.get(draft.id)];
+    const column = reading.completed.has(draft.id) ? 'done' : unmet.length ? 'locked' : 'upNext';
     return { column, body: column === 'done' ? null : preview.body };
   }
 
@@ -65,9 +66,10 @@ export class CreateStepRequest {
   }
 }
 
+// The steps the step `editing` may not come to require: itself and every step after it, as the domain reads its loops.
 export function blockedPrerequisites(tree, editing) {
   if (!editing || !tree.nodesById.has(editing)) return new Set();
-  return new Set([editing, ...tree.descendantsOf(editing).map((step) => step.id)]);
+  return new Set(readEffects(tree, [editing]).loops?.requires ?? []);
 }
 
 export class PrerequisiteChoices {
@@ -81,7 +83,7 @@ export class PrerequisiteChoices {
     this.selectedIds = Object.freeze([...new Set(selected)].filter((id) => tree.nodesById.has(id) && !this.blockedIds.has(id)));
 
     const chosen = new Set(this.selectedIds);
-    const states = UnlockRules.derive(tree, { completed });
+    const { states } = domainReading(tree, { completed });
     const labels = new Map(tree.nodes.map((step) => [step.id, step.label?.trim() ? step.label : STEP_DETAIL.unnamed]));
     const dropped = selected.filter((id) => this.blockedIds.has(id));
     this.revalidated = Object.freeze([...new Map([

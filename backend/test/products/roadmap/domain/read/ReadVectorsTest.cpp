@@ -326,13 +326,23 @@ Json::Value legendJson(const LegendRead& legend) {
     entry["others"] = strings(collision.others);
     out["collisions"].append(entry);
   }
-  out["shown"] = Json::Value(Json::arrayValue);
-  for (const ShownHue& shown : legend.shown()) {
-    Json::Value entry(Json::objectValue);
-    entry["hue"] = shown.hue;
-    entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
-    out["shown"].append(entry);
-  }
+  const auto hues = [](const std::vector<ShownHue>& entries, bool counted) {
+    Json::Value list(Json::arrayValue);
+    for (const ShownHue& shown : entries) {
+      Json::Value entry(Json::objectValue);
+      entry["hue"] = shown.hue;
+      entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
+      if (counted) entry["steps"] = Json::UInt64(shown.steps);
+      list.append(entry);
+    }
+    return list;
+  };
+  out["shown"] = hues(legend.shown(), true);
+  out["choices"] = hues(legend.choices(), false);
+  const std::optional<std::string> free = legend.freeHue();
+  out["free"] = free ? Json::Value(*free) : Json::Value(Json::nullValue);
+  out["filters"] = hues(legend.filters(), false);
+  out["removable"] = strings(legend.removable());
   return out;
 }
 
@@ -364,11 +374,12 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
 }
 
 // The files a device claims alone: its Board, landing, replica, Activity and effects reads, its gestures and their Undo
-// scenes, and the pinned rule book and values.
+// scenes, a Coach turn's records, a proposal's Apply and Reject, and the pinned rule book and values.
 const std::set<std::string> kDevices{"board.json",             "landing.json",           "replica.json",
                                      "activity.json",          "effects.json",           "roadmaps-actions.json",
                                      "steps-actions.json",     "kinds-actions.json",     "progress-actions.json",
                                      "workspace-actions.json", "landing-actions.json",   "undo.json",
+                                     "conversation-actions.json",                        "apply-actions.json",
                                      "rules.json",             "values.json"};
 
 }

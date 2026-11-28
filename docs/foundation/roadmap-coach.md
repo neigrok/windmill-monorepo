@@ -9,13 +9,25 @@ roadmap nodes can cite them.
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
-the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5) and the direct writes
-(§6), in `web/src/products/roadmap/domain/abilities/`, which claim every vector but the proposal's; and
-the tool host that carries the abilities out through the room's doors, in
-`web/src/products/roadmap/coach/toolHost.js`. On the iPhone the standing roadmap, the read abilities
-and the direct writes are built, which claim every vector but the context's and the proposal's, with
-the tool host's executor over the phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
-No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+the standing roadmap (D-2), the read abilities (§4, §5), the context (D-8, §5), the direct writes
+(§6) and the proposal's fold and ability (§7), in `web/src/products/roadmap/domain/abilities/`, which claim every
+vector; and the tool host that carries the reads and the direct writes out, the writes through the room's doors, in
+`web/src/products/roadmap/coach/toolHost.js`, which runs no proposal yet. On the iPhone the standing roadmap, the read abilities,
+the direct writes and the proposal's fold and ability are built, which claim every vector but the context's, with
+the tool host's executor over the phone's copy, which runs no proposal yet, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`.
+Its records are built (§9): the four types in roadmap's registry, which the server stores and admits, a roadmap's death
+taking the conversations and proposals about it whatever made it, and, on the web and the iPhone, the records as
+roadmap's entities with a turn's opening, end and withdrawal, the read of a conversation, a proposal minted, which
+replaces the one pending about its roadmap, the read of that pending one, and a roadmap's delete taking its
+conversations, in `web/src/products/roadmap/domain/conversation.js` and
+`apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
+`packages/api-contract/roadmap/domain/conversation-actions.json`; and a proposal decided, applied as the person's own act
+and settled, rejected, and marked undone once its Undo took something back (§7), in
+`web/src/products/roadmap/domain/apply.js` and `apps/ios/Domain/Sources/RoadmapDomain/Coach/Apply.swift`, proven by
+`packages/api-contract/roadmap/domain/apply-actions.json` and the `Roadmap Coach §7` scenes of `undo.json`. No surface offers
+Apply or Reject yet. Signed out, the records reach the account at sign-in with
+the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
+either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -245,8 +257,8 @@ ability's result as data and never as instructions.
 - Coach reads what the person sees. An ability answers from the standing roadmap (D-2), including
   writes the server has not confirmed, so Coach never names a step the person has just deleted and
   never gives a state the screen contradicts.
-- A step's state (locked, available, complete) is the one the room shows, from the function that
-  derives it today, `UnlockRules.derive`, over the graph as the room draws it.
+- A step's state (locked, available, complete) is the one the room shows, the domain's graph's
+  (`FollowGraph`, which the room reads through `model/domainReads.js`), over the graph as the room draws it.
 - A step that opens another roadmap is complete when that roadmap is. Where the device has not
   finished pulling the opened roadmap, or holds nothing of it, the step's state is `unknown`. So it
   is where the opened roadmap's own completion waits on such a roadmap: it is not complete, and each
@@ -262,7 +274,10 @@ ability's result as data and never as instructions.
   Loops and dead ends among the roadmaps that steps open are reported only among roadmaps the
   device holds.
 - A result is at most 16 KiB, the catalog's `maxBytes`; a longer one is paged, never cut (§5.2).
-- The tool host notes the stamp of every register a turn's context and reads returned. §7 uses them.
+- The tool host notes the stamps of the registers a turn's context and reads returned, a later read's over an earlier
+  one's: of each step one answers, the life and every field of its record, its mark and the life of each link into it;
+  and of a roadmap's header, its kinds'. The context answers every step it gives a line, its completions among them.
+  §7 uses them.
 
 ### §5.1 What each read answers
 
@@ -453,12 +468,13 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 | `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `update_node` that names no field, a text a direct write sends that the domain cannot store, one that holds U+0000 or a lone surrogate or a subtask left blank, which names the step the write names, none for a new one |
 | `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
-| `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step` |
+| `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step`. An Apply is refused so, writing nothing, where its changes pass a cap only by the steps under such deletes, which free their slots when their holds end (§7) |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
 | `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text, links or subtasks, the roadmap's steps, links, subtasks or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps, links or subtasks is full, for `create_node`, `connect` and `update_node` alike |
 | `unknown-step` | A step the roadmap does not hold, or a ref no earlier change gave |
 | `closes-cycle` | A link, or a merge, would close a loop |
+| `takes-every-start` | A proposal's `remove_step` would remove the roadmap's last starting step, a present step that follows nothing. It is the room's rule, which its own delete keeps ("A roadmap keeps one starting step", board 02.12), held for Coach by the domain's `effects` read, the read the room's delete asks. A merge and a split pass: no control of the room makes either, and a split's parts or a merge's survivor stand where the step stood |
 | `unknown-kind` | A kind the roadmap's legend does not show, one it does not have or one wearing a hue an earlier kind owns, or a ref no earlier `add_kind` gave |
 | `address-not-allowed` | A web link's address is not one `roadmap-link-urls.json` shows |
 | `opens-roadmap` | A mark on a step that opens a roadmap: it is complete when that roadmap is, or by its own mark where the roadmap it points to no longer stands, and the room offers no mark on it either way |
@@ -482,8 +498,8 @@ or a required one left out, is `invalid-input`.
 | `set_kind` | `nodeId`, `kind` | | The step takes the kind's hue |
 | `connect` | `nodeId`, `prerequisiteId` | | A link added: `nodeId` is the step that waits, `prerequisiteId` the step it waits on |
 | `disconnect` | `nodeId`, `prerequisiteId` | | That link removed |
-| `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it |
-| `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed |
+| `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it. A link is between the two as the follow graph reads one, through deleted steps ([Roadmap on the sync engine](roadmap-on-the-engine.md) D-5): one that would have `nodeId` follow itself through deleted steps alone is dropped, as a direct one is |
+| `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed, and its links with it |
 | `set_progress` | `nodeId`, `status` | | The step marked `complete` or `none` |
 | `add_kind` | `ref`, `label`, `hue` | `description` | A new kind |
 | `rename_kind` | `kind`, `label` | | A kind's label |
@@ -498,12 +514,35 @@ or a required one left out, is `invalid-input`.
   record's `changes` hold those ids: a new step's under `nodeId`, a new kind's under `kind`, and
   every field that named the ref names its id.
 - **The fold.** The ability folds the changes in order over a scratch copy of the standing roadmap,
-  validating each as §6 validates a write, and refuses a set that could not be applied. A change
-  that names a step under a delete the person can still undo is `roadmap-not-ready`. A kind takes no
-  hue another kind wears, checked at each change as the room's recolour checks it, so two kinds do
-  not swap hues in one proposal. A `merge` whose two steps are one is `invalid-input`. It also
-  refuses, as `roadmap-changed`, a set that touches a register which has moved since this turn read
-  it, so the model reads again and never proposes over an edit it has not seen.
+  validating each over the copy as the changes before it left it, and refuses a set that could not be
+  applied. A new step takes the order key the room's own gives a new step, after the steps its first
+  prerequisite leads to, and a split's parts each after the one before. The call is checked in this
+  order, and the first failure refuses it:
+  1. the Shape rule over the whole input, as the gate checks it first;
+  2. the roadmap and the person (§6, rules 1 and 2): `unknown-roadmap`, `roadmap-unavailable`,
+     `not-owner`; §6's rule 3 is no rule of a proposal (§10);
+  3. the count of changes;
+  4. each change, at its index:
+     1. a step it names under a delete the person can still undo: `roadmap-not-ready`;
+     2. the rules of its input, `invalid-input`: its op's row, a `merge` whose two steps are one, a
+        `describe` that sends neither field, a `split` of fewer than two parts, a ref given twice, and a
+        text the domain cannot store;
+     3. a value past its cap, `over-limit`;
+     4. a web link's address, `address-not-allowed`;
+     5. a new id the copy holds, `invalid-input`, and the steps and kinds it names, `unknown-step` and
+        `unknown-kind`;
+     6. the roadmap's counts of steps, links and kinds, `over-limit`;
+     7. its own rule of the graph: `takes-every-start` for a `remove_step`; `closes-cycle` for a
+        `merge`, a `split` or a `connect`, whose link the step already follows closes nothing and
+        changes nothing; and `hue-taken` for a kind, checked at each change as the room's recolour
+        checks it, so two kinds do not swap hues in one proposal;
+     8. `roadmap-changed`: a register it touches, whether it writes it or only names it, as a
+        `disconnect` names its link, that the turn read at another stamp than the copy holds now (§5), so
+        the model reads again and never proposes over an edit it has not seen. A register the turn never
+        read is taken at the copy's stamp;
+     9. the marks, `opens-roadmap` and `step-locked`, as `set_progress` checks them;
+     10. `no-change`, where it writes nothing over the scratch;
+  5. the record's size.
 - **The record's size.** A set of more than 100 changes is `over-limit`, and so is a minted record
   whose `changes` pass 65,536 bytes or whose `base` passes 262,144, as the sync registry caps them
   (§6, rule 4).
@@ -520,46 +559,86 @@ or a required one left out, is `invalid-input`.
 
 A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[], state, undone}`.
 
-- `base` names, for every step a change mentions, whether the step exists and the stamp of its
-  being there; for every register a change writes, that register's stamp; and for `set_progress`,
-  the mark's. An `add_step` records that its id is unheld. They are the stamps the turn's reads
-  returned, read from the copy, so they exist for a roadmap that has never reached the server.
-- `state` is `pending`, then one of `applied`, `rejected`, `stale` or `replaced`, and never moves
-  again. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
-  field, and `applied` outranks the other three.
-- `undone` is set once, when the person undoes an applied proposal.
-- A roadmap has one pending proposal. Minting another marks the earlier one `replaced`. Where two
-  devices each mint one before they sync, the one born later stays pending, and any device that
-  holds both marks the earlier `replaced`.
+- `base` is a list of registers, `{t, id, register, stamp}`, in the order the changes first touch
+  them: for every step a change mentions, the stamp of its being there, its `life`; for every register
+  a change writes, that register's stamp; for a `disconnect`, its link's, whether or not it writes it;
+  and for `set_progress`, the mark's. `t` is `node`, `edge`,
+  `kind` or `progress`, `id` the record's id (`[from, to]` for a link), `register` `life` or a field,
+  and `stamp` the copy's, null for a record the copy does not hold. A new step or kind records its
+  id's life unheld, and the records it makes are its alone. A recolour's base is the kind's hue: the
+  room's recolour is one command, which repaints the steps that wear it. They are the stamps the
+  turn's reads returned, read from the copy, so they exist for a roadmap that has never reached the
+  server.
+- `state` is `pending`, then one of `applied`, `rejected`, `stale` or `replaced`, and never goes back
+  to `pending`. The four outrank `pending` when two devices' records meet, as the sync engine ranks a
+  field, and `applied` outranks the other three. Of `rejected`, `stale` and `replaced`, written on two
+  devices before they sync, the later written stands, as the engine joins equal ranks.
+- `undone` is set once, by the Undo of an applied proposal that took something back. Nothing writes it while it is
+  false, since the registry keeps its first writer's.
+- A roadmap has one pending proposal. Minting another marks every earlier one `replaced`, in the
+  write that makes it. Where two devices each mint one before they sync, the one born later stays
+  pending: a device reads the latest-born pending proposal about a roadmap as its pending one and
+  every earlier one as replaced, and the next one minted about the roadmap writes each `replaced`, as an Apply
+  or a Reject of an earlier one writes it.
+- Coach's message names the proposal it minted (`proposalId`, §9). In a conversation about all
+  roadmaps a turn may mint one for each of two roadmaps, and a message then carries more than one;
+  the card reads a message's proposals by their `messageId`.
 
-**Apply**, pressed by the person on the review:
+**Apply**, pressed by the person on the review, is the domain's `ApplyProposal`
+(`web/src/products/roadmap/domain/apply.js`, `RoadmapDomain/Coach/Apply.swift`), proven by
+`packages/api-contract/roadmap/domain/apply-actions.json`:
 
-1. The record must be `pending`. The device writes a row of its own, `applying`, naming the
-   proposal. A proposal with such a row on this device is not applied a second time.
+1. Only a pending proposal moves. One that is not pending, or whose `applying` row this device holds,
+   is left as it stands, and nothing is written. A pending one that is not its roadmap's pending one,
+   where two devices each minted one before they synced, becomes `replaced`, and nothing else is
+   written.
 2. The proposal is out of date when anything in `base` differs from the copy: a stamp that is not
    the one recorded, a step that has gone or come. The changes are then folded and validated again
-   over the standing roadmap as it is now; a set that no longer validates is out of date too. An
-   out-of-date proposal becomes `stale` and nothing is written.
+   over the standing roadmap as it is now, read of the proposal's roadmap and of the roadmaps its
+   reading reaches alone; a set that no longer validates is out of date too. An out-of-date proposal
+   becomes `stale` and nothing is written to the roadmap. A state that passes by itself never makes a
+   proposal stale: Apply is refused and writes nothing where the device has not finished bringing the
+   roadmap (`roadmap-unavailable`), or where the changes pass a cap only by the steps under a delete
+   the person can still undo (`roadmap-not-ready`). Apply of a proposal about a roadmap the person's
+   list no longer holds is refused as gone, and writes nothing.
 3. Otherwise the folded result is reduced to one write for each register and written as one act on
-   the device: one gesture over the roadmap's scope, for the structure, and the person's overlay of
-   it, for the marks (Roadmap on the sync engine K-2). The act's stamp is written to the device's
-   row.
-4. The record becomes `applied`, and the row is removed.
-5. Undo is offered for 6 s in the room's band. It reverts the act and sets `undone`. An undone
-   proposal is not offered again; the person asks Coach for another.
+   the device (Roadmap on the sync engine K-2). First comes the room's recolour of each kind the copy
+   holds, one `roadmap.recolourKind` each, in the changes' order. Then the structure, one gesture over
+   the roadmap's scope in as many intents as an import of it takes. Then the removed steps' deaths,
+   held 9 s as every step's delete is, so an Apply that removes a step is held. Last, the person's
+   overlay, for the marks. In the same transaction the device writes its own row
+   `applying:<proposal>`, whose `stamp` is null: written with the act, the row's being there says the
+   act landed.
+4. The record becomes `applied`, and the row is removed (`SettleApplying`), in a write of its own. The
+   record's state is no entry of the act, so an Undo in the act's hold cancels the act and leaves the
+   state as it is.
+5. Undo is offered for 6 s in the room's band: the kit's Undo of the act, across structure and marks.
+   A held Apply is cancelled in place; any other is restored, drawn at once and settled as its writes
+   are. The Undo reads the legend as it would leave it, each kind the act recoloured back on its hue
+   and each kind it made taken away, and is refused, taking nothing back, only where a kind outside
+   the act has come to wear a hue it would give back. Where the Undo took something back as the device
+   draws it, the record takes `undone` (`ProposalUndone`). An undone proposal is not offered again;
+   the person asks Coach for another.
 
 - **INV-3.** A proposal applies whole or not at all on the device. On the wire it is the person's
   own writes: structure and marks are separate intents, and a large act travels as several.
 - **INV-4.** An applied proposal is never set aside because the roadmap changed elsewhere. It merges
   as any two edits do, and nothing about a later sync returns it to the person for a second look.
-- A row found `applying` when the engine starts is settled by its act: the record becomes `applied`
-  when the copy holds that stamp, and the row is removed either way.
+- A row found `applying`, after a crash or written in another tab, is settled by its act, which landed
+  with it: the record becomes `applied`, and the row is removed.
 - Two devices that both apply one proposal before they sync write the same changes with the same
-  ids, and they merge as one.
-- Reject marks the record `rejected` and writes nothing to the roadmap.
-- A roadmap that lives on the device can take a new id when an account claims it. The claim of the
-  roadmap comes first; the conversations and proposals about it then take the new id, which those
-  fields allow.
+  ids. Its links and marks merge as one. The later device's creation of each new step and kind is
+  refused `id-taken`, since its twin was born at the other device's stamp ([sync engine](engine.md)
+  §4.3), and the step stands once, as the first device made it. Where one of them undoes it, `undone`
+  says that device took back what it could: the other device's writes that came after its own stand.
+- Reject (`RejectProposal`) marks a pending record `rejected` and writes nothing to the roadmap. It
+  leaves a proposal that is not pending as Apply does.
+- A roadmap made signed out keeps its id when a sign-in adds it to an account, and the conversations
+  and proposals that name it keep naming it: they are records of the same signed-out work, which one
+  answer adds or discards (§11). A subtree whose creation the server answers with the subtree its step
+  already owns takes that subtree's id; by [sync engine](engine.md) §7.7 a global type's mapping renames
+  its id in every scope, and `treeId` is a reference to `tree`, so the conversations and proposals
+  queued about it follow, as a vector of the sync corpus's `roadmap/client.json` holds.
 
 ## §8 The turn
 
@@ -587,6 +666,10 @@ minted ids has no part here (§6).
   mark does.
 - A running turn's text is written to its message at most once a second, so another tab or device
   sees the answer grow.
+- A turn withdrawn before its answer began is a held delete, held for the 9 s of any roadmap
+  delete. An Undo in that time brings back its messages without the turn's mark, which recovery
+  follows, so the Coach message reads as `running` until it has stood `TURN_STALE` with no write and
+  a device ends it `interrupted` ([Coach engine](coach-engine.md) §5, R-5).
 - Asking needs a connection; when there is none the question stays in the field. Reading History,
   reviewing and applying a proposal need none.
 
@@ -626,9 +709,11 @@ picture's original, as gym keeps one.
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
 - History is one list of every conversation, each tagged with its roadmap or with "All roadmaps",
   the current roadmap's first, filtered by roadmap from the title.
-- Deleting a roadmap deletes the conversations and proposals about it, in the same gesture, on the
-  device that deletes it. A roadmap deleted through the backend's door has them deleted there.
-  Conversations about all roadmaps stay.
+- Deleting a roadmap deletes the conversations and proposals about it and about every subtree under
+  it, in the same gesture, on the device that deletes it. The server removes them, with their
+  messages and write fates, whatever deleted the roadmap: a device, the backend's door or an Undo
+  ([sync engine](engine.md) A.1). Conversations about all roadmaps stay, and so does another
+  person's conversation about a roadmap shared with them, since each person's records are their own.
 - The opening of a turn and its end are declared once in the domain kit and proven by shared
   vectors, as gym's are, so the iPhone writes the same records.
 
@@ -651,16 +736,26 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §11 Signed out
 
 The design rules that everything works signed out: asking, direct writes, reviewing and applying.
-Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6) A signed-out person's roadmap
-already lives on the device, and the sync engine already keeps a signed-out person's records and
-carries them to the account at sign-in. The iPhone holds an installation credential already. What
-is lacking, and this build adds, is:
+Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6)
 
+- **Records.** Signed out, a conversation, its messages and write fates, and a proposal are records of
+  the device's `anon` replica in `self/roadmap`, beside the roadmaps they name, and the device draws
+  them from its unsent work. At sign-in the sync engine's lineage rule ([sync engine](engine.md)
+  §7.10) adds or discards roadmap's signed-out work as one: Add sends the records with the roadmaps
+  they name, which keep their ids, and a proposal stays as it was, pending among them; Discard takes
+  them from the device with roadmap's device rows, a running turn's mark among them. A roadmap
+  carried over from the old bundle whose creation the server refuses at sign-in keeps them too: the
+  refusal's notice holds them, and where the carry-over places the roadmap again it writes again, in
+  the same act, what the device lost of the conversations and proposals about it, with their
+  messages and write fates, and the notice goes once they are written ([Roadmap on the sync
+  engine](roadmap-on-the-engine.md) §8.2).
+- **The sign-in question.** Where the work holds conversations, it counts them beside the roadmaps
+  (board 10.4 on the web, 10.7 on the iPhone), as [Roadmap on the sync engine](roadmap-on-the-engine.md)
+  §5 says. Work that changes no roadmap of the device's own joins the account without a question, its
+  conversations with it.
 - **A credential to ask with, in the browser.** The AI service admits an installation on a pass the
-  backend signs for an installation credential. No such credential exists in the browser.
-- **A screen for sign-in when both sides hold conversations.** The sync engine asks a person what to
-  do with a device's records when the account already has some. Boards 10.4 on the web and 10.7 on
-  the iPhone draw that question for Coach (§15).
+  backend signs for an installation credential. The iPhone holds one already; no such credential
+  exists in the browser yet.
 
 ## §12 What retires, and what stays
 
@@ -688,7 +783,10 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
     `roadmap_coach_write_undone`, which the tool host tells for each Undo of a direct write, since an
     Undo runs outside a turn, with the ability and what the Undo came to once the engine has settled
     it: `undone`, `skipped` where a later write stood in its way, or `unavailable` where the room no
-    longer holds the write.
+    longer holds the write;
+  - `roadmap_proposal_undone`, with `outcome`, what the Undo of an applied proposal came to in the
+    same words, `undone`, `skipped` or `unavailable` (`ProposalUndone`'s answer), told by the surface
+    that offered the Undo.
 - A direct write tells the room's Activity the row the room's own Board tells of the same change,
   the person's own (R-7) and told silently, since the person is in the conversation, not on the
   canvas: a new name, `renamed`, as the Board's step document tells it. The room tells no row of a
@@ -720,17 +818,12 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
 domain. Beyond what it lists, Coach needs of that domain:
 
 - an action that changes the web links of an existing step, for `update_node`;
-- one act that carries a proposal's folded changes, of different kinds, under one stamp, with
+- one act that carries a proposal's folded changes, of different kinds, under one gesture, with
   merging and splitting steps among them, and an Undo that takes back structure and marks together
   and says whether anything was taken back (§7);
 - diagnostics computed on the device and held to the server's by vectors, and a step's `unknown`
   state (§5);
 - the stamp of every register a read returned, for a proposal's `base` (§7).
-
-In the backend:
-
-- The backend stores and admits none of §9's types, and its door that deletes a roadmap deletes no
-  record that names it.
 
 Not read by Coach: the `outOfOrder` flag on a mark, which only an outside assistant's mark sets.
 

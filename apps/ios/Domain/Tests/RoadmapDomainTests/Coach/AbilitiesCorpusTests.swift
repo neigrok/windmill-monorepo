@@ -5,20 +5,21 @@ import SyncCore
 import Testing
 
 // The runner of Roadmap Coach's ability vectors, `packages/api-contract/roadmap/abilities/`: each case's call through its
-// ability over the case's roadmaps, its answer compared whole by canonical text. A direct write draws its new ids from the
-// case's `ids`, in order.
+// ability over the case's roadmaps, its answer compared whole by canonical text. A direct write and a proposal draw their new
+// ids from the case's `ids`, in order; a proposal's record is folded again over the case's roadmaps for what it leaves.
 struct AbilitiesCorpusTests {
   static var claimed: [String] { RoadmapAbilities.names.map { "roadmap/abilities/\($0).json" } }
+  static let proposals = "roadmap/abilities/\(RoadmapProposals.name).json"
 
-  @Test func everyAbilityThatRunsOnTheCopyRunsEveryReadAnswersWithinItsCapAndEveryFileButTheContextsAndTheProposalsIsClaimed() throws {
+  @Test func everyAbilityOfTheCatalogRunsOrProposesOnTheCopyEveryReadAnswersWithinItsCapAndEveryFileButTheContextsIsClaimed() throws {
     let runs = Catalog.roadmap.abilities.filter { $0.agent == .runs }
     #expect(runs.map(\.name) == RoadmapAbilities.names)
+    #expect(Catalog.roadmap.abilities.filter { $0.agent == .proposes }.map(\.name) == [RoadmapProposals.name])
     let reads = Catalog.roadmap.abilities.filter { $0.kind == .read }
     #expect(reads.map { $0.result["maxBytes"] } == reads.map { _ in 16384 })
     let files = try Contract.files(under: "roadmap/abilities")
     #expect(files.filter { Self.claimed.contains($0) } == Self.claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
-    #expect(files.filter { !Self.claimed.contains($0) } == ["roadmap/abilities/context.json", "roadmap/abilities/propose_roadmap_change.json"],
-            "only the context and the proposal go unclaimed")
+    #expect(files.filter { !Self.claimed.contains($0) && $0 != Self.proposals } == ["roadmap/abilities/context.json"], "only the context goes unclaimed")
   }
 
   @Test(arguments: try claimed.flatMap { try AbilityCase.all(in: $0) })
@@ -41,6 +42,28 @@ struct AbilitiesCorpusTests {
     #expect(JSONSchema(schema).fault(in: result) == nil, "the answer stands inside the ability's result schema")
     #expect(result.jcs.count <= 16384)
   }
+
+  @Test(arguments: try AbilityCase.all(in: proposals))
+  func proposal(_ each: AbilityCase) throws {
+    var minted = each.ids
+    var drawn = 0
+    let answer = RoadmapProposals.answer(each.input, over: each.standing, about: each.about, seen: each.seen) { _ in
+      drawn += 1
+      return minted.isEmpty ? "" : minted.removeFirst()
+    }
+    #expect(drawn <= each.ids.count, "the call draws no more ids than the case gives")
+    let form: JSON
+    switch answer {
+    case .refused(let refusal): form = ["refused": refusal.form]
+    case .minted(let proposal, let result):
+      let treeId = try each.input.member("treeId").asString()
+      let folded = try ProposalFold.over(each.standing, treeId: treeId, changes: proposal.changes).get().folded
+      form = ["result": result, "proposal": ["changes": .array(proposal.changes), "base": .array(proposal.base.map(\.json))], "folded": folded]
+      let schema = try #require(Catalog.roadmap.ability(named: RoadmapProposals.name)).result
+      #expect(JSONSchema(schema).fault(in: result) == nil, "the answer stands inside the ability's result schema")
+    }
+    #expect(form == each.expect, "\(each)\n  got    \(form.jcsText)\n  expect \(each.expect.jcsText)")
+  }
 }
 
 // One case of an ability's file: what the conversation is about, the standing roadmap it gives, the ids the tool host's
@@ -50,6 +73,7 @@ struct AbilityCase: Sendable, CustomTestStringConvertible {
   let name: String
   let about: String?
   let standing: StandingRoadmaps
+  let seen: [RecordStamps]
   let ids: [String]
   let input: JSON
   let expect: JSON
@@ -66,9 +90,16 @@ struct AbilityCase: Sendable, CustomTestStringConvertible {
                                        label: try $0.member("label").asString(), done: try $0.member("done").asBool())
       }
       let trees = try given.member("trees").asArray().map(RoadmapTree.init(form:))
+      let stamps = { (key: String) throws -> [RecordStamps] in
+        try (given[key]?.asArray() ?? []).map {
+          RecordStamps(scope: try $0.member("scope").asString(), t: try $0.member("t").asString(), id: try $0.member("id"),
+                       life: try $0.member("life").nullable { try $0.asString() },
+                       f: Dictionary(uniqueKeysWithValues: try $0.member("f").asObject().members.map { ($0.key, try $0.value.asString()) }))
+        }
+      }
       let call = try each.member("call")
       return AbilityCase(file: file, name: try call.member("name").asString(), about: try each.optionalString("about"),
-                         standing: StandingRoadmaps(trees: trees, held: held, subtasks: subtasks),
+                         standing: StandingRoadmaps(trees: trees, held: held, subtasks: subtasks, stamps: try stamps("stamps")), seen: try stamps("seen"),
                          ids: try (given["ids"]?.asArray() ?? []).map { try $0.asString() }, input: try call.member("input"),
                          expect: try each.member("expect"), title: try each.member("case").asString())
     }
@@ -92,6 +123,7 @@ extension CoachRefusal {
   var form: JSON {
     var refused: JSON.Object = ["code": .string(code.rawValue)]
     refused["id"] = id.map(JSON.string)
+    refused["at"] = at.map { JSON($0) }
     return .object(refused)
   }
 }

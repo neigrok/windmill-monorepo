@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { RoomProgress } from '../../../../src/products/roadmap/room/useRoomProgress.js';
 import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
 
 function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {}) {
   const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
@@ -66,7 +67,7 @@ test('a completed step and what it unlocked reach the activity log in that order
 test('a quiet or Board completion owns its own telling, and reads the tree it was shown', (t) => {
   for (const options of [{ quiet: true }, { door: 'board' }]) {
     const { acts, calls, tree } = roomFixture(t);
-    acts.complete('wind', { at: 100, ...options, tree: tree.without(['dock']) });
+    acts.complete('wind', { at: 100, ...options, tree: standingWithout(tree, ['dock']) });
     assert.deepEqual(calls.filter(([kind]) => ['toast', 'ceremony', 'event'].includes(kind)), []);
     assert.deepEqual(calls.filter(([kind]) => kind === 'emit'), [['emit', 'completed', 'wind']]);
   }

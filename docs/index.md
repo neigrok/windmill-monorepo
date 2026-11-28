@@ -213,15 +213,14 @@ Sign in, You, sign out and Delete account: Shell file, page [Android](https://ww
 ## Marketing site
 
 Figma: Marketing file, page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
-Written half: [marketing site](design/marketing-site-proposal.md), which holds the sitemap, the rules
-every public page keeps, the Instrument look, what is built and what waits, the search repairs and the
-strings still false.
+Written half: [marketing site](design/marketing-site-proposal.md), which holds the sitemap, the Instrument look, what is built and what is proposed, how search engines
+read the pages and the strings still false.
 
 | Section | Page | State |
 |---|---|---|
 | [C · Front page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=272-2508) | `/` | In production: `web/src/shell/marketing/BrandLanding.jsx` |
 | [Mark · night version](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=267-3491) | header and footer on night grounds | In production: `web/public/brand-mark-night.svg` |
-| [✅ C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508) | `/pricing` | Ready for dev; not built |
-| [✅ C · Roadmap page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=290-2508) | `/roadmap` | Ready for dev; not built |
-| [✅ C · Journal page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=294-2508) | `/journal` | Ready for dev; not built |
-| [✅ C · Gym page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=293-2508) | `/gym` | Ready for dev; not built |
+| [C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508) | `/pricing` | In production: `web/public/pricing.html` |
+| [C · Roadmap page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=290-2508) | `/roadmap` | In production: `web/src/products/roadmap/marketing/landingPage.js` |
+| [C · Journal page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=294-2508) | `/journal` | In production: `web/src/products/journal/marketing/landingPage.js` |
+| [C · Gym page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=293-2508) | `/gym` | In production: `web/src/products/gym/marketing/landingPage.js` |

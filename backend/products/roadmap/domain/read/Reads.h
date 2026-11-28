@@ -24,10 +24,12 @@ struct HueCollision {
   std::vector<std::string> others;
 };
 
-// A hue of the legend a roadmap shows, with the kind that owns it, or none for a hue a step wears that no kind claims.
+// A hue of the legend a roadmap shows, with the kind that owns it, or none for a hue a step wears that no kind claims, and
+// how many present steps wear it.
 struct ShownHue {
   std::string hue;
   std::optional<std::string> kind;
+  std::size_t steps = 0;
 };
 
 // A roadmap's present kinds. Where two wear one hue, the one born first (then the least id) owns it.
@@ -44,6 +46,15 @@ public:
   // The legend a roadmap shows: each hue's owner in the kinds' order, then each hue a present step wears that no kind
   // claims, in the palette's order.
   std::vector<ShownHue> shown() const;
+  // The six hues a step may wear: the named kinds of the legend shown in its order, then each hue none of them has, in
+  // the palette's order, with no kind.
+  std::vector<ShownHue> choices() const;
+  // The hue a kind added takes: the first of the palette no entry of the legend has, none once all six are had.
+  std::optional<std::string> freeHue() const;
+  // The entries of the legend shown that present steps wear, none where they wear fewer than two hues.
+  std::vector<ShownHue> filters() const;
+  // The kinds that may be removed: those whose hue no present step wears, in the kinds' order.
+  std::vector<std::string> removable() const;
 
 private:
   std::vector<Kind> kinds_;

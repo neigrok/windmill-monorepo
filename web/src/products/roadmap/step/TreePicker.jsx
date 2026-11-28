@@ -31,7 +31,7 @@ function failureOf(status) {
 // `trees` reads the person's roadmaps (`list`) and the roadmap an address names (`read`) where they live (`place`:
 // 'account' on the server, 'device' on this device, and then `signedIn`). A list that fails may name its `failure`,
 // judged and reported where it was read. `attachment(complete)` says what attaching a tree, complete or not, does to a
-// hand's mark on the step. `onAttach(row)` sets the tree and answers whether the picker is done; `onLapse` tells the room
+// hand's mark on the step: the steps it returns to Locked, or null where the step holds no mark. `onAttach(row)` sets the tree and answers whether the picker is done; `onLapse` tells the room
 // a read was refused for want of a session.
 export function TreePicker({ step, treeId, standing, attachment, trees, layout, headingId, band, view, onAttach, onLapse, onCancel }) {
   const phone = layout === 'phone';
@@ -292,8 +292,8 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
             <Button variant="secondary" onClick={clear}>{PICKER.clearSearch}</Button>
           </div>
         )}
-        {mark?.marked && !unmatched && choices.outcome !== 'unreadable' && !choices.unresolved && (
-          <p className="st-board-tree-picker-line">{t('roadmap.treePicker.markAside', { count: mark.relocks, shown: formatCount(mark.relocks) })}</p>
+        {mark && !unmatched && choices.outcome !== 'unreadable' && !choices.unresolved && (
+          <p className="st-board-tree-picker-line">{t('roadmap.treePicker.markAside', { count: mark.length, shown: formatCount(mark.length) })}</p>
         )}
       </div>
       <footer className="st-board-picker-footer">

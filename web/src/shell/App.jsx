@@ -9,6 +9,7 @@ import { PRODUCTS, activeProduct } from './products.js';
 import { ProductSessions } from './ProductSessions.jsx';
 import { PageFrame } from './PageFrame.jsx';
 import { navigate, readNavigation, subscribeNavigation, replaceLocation } from './navigation.js';
+import { arrivedPage } from './arrival.jsx';
 
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
@@ -17,6 +18,11 @@ const ConnectPage = lazy(() => import('./connect/ConnectPage.jsx').then((m) => (
 const SettingsPage = lazy(() => import('./settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
 const importShell = () => import('./chrome/Shell.jsx').then((m) => ({ default: m.Shell }));
 const Shell = lazy(importShell);
+const importProductLanding = () => import('./marketing/ProductLanding.jsx');
+
+// Each product's landing: the shell's page, drawn from the words and pictures the product supplies.
+const LANDINGS = new Map(PRODUCTS.map((product) => [product.id, lazy(() => Promise.all([importProductLanding(), product.landing.page()])
+  .then(([{ ProductLanding }, page]) => ({ default: () => <ProductLanding product={product} page={page} /> })))]));
 
 // Hash prefixes that upgrade in place to a pathname.
 const LEGACY_DOORS = [
@@ -47,7 +53,8 @@ function ownRoute(pathname) {
 function warmRoute(pathname, hash) {
   const landing = PRODUCTS.find((product) => product.landing.href === pathname);
   if (landing) {
-    landing.landing.preload();
+    importProductLanding();
+    landing.landing.page();
     return;
   }
   const door = LEGACY_DOORS.find(([prefix]) => hash.startsWith(prefix));
@@ -92,7 +99,7 @@ function useOwnNavigation() {
 
 // mark={false} is bare ground, no logo.
 function RouteFallback({ mark = true }) {
-  return <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
+  return arrivedPage() ?? <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
 }
 
 function RouteFallbackContent({ mark = true }) {
@@ -198,8 +205,8 @@ function AppRoutes() {
   const landingPath = pathname.startsWith('/products/') ? pathname.slice('/products'.length) : pathname;
   const landing = PRODUCTS.find((p) => landingPath === p.landing.href || landingPath.startsWith(`${p.landing.href}/`));
   if (landing) {
-    const { Component } = landing.landing;
-    return <Suspense fallback={<RouteFallback />}><Component /></Suspense>;
+    const Landing = LANDINGS.get(landing.id);
+    return <Suspense fallback={<RouteFallback />}><Landing /></Suspense>;
   }
   return <BrandLanding />;
 }

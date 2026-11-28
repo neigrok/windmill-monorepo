@@ -1,4 +1,4 @@
-// Dragging a branch end onto a node: start() pulls a new edge from a rim port, startReconnect() re-aims one end of an existing one; the node under the cursor rings by verdict — valid, cyclic, or valid-but-costly.
+// Dragging a branch end onto a node: start() pulls a new edge from a rim port, startReconnect() re-aims one end of an existing one; the node under the cursor rings by verdict — valid, cyclic, or valid-but-costly. Which nodes close a loop is the domain's (`loopsOf`).
 import { BODY_WU } from '../theme.js';
 import { t } from '../i18n/index.js';
 
@@ -6,8 +6,9 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 const NODE_RADIUS = BODY_WU / 2;
 
 export class ConnectGesture {
-  constructor(canvas, container, { camera, pick, onConnect, onReconnect, onFadeNodes, onRestoreNodes }) {
+  constructor(canvas, container, { camera, pick, loopsOf, onConnect, onReconnect, onFadeNodes, onRestoreNodes }) {
     this.canvas = canvas;
+    this.loopsOf = loopsOf;
     this.camera = camera;
     this.pick = pick;
     this.onConnect = onConnect;
@@ -39,20 +40,22 @@ export class ConnectGesture {
     this.parents = parents;
   }
 
-  // The hit becomes the child, so the loop-closers are the source’s ancestors.
+  // The hit becomes the child, so the loop-closers are the steps the source may not lead to: those before it.
   start(sourceId, event) {
     if (!sourceId || !this.nodesById.has(sourceId)) return;
+    const loops = this.loops(sourceId);
     this.begin(event, {
       mode: 'create',
       anchorId: sourceId,
       parents: this.parents,
-      cycleNodes: this.reachable(sourceId, this.parents),
-      sourceDescendants: this.reachable(sourceId, this.childrenMap(this.parents)),
+      cycleNodes: loops.opens,
+      sourceDescendants: loops.requires,
       resolve: (hit) => ({ from: sourceId, to: hit }),
     });
   }
 
-  // Re-aim one end, the other pinned; the loop-closers are walked on the graph with the old edge already removed.
+  // Re-aim one end, the other pinned: a new start may not come after the pinned end, nor a new end before it. The old edge
+  // enters the pinned end on the side its walk never takes, so the loops are the pinned end's as it stands.
   startReconnect(edge, movingEnd, event) {
     if (!this.nodesById.has(edge.from) || !this.nodesById.has(edge.to)) return;
     const parents = this.parentsWithout(edge.from, edge.to);
@@ -61,9 +64,7 @@ export class ConnectGesture {
       edge,
       anchorId: movingEnd === 'from' ? edge.to : edge.from,
       parents,
-      cycleNodes: movingEnd === 'from'
-        ? this.reachable(edge.to, this.childrenMap(parents))
-        : this.reachable(edge.from, parents),
+      cycleNodes: movingEnd === 'from' ? this.loops(edge.to).requires : this.loops(edge.from).opens,
       resolve: movingEnd === 'from'
         ? (hit) => ({ from: hit, to: edge.to })
         : (hit) => ({ from: edge.from, to: hit }),
@@ -156,28 +157,11 @@ export class ConnectGesture {
     return clone;
   }
 
-  // Nodes reachable from id along the adjacency map, id itself excluded.
-  reachable(id, adjacency) {
-    const result = new Set();
-    const stack = [...(adjacency.get(id) || [])];
-    while (stack.length > 0) {
-      const next = stack.pop();
-      if (result.has(next)) continue;
-      result.add(next);
-      stack.push(...(adjacency.get(next) || []));
-    }
-    return result;
-  }
-
-  childrenMap(parents) {
-    const children = new Map();
-    for (const [child, list] of parents) {
-      for (const parent of list) {
-        if (!children.has(parent)) children.set(parent, []);
-        children.get(parent).push(child);
-      }
-    }
-    return children;
+  // The domain's loops of a node, itself left out: the nodes it may not come to follow (`requires`) and lead to (`opens`).
+  loops(id) {
+    const loops = this.loopsOf?.(id) ?? { requires: [], opens: [] };
+    const others = (ids) => new Set(ids.filter((other) => other !== id));
+    return { requires: others(loops.requires), opens: others(loops.opens) };
   }
 
   curve(sx, sy, ex, ey) {

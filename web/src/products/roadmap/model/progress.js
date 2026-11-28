@@ -1,4 +1,4 @@
-import { UnlockRules } from './UnlockRules.js';
+import { domainReading } from './domainReads.js';
 import { t } from '../i18n/index.js';
 
 // `now` is handed in so one bulk mark carries one moment.
@@ -21,8 +21,8 @@ export function advanceProgress(progress, ids, target, now) {
 }
 
 export function progressChanges(tree, before, after) {
-  const previousStates = UnlockRules.derive(tree, before);
-  const nextStates = UnlockRules.derive(tree, after);
+  const previousStates = domainReading(tree, before).states;
+  const nextStates = domainReading(tree, after).states;
   const completed = [];
   const unlocked = [];
   for (const [id, state] of nextStates) {

@@ -7,6 +7,7 @@ import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { renderHook } from '../../gym/harness.mjs';
+import { standingWithout } from '../../../../src/products/roadmap/model/domainReads.js';
 
 const holdingSession = (session) => ({ ready: true, holdAct: () => {}, endHeldAct: () => {}, leavePage: () => {}, ...session });
 
@@ -467,8 +468,8 @@ test('a retained bulk delete callback rechecks roots, selection membership and a
     const { acts, c, calls } = fixture();
     const remove = () => acts.delete(['wind'], 'bulk');
     const current = { ...c };
-    if (change === 'roots') current.tree = c.tree.without(['spare']);
-    if (change === 'missing') current.tree = c.tree.without(['wind']);
+    if (change === 'roots') current.tree = standingWithout(c.tree, ['spare']);
+    if (change === 'missing') current.tree = standingWithout(c.tree, ['wind']);
     if (change === 'owner') current.owner = false;
     if (change === 'active') current.active = false;
     acts.update(current);

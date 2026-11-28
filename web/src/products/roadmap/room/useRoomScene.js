@@ -13,7 +13,7 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
   const [scene, setScene] = useState(null);
   const [panning, setPanning] = useState(false);
   const [hoveredId, setHoveredId] = useState(null);
-  const { handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, reorderContext, handleSetNodeOrder } = editing;
+  const { handleCreateChild, handleConnect, loopsOf, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, reorderContext, handleSetNodeOrder } = editing;
   const { setSelectedId, selectedIdsRef, selectedEdgesRef, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick } = selection;
 
   useLayoutEffect(() => {
@@ -21,6 +21,7 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
     const writes = !desktopEditorRef.current ? {} : {
       onCreateChild: handleCreateChild,
       onConnectNodes: handleConnect,
+      loopsOf,
       onDeleteNode: deleteNodeAt,
       onSetKind: handleSetKind,
       onDeleteEdge: handleDeleteEdge,
@@ -69,7 +70,7 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
       sceneRef.current = null;
       setScene(null);
     };
-  }, [handleCreateChild, handleConnect, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
+  }, [handleCreateChild, handleConnect, loopsOf, deleteNodeAt, handleSetKind, handleDeleteEdge, handleReconnect, showToast, onSelectionToggle, onMarqueeSelect, onEdgeToggle, onEdgePick]);
 
   useEffect(() => {
     scene?.setWorkingZoom(breakpoint === 'phone' ? PHONE_WORKING_ZOOM : WORKING_ZOOM);

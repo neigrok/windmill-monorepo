@@ -1,6 +1,5 @@
-import { readEffects } from '../model/effects.js';
+import { domainReading, readEffects, standingWithout } from '../model/domainReads.js';
 import { progressChanges } from '../model/progress.js';
-import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { blockedPrerequisites } from '../step/StepDraft.js';
 import { LABELS, completedToast, createdToast, deletedToast, deletedStepsToast, recoloredToast } from '../copy.js';
@@ -90,7 +89,8 @@ export class HeldDelete {
     Object.freeze(this);
   }
 
-  projected(tree) { return tree.without(this.ids); }
+  // The roadmap the hold leaves standing, read through the held steps (D-5).
+  projected(tree) { return standingWithout(tree, this.ids); }
 
   get message() {
     if (this.ids.length === 1) return deletedToast({ step: this.subject });
@@ -110,7 +110,7 @@ export function completionOutcome(tree, before, after, id) {
 export function creationOutcome(tree, progress, query, id) {
   const step = tree.nodeOrThrow(id);
   const nextQuery = query.revealing(step, tree);
-  const column = UnlockRules.derive(tree, progress).get(id) === 'locked' ? 'locked' : 'upNext';
+  const column = domainReading(tree, progress).states.get(id) === 'locked' ? 'locked' : 'upNext';
   const filterCleared = nextQuery !== query;
   return {
     message: createdToast({ step: step.label, column, filterCleared }),

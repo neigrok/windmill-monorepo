@@ -174,7 +174,7 @@
 		# The extensionless twin of every shelf page. /pricing is what people type and paste, and
 		# it used to answer 200 with the brand root — a second URL for a page that already has one.
 		# 301 onto the .html each page's own canonical names, so links land where the canonical is.
-		@shelfAlias path /pricing /privacy /terms /refunds /changelog /connect
+		@shelfAlias path /pricing /privacy /terms /refunds /changelog /connect /support
 		redir @shelfAlias {path}.html permanent
 
 		# The gallery is the one page whose file name is not its URL: the wall is server-rendered at
@@ -182,23 +182,27 @@
 		# itself there. Serving the empty template at its own URL too is one page under two links.
 		redir /gallery.html /gallery permanent
 
-		# Two files' worth of caching policy, stated at the origin because guessing is worse.
+		# The caching policy, stated at the origin because guessing is worse.
 		#
 		# /sw.js must never be stale: a browser replaces a service worker only when it fetches bytes
 		# that differ, so a stale copy keeps serving its old caching policy to a phone that already
 		# has it. no-cache means revalidate, not don't-store; the etag makes that check a 304.
 		#
+		# The other scripts and styles at the root (/appearance.js, /boot.js, /chrome.css) carry no
+		# hash in their names either, and a page written for a new one breaks beside an old one, so
+		# they revalidate the same way.
+		#
 		# /assets/* is the opposite: vite content-hashes every filename, so a given URL's bytes can
 		# never change. A year, immutable, and the browser stops revalidating them entirely.
 		#
 		# NOTE (2026-08-02): these are correct and currently INERT. Cloudflare's Browser Cache TTL
-		# is set to 4 hours in the dashboard and rewrites both — measured: /sw.js AND a hashed
-		# /assets/*.js both come back max-age=14400 with cf-cache-status MISS, i.e. the override
-		# happens on the way out, not from an edge hit. Flip that setting to "Respect Existing
-		# Headers" and these two lines start doing their jobs; until then the origin at least states
+		# is set to 4 hours in the dashboard and rewrites them — measured: /sw.js, /appearance.js AND
+		# a hashed /assets/*.js all come back max-age=14400 with cf-cache-status MISS, i.e. the
+		# override happens on the way out, not from an edge hit. Flip that setting to "Respect Existing
+		# Headers" and these lines start doing their jobs; until then the origin at least states
 		# the truth rather than leaving Cloudflare to invent it.
-		@serviceWorker path /sw.js
-		header @serviceWorker Cache-Control "no-cache"
+		@unhashedRootFiles path_regexp ^/[^/]+\.(js|css)$
+		header @unhashedRootFiles Cache-Control "no-cache"
 		@hashedAssets path /assets/*
 		header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
 		# iOS takes the association file only as JSON, and the file server names no type for a file with no extension.

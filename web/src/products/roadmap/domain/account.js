@@ -10,6 +10,19 @@ import { components, FollowGraph } from './graph.js';
 /** @typedef {{node:string,kind:'subtree'|'pointer',tree:string,status:'loaded'|'unread'|'unknown'|'dangling'}} Opening */
 /** @typedef {{tree:string,done:number,total:number}} Told */
 
+// What stands complete in one roadmap whose openings are known: a present step that opens or owns a roadmap, where its
+// opening does not dangle, exactly when that roadmap is complete, whatever its mark; any other present step, one whose
+// pointer dangles included, by its mark.
+/** @param {RoadmapTree} tree @param {(node: string) => {dangling: boolean, complete: boolean} | null | undefined} openingOf */
+export function completedOf(tree, openingOf) {
+  return new Set(tree.nodes.filter((node) => {
+    if (!node.present) return false;
+    const opening = openingOf(node.id);
+    if (opening && !opening.dangling) return opening.complete;
+    return tree.marks.get(node.id)?.status === 'complete';
+  }).map((node) => node.id));
+}
+
 export class RoadmapAccount {
   // `told` is what a read elsewhere says roadmaps have come to, as a reader's progress answer names its subtrees: one the
   // device holds no read copy of counts as it is told, and completes once it has steps and every one is done.
@@ -164,13 +177,12 @@ export class RoadmapAccount {
   /** @param {string} id */
   completedNodes(id) {
     const tree = this.trees.get(id);
+    if (!tree) return new Set();
     const openings = new Map((this.openings.get(id) ?? []).map((opening) => [opening.node, opening]));
-    return new Set((tree?.nodes ?? []).filter((node) => {
-      if (!node.present) return false;
-      const opening = openings.get(node.id);
-      if (opening && opening.status !== 'dangling') return this.complete.has(opening.tree);
-      return tree?.marks.get(node.id)?.status === 'complete';
-    }).map((node) => node.id));
+    return completedOf(tree, (node) => {
+      const opening = openings.get(node);
+      return opening && { dangling: opening.status === 'dangling', complete: this.complete.has(opening.tree) };
+    });
   }
 
   /** @param {string} id */

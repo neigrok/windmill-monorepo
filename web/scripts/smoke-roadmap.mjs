@@ -23,7 +23,7 @@ const EXPECTED_REFUSALS = [
   { path: /^\/v1\/me$/, status: 401 },
 ];
 const ROOT_LANDING_APP = '.front-heading';
-const ROADMAP_LANDING_APP = '.beats';
+const ROADMAP_LANDING_APP = '.product-heading';
 // Every element but the canvas hides for the Graph's shot, so its pixels are what WebGL drew and no caption or chrome.
 const CANVAS_ONLY = '* { visibility: hidden !important; } canvas.st-canvas { visibility: visible !important; }';
 const GROUND_DISTANCE = 24;

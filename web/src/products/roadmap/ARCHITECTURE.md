@@ -28,8 +28,8 @@ point for the component showcase.
 | `activity/`, `ceremony/`, `presence/` | Activity presentation, animation sequencing and remote cursors |
 | `paste/`, `quests/`, `demo/` | Import grammar and composition, the starter quests' shelf, read from the shared roster (`packages/api-contract/roadmap/quests/`), and the playable demo |
 | `share/`, `browse/` | Publishing, Fork, portraits and the public gallery |
-| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, and the records the carry-over set aside, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
-| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes, what each roadmap's entries come to as the domain's acts, and `CarryNotes`, what the carry-over remembers in this browser from load to load), and the run (`CarryOver.js`) that moves each roadmap only into the replica it started on and that the roadmap belongs to, under a browser lock with its ledger, and deletes each entry once carried and, for a roadmap it created, once the server took it; `RoadmapSession.jsx` starts it on every load, again as another replica becomes active or the active one is bound to another account, and again as the connection returns to a run that left a roadmap waiting. An account's sign-out Discard takes the old roadmaps its question named (`sync/accountChange.js`) |
+| `kept/` | The one list of what cannot land (§6, flow 49), where the room reads the device's copy: roadmap's notices in every scope read by the domain, but the refusals the carry-over settles (`CarriedRefusals`), and the records the carry-over set aside, each a kept change in the list's words, offered from the shell's account menu and shown as a dialog or as pages; `RoadmapSession.jsx` mounts it beside every room |
+| `carry/` | The carry-over (§8.2), where the room reads the device's copy: what the old bundle's stores hold (`OldStores.js`, the stores read through their own classes, what each roadmap's entries come to as the domain's acts, and `CarryNotes`, what the carry-over remembers in this browser from load to load), and the run (`CarryOver.js`) that moves each roadmap only into the replica it started on and that the roadmap belongs to, under a browser lock with its ledger, and deletes each entry once carried and, for a roadmap it created, once the server took it. A roadmap whose creation the server refused is placed again once that refusal has settled, in an act that also writes again what the device lost of the Coach records its notice holds about it (`domain/carry.js`'s `CarriedConversations` and `CarryConversations`), and the notice goes once they all are; `RoadmapSession.jsx` starts it on every load, again as another replica becomes active or the active one is bound to another account, and again as the connection returns to a run that left a roadmap waiting. An account's sign-out Discard takes the old roadmaps its question named (`sync/accountChange.js`) |
 | `tending/`, `reminders/`, `settings/` | Ask AI, reminder preferences and account data export |
 | `marketing/` | Product landing, metadata and self-playing scenes |
 
@@ -99,7 +99,8 @@ fallback's measured bottom feeds the same insets. The step and the composer clos
 
 ## Loading a roadmap
 
-`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, derives progress through `UnlockRules`,
+`room/useRoomLoad.js` loads a tree through its reading, constructs `SkillTree`, reads its steps' states from the domain
+(`model/domainReads.js`),
 runs layout and installs the render model in `SkillTreeScene` when one is available, then has the reading follow each
 change. Without WebGL2 it installs the tree and model with null scene bounds, seeds activity and starts following without
 any scene or camera calls. Layout is synchronous and cached by graph structure, effective engine and, for caption-aware
@@ -247,7 +248,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   Discard takes all of it, in the order the browser first changed them, a subtree's work its root's: the browser's own by
   name, and another's, such as one whose step the person marked as a reader, as "{roadmap} · N changes", named as the
   anon replica holds it and never from another replica. A roadmap made and deleted signed out goes unnamed; work that
-  changes no roadmap of the browser's own is added without asking. At sign-out, where every unsent change is roadmap's,
+  changes no roadmap of the browser's own is added without asking, its Coach conversations with it. Coach's conversations
+  and proposals are records of the same work, in the anon replica's `self/roadmap`, so one answer takes them with the
+  roadmaps they name, whose ids they keep. Where the work holds conversations the question is *Add to your account?*
+  (Roadmap Coach 10.4) instead, one sentence counting the browser's own roadmaps, its conversations that still stand and
+  the changes to another's roadmaps, which its Discard asks again in the same count. At sign-out, where every unsent change is roadmap's,
   the shell asks *Keep unsent changes?* with each roadmap they change and how many, and with the account's roadmaps the
   old stores still hold (§8.2) and their changes, asked where only those wait; any other sign-out keeps the shell's words.
   A change is one act of the person's, the engine's entries of one gesture: making a roadmap, which writes its record and
@@ -436,9 +441,9 @@ pointer changes or the room loads again. Once a claim takes the tree to the acco
 channel, `onTreeClaimed`), the room stops reading the device, and the facts it holds stand until the server's replace
 them.
 
-`UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
-mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
-(`takesMark`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
+The domain's `completedOf` (`domain/account.js`, which `model/domainReads.js` reads the room's tree through) is the one
+rule: a step that opens a tree is complete exactly when that tree is, whatever its mark and its prerequisites, and one
+whose pointer leads nowhere follows its mark. No hand marks such a step (`takesMark`, `model/Opening.js`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
 and sends nothing for one. A mark that such a step already holds, made before the pointer arrived, is set aside
 (`SyncSession.owedFrames`): it stays on the device as it is, and while the lattice record holds a pointer it is not sent
 and not counted as unsent, in the outbox, in the status the room shows or in what keeps a refusal standing. Nothing
@@ -574,9 +579,10 @@ this roadmap* with Try again in its place, the rest of the picker standing. Each
 with its read and reason. A 401 on either read is the room's lapse (`treeActs.lapsed`, the path a refused write takes),
 with no Try again.
 
-One line under the rows says what happens to a hand's mark. `treeAttachment` in `model/UnlockRules.js` answers it
-from the tree and the marks the Board derives from: whether the step holds a mark, and how many steps up next lock
-again once the step is done no longer, none where the tree chosen is complete. The ⋯ is a menu under the heading from
+One line under the rows says what happens to a hand's mark. The domain's `EffectsRead.attachRelocks` answers it
+(`readEffects` with the attach), over the tree and the marks the Board reads: null where the step holds no mark, else
+the steps up next that lock again once the step is done no longer, none where the tree chosen is complete or the step
+stands done no longer already. The ⋯ is a menu under the heading from
 744px, standing in the step's layer so the scrolling step does not clip it, and a sheet on phones; its footnote names
 the mark only where one was set aside.
 
@@ -841,7 +847,7 @@ branch in scope. It lasts the visit: leaving the roadmap or reloading starts it 
 `viewBranch` scopes the Board to a step, every ancestor and every descendant; availability and progress still
 read the whole roadmap.
 
-Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`), so a roadmap wearing
+Kinds narrow only among the kinds a roadmap wears (`kindOptions` in `model/Legend.js`, the domain's `LegendRead.filters`), so a roadmap wearing
 one kind shows no filter. All also drops a kind no swatch offers any more, so it cannot come back on its own.
 The order is Roadmap order, or Created newest or oldest, for Locked and Up next; Done keeps its newest
 completions.
@@ -928,7 +934,7 @@ Graph's multi-select. Its immutable `StepSelection` reads the filtered pane and 
 leave it. `deletable` in `acts.js` is the one sole-root rule for selection, keyboard deletion and the step
 menu. The host owns whether Board selection is open: phone, active Board and owner. A deletable step's page
 menu offers Select under that rule. `useStepPage` closes the visit, selects the step, clears only query dimensions
-that hide it through `BoardQuery.revealing` and records a request, keeping sort. After the step leaves the URL,
+that hide it through `BoardQuery.revealing` (the domain's `BoardRead.revealing`) and records a request, keeping sort. After the step leaves the URL,
 `BoardView` stands its column past any Done fold and consumes the request once through the hold's same `start`.
 Successful start acknowledges its key to the host, which clears that request; a Board crash also clears any
 pending request. Request keys increase independently of the pending request. The selected card receives focus,
@@ -1010,10 +1016,14 @@ six-second Undo.
 ### Held delete
 
 Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the steps that follow
-it, the domain's `EffectsRead.follow` (`readEffects`, `model/effects.js`). Confirm closes the detail and creates a
+it, the domain's `EffectsRead.follow` (`readEffects`, `model/domainReads.js`). Confirm closes the detail and creates a
 `HeldDelete`, with no structural write yet. For its nine-second Undo window every Board surface reads the held
 projection: cards, counts, identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold
-and projects it into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
+and projects it into the Graph. The projection is the domain's reading of the delete (`standingWithout`): the held
+steps are absent, so a step that followed one follows what it followed (D-5). Where the room reads the device's copy,
+that is how the delete reads once it is written. Where it reads roadmap's own sync (the switch off), the commit
+(`BulkDelete` in `sync/materialize.js`) re-links a step only where every step it followed goes, so a step that also
+followed another stands on it alone once the hold ends; that reading goes with roadmap's own sync.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or
@@ -1072,7 +1082,7 @@ below that it replaces the form, as a page in the 600px dialog from 744px and a 
 `StepComposer` owns picker selection and query, so resizing keeps them. With zero candidates the Prerequisites
 row stays focusable but cannot open the picker. The draft starts in Sky; Graph roots start in the first legend
 kind. `composerFocus.js` owns shared layer focus, viewport hooks and `coverBeneath`. The shared `KindChoice`
-lives in `BoardControls.jsx`, and every surface fills it from `kindChoices` in `model/Legend.js`, so the composer, the
+lives in `BoardControls.jsx`, and every surface fills it from `kindChoices` in `model/Legend.js` (the domain's `LegendRead.choices`), so the composer, the
 bulk bars, the Graph's dock and its tablet panel show one order and a choice never reorders the row. The dock and the
 tablet panel use it with `follow={false}`: arrow keys only move focus, a press saves at once and the kind in force writes
 nothing. The dock previews a hovered kind on the node and adds Manage kinds beside the heading, which opens the legend.
@@ -1144,10 +1154,10 @@ best-effort projection when replicated state contains cycles. `TrunkTree` choose
 for layout: same-kind parents first, then depth and id; siblings keep their fractional order and
 creation-stamp order.
 
-`UnlockRules.derive` is the authority for locked, available and complete, off the completed set `UnlockRules.completed`
-gives; the same file answers what a step
-still owes (`owedStepsOf` for one step, `owedCounts` for every step in one pass) and what completing it opens
-(`unlocksOf`). An edge inherits its source node's state. Legend order lives in the lattice and is written by
+The domain's graph (`domainReading` in `model/domainReads.js`, one `FollowGraph` for each tree and set of marks) is the
+authority for locked, available and complete, and for what a step still owes (`owed`, and `owedIndex` for every step in
+one pass) and what completing it opens (`unlocks`); the Board is the domain's `BoardRead`. An edge inherits its source
+node's state. Legend order lives in the lattice and is written by
 `ReorderKinds`; `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 

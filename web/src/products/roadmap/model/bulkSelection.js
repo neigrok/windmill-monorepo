@@ -1,6 +1,6 @@
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 import { kindChoices } from './Legend.js';
-import { takesMark } from './UnlockRules.js';
+import { takesMark } from './Opening.js';
 
 export function isGrouped(size) {
   return size >= 2;

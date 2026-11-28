@@ -24,11 +24,12 @@ public enum RoadmapRules {
   public static let book = RuleBook(
     registry: SyncSchema.registry,
     entities: [RoadmapEntry.self, RoadmapMeta.self, RoadmapStep.self, RoadmapLink.self, RoadmapKind.self, StepMark.self, StepPointer.self,
-               Subtask.self, WorkspaceLink.self, StepNote.self],
+               Subtask.self, WorkspaceLink.self, StepNote.self, CoachThread.self, CoachMessage.self, CoachProposal.self, CoachWriteFate.self],
     rules: RoadmapSpecs.all.map { .local($0) } + [
       .local(RoadmapChecks.cycle, subject: RoadmapLink.type),
       .local(RoadmapChecks.wornHue, subject: RoadmapKind.type),
       .local(RoadmapChecks.opening, subject: StepMark.type),
+      .local(RoadmapChecks.question, subject: CoachMessage.type),
       .serverDecided("tree.root", codes: [Roadmap.Codes.notARoot], subject: RoadmapEntry.type),
       .serverDecided("tree.alive", codes: [.scopeDead], subject: RoadmapEntry.type),
       .serverDecided("tree.reach", codes: [.forbidden, .notFound], subject: RoadmapEntry.type),
@@ -42,12 +43,18 @@ public enum RoadmapLimits {
   public static let importChunk = 500
   public static let importChunkBytes = Constants.pushMaxBytes / 2
   public static let maxDepth = 8
+  // A question to Coach keeps gym's bound (roadmap-coach.md §8).
+  public static let questionBytes = 8_000
 }
 
 // Roadmap measures a text in characters as it was typed: never composed, and trimmed only where a blank one is refused.
 extension TextSpec {
   fileprivate init(_ path: String, chars max: Int, min: Int = 0, trim: Bool = false) {
     self.init(path, unit: .chars, min: min, max: max, trim: trim, nfc: false)
+  }
+
+  fileprivate init(_ path: String, bytes max: Int, min: Int = 0) {
+    self.init(path, unit: .bytes, min: min, max: max, trim: false, nfc: false)
   }
 }
 
@@ -71,9 +78,22 @@ public enum RoadmapSpecs {
   public static let url = TextSpec("stepLink.url", chars: 2048, min: 1, trim: true)
   public static let linkTitle = TextSpec("stepLink.title", chars: 200, trim: true)
   public static let note = TextSpec("stepNote.text", chars: 16000)
+  public static let coachTreeId = TextSpec("coachThread.treeId", chars: 18, min: 18)
+  public static let coachTitle = TextSpec("coachThread.title", bytes: 8000, min: 1)
+  public static let coachStep = TextSpec("coachThread.stepId", chars: 128, min: 1)
+  public static let coachRole = ChoiceSpec("coachMessage.role", values: ["person", "coach"])
+  public static let coachReplica = TextSpec("coachMessage.replica", chars: 35, min: 35)
+  public static let coachText = TextSpec("coachMessage.text", bytes: 131_072)
+  public static let coachRefusal = TextSpec("coachMessage.refusal", chars: 64, min: 1)
+  public static let coachPictures = CountSpec("coachMessage.pictures", min: 0, max: 1)
+  public static let coachPictureId = TextSpec("coachMessage.pictures.id", chars: 64, min: 8)
+  public static let coachMediaType = TextSpec("coachMessage.pictures.mediaType", bytes: 255, min: 1)
+  public static let coachProposalId = TextSpec("coachMessage.proposalId", chars: 64, min: 8)
+  public static let coachProposalChanges = CountSpec("coachProposal.changes", min: 1, max: 100)
 
   static let all: [any ValueSpec] = [title, guide, visibility, label, icon, color, description, links, linkUrl, linkLabel, hue, recolourHue,
-                                     kindLabel, kindDescription, mark, subtask, url, linkTitle, note]
+                                     kindLabel, kindDescription, mark, subtask, url, linkTitle, note, coachTreeId, coachTitle, coachStep, coachRole,
+                                     coachReplica, coachText, coachRefusal, coachProposalId, coachPictures, coachPictureId, coachMediaType, coachProposalChanges]
 }
 
 // The rules a gesture checks over the records it reads, named as their violations name them.
@@ -81,6 +101,7 @@ public enum RoadmapChecks {
   public static let cycle = "edge.cycle"
   public static let wornHue = "kind.hue.worn"
   public static let opening = "progress.opening"
+  public static let question = "coachMessage.question"
 }
 
 // Roadmap's one refusal: every code its rules declare, mapped from the code, the subject, the path and a cap's detail.
@@ -173,6 +194,12 @@ public struct HeldRecord<E: Writable>: Sendable {
   public let value: E
   public let state: State
 
+  // A record the device draws present, as a value the caller holds of it.
+  init(present value: E) {
+    self.value = value
+    state = .present
+  }
+
   init(_ blank: E, in repository: Repository<E>) throws {
     guard let record = try repository.record(blank.id, in: .drawn) else {
       value = blank
@@ -193,12 +220,12 @@ public struct HeldRecord<E: Writable>: Sendable {
     holdsValues ? valid.changed(from: value) : valid.checked
   }
 
-  // The revival a change plans: the record's life under the gesture's stamp and the fields it writes, and its Undo, which
-  // writes each field back to the value it held and the life where the change brought the record back. A record known only
-  // by its spent id was dead and its values are the server's alone, so its Undo deletes it again and keeps what the change
-  // wrote. A record that held no `ord` has none to write back.
-  func reviving(_ valid: Valid<E>, fields: [String]) -> Plan {
-    var plan = Plan()
+  // The revival a change plans, into `plan` where it joins other writes: the record's life under the gesture's stamp and the
+  // fields it writes, and its Undo, which writes each field back to the value it held and the life where the change brought
+  // the record back. A record known only by its spent id was dead and its values are the server's alone, so its Undo deletes
+  // it again and keeps what the change wrote. A record that held no `ord` has none to write back.
+  func reviving(_ valid: Valid<E>, fields: [String], into plan: Plan = Plan()) -> Plan {
+    var plan = plan
     plan.revive(valid, fields: fields)
     guard holdsValues else {
       plan.undoBy(.fields(restoreCommand: Roadmap.Commands.restoreTree, targets: [(target: .life(value.id), default: "dead")]))

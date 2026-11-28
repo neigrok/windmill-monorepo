@@ -33,7 +33,24 @@ internal class Dependents(private val registry: Registry, private val replaced: 
     private fun writesLife(scope: ScopeRef, delta: Delta) = delta.lattice.life?.let { Triple(scope, delta.key, it) in lives } == true
     private fun touches(scope: ScopeRef, delta: Delta) = (scope to delta.key) in created || writesLife(scope, delta) ||
         names(registry.references.ofRecord(scope, delta.json))
+    // Dependency is transitive inside the entry too: the rest of the entry that names a record its dependent part creates, or carries a
+    // life it wrote, is part of it.
     fun of(entry: Entry): DependentPart {
+        var part = reached(entry)
+        if (!part.any) return part
+        val within = copy()
+        while (true) {
+            within.absorb(entry, part)
+            val grown = within.reached(entry)
+            if (grown.removed.size == part.removed.size && grown.commandGone == part.commandGone && grown.guards.size == part.guards.size) return part
+            part = grown
+        }
+    }
+    private fun copy() = Dependents(registry, replaced).also {
+        it.created.addAll(created); it.governed.addAll(governed); it.lives.addAll(lives)
+    }
+    // The part of `entry` these sources reach as they stand, before its own dependent records join them.
+    private fun reached(entry: Entry): DependentPart {
         val intent = entry.intent
         val removed = intent.deltas.filter { delta -> entry.scope in governed || touches(entry.scope, delta) }
         val command = intent.command

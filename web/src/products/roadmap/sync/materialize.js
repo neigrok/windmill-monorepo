@@ -1,9 +1,35 @@
 // Each editing gesture becomes a list of stamped writes — a partial subgraph — computed against
 // the current lattice, all sharing one HLC stamp so the gesture is atomic on the wire.
 
-import { respliceEdges } from '../model/SkillTree.js';
 import { hlcText } from './lattice.js';
 import { keyBetween, nKeysBetween } from './fractionalIndex.js';
+
+// The links a delete of `doomedIds` makes on the lattice: a step every prerequisite of which is doomed follows the
+// steps those prerequisites followed that survive.
+export function respliceEdges(nodes, doomedIds) {
+  const doomed = new Set(doomedIds);
+  const byId = new Map(nodes.map((step) => [step.id, step]));
+  const edges = [];
+  for (const child of nodes) {
+    if (doomed.has(child.id)) continue;
+    if (!child.prerequisites.some((id) => doomed.has(id))) continue;
+    if (child.prerequisites.some((id) => !doomed.has(id))) continue;
+    const survivors = new Set();
+    const seen = new Set();
+    const stack = [...child.prerequisites];
+    while (stack.length > 0) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const parent of byId.get(id)?.prerequisites ?? []) {
+        if (doomed.has(parent)) stack.push(parent);
+        else survivors.add(parent);
+      }
+    }
+    for (const parent of survivors) if (parent !== child.id) edges.push({ from: parent, to: child.id });
+  }
+  return edges;
+}
 
 function node(id, at, fields) {
   const entry = { id };

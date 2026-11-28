@@ -3,8 +3,8 @@ import GymDomain
 import RoadmapDomain
 
 // The sign-in question (23d–23j, Roadmap · iOS 10.7), one for every room due: what the phone holds by kind, sets inside
-// their workouts, and what the account holds. Settings, movement names, proposals and a roadmap's own records go unnamed;
-// a room holding only those counts changes.
+// their workouts, and what the account holds. Settings, movement names, proposals, a roadmap's own records and Coach's
+// messages go unnamed; a room holding only those counts changes.
 struct AdoptionQuestion: Equatable {
   // The rooms the question names, in the order it names them, each with what the account holds of it.
   static let rooms: [(room: AppModel.Room, held: String)] = [
@@ -21,6 +21,7 @@ struct AdoptionQuestion: Equatable {
     (Note.type, { String(localized: "\($0) notes", locale: .copy) }),
     (Page.type, { String(localized: "\($0) journal pages", locale: .copy) }),
     (RoadmapEntry.type, { String(localized: "\($0) roadmaps", locale: .copy) }),
+    (RoadmapDomain.CoachThread.type, { String(localized: "\($0) conversations", locale: .copy) }),
   ]
   let phrase: String
   let kinds: Int

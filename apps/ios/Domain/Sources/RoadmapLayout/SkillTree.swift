@@ -1,6 +1,6 @@
 // A roadmap as the picture reads it: the web's `model/SkillTree.js` (the topological order, the links, the bounds),
-// `model/TrunkTree.js` (the link each step is seated by, sibling order, branches, link kinds) and `model/UnlockRules.js`
-// (tiers). A step is named by its place in `steps`, the order the room hands them in, which the picture reads.
+// `model/TrunkTree.js` (the link each step is seated by, sibling order, branches, link kinds) and the tiers, the state the
+// web's domain reads of each step (`graph.json`). A step is named by its place in `steps`, the order the room hands them in, which the picture reads.
 public struct SkillTree: Sendable {
   public struct Step: Sendable {
     public let id: UTF16Text

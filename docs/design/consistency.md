@@ -807,8 +807,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
   nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
   10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
-  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
-  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  as the Shell's, for the Shell's owner to rule. 10.7's question names Coach's conversations made signed out that still
+  stand, after the roadmaps. 10.8 names unconfirmed conversations at sign-out, which the phone cannot make until Coach
+  is built, so its question does not name them. For the Shell's owner: with nothing unconfirmed, Sign
   out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
   person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
@@ -916,6 +917,21 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
   draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
   board of section 09 draws it.
+- **Roadmap · a kind filter whose last step goes.** When the last step wearing a hue the Board's kind filter shows is
+  recoloured or deleted, the web drops that kind from the query (`BoardQuery.among` in `board/Board.js`, which
+  `board/BoardView.jsx` narrows to the hues the filter offers), so the Board shows every remaining step; the iPhone keeps
+  the kind shown and the Board shows nothing, saying so with *Clear Filters* (`Board/BoardReading.swift`, board 02.6b).
+  To draw or rule, for the owner: which the two surfaces do; the domain's Board read would then answer it as a case both
+  rooms read.
+- **Roadmap · the face of an opening the device holds no copy of.** The domain reads a pointer at a roadmap the device
+  holds no copy of as `unknown`, not as one that dangles ([the corpus README](../../packages/api-contract/roadmap/domain/README.md):
+  unknown trees stay unknown, never a known dangling pointer), and each room gives it a face of its own: the web reads it
+  `unread` (`room/ReplicaRoadmap.js`, `openingOf`), which shows the mark and *Open tree* and says nothing else, and the
+  iPhone `missing` (`Nested/OpenedRoadmap.swift`, `Opened.init`), which says *Not found* and offers *Choose Roadmap*. For
+  example, an account holding roadmap T, whose step *Plan the year* points at a roadmap Q the device holds no copy of: the
+  web's step shows its mark and *Open tree*, and the iPhone's says *Not found* over *Choose Roadmap*. To draw or rule, for
+  the owner: which face such an opening shows, on both surfaces alike; the domain's `openings` read would then give it
+  as a case both rooms read.
 - **Roadmap · iOS · what offline, a change told once and Set Aside leave for the boards.** *Offline* in the subtitle, a
   step that landed in a changed roadmap or came back told once by the band and its page's footer, and *Set Aside* are
   built in Debug builds from 10.1 to 10.5c. For the owner to rule, where a board and the spec disagree: 10.4's caption
@@ -1004,10 +1020,32 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
   as it does for a person's own edit, with Retry and Discard, and the proposal stays applied. The design's rule and
   its boards say what Apply does on the device; reword the rule to say so.
+- **Roadmap Coach · when a proposal is out of date.** The design's Rules · Proposals says a proposal is out of date if
+  "any step or link it touches has changed since". The spec ([Roadmap Coach](../foundation/roadmap-coach.md) §7) keeps
+  a proposal's base per register, the being there of each step it names and each field, link or mark it writes, and a
+  proposal is out of date only where one of those moved: a rename stays good after the step's description changed
+  elsewhere. To draw or rule: the rule reworded to say "any step, field or link it changes", or a ruling that any
+  change to a step it touches makes it out of date.
 - **Roadmap Coach · the Windmill One button on the web.** Design ruling 8 draws the button in the "allowance used"
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
+- **Roadmap Coach · the sign-in question when the browser holds conversations (10.4).** Built as drawn: *Add to your
+  account?* says in one sentence how many of the browser's roadmaps and conversations wait, with no list and no note, and
+  Discard asks again, *Discard 2 roadmaps and 3 conversations?*; where the browser holds no conversation the question
+  stays flow 50's. To draw or rule:
+  - 10.4's NOTE says *The engine asks once for the roadmap room when this browser holds work made signed out and the
+    account holds roadmap records*. It is built to [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md)
+    §5 instead: signed-out work that changes no roadmap of the browser's own, such as a conversation about every
+    roadmap or a reader's about someone's public roadmap, is added without asking, its conversations with it, as the
+    iPhone adds it.
+  - No board draws signed-out work that also changes another's roadmap, such as a step a reader marked. It is built with
+    the Shell's noun after the conversations: *This browser has 1 roadmap, 1 conversation, and 1 change from before you
+    signed in.*
+  - The dialog is the shell's `AccountDecision`, as flow 50's and WD9's questions are (see *The sign-in question's
+    dialog* below). 10.4 draws it 460 px wide, with compact answers and the paragraph in the secondary ink. The web keeps
+    540 px, large answers and the lead in the primary ink. 10.4 also draws Discard's label in the danger colour, where
+    flow 50 and the web give Add and Discard equal weight.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -1171,10 +1209,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   library owner should correct the primitive sizing before replacing that adapter with an instance.
 - **Gallery controls.** Search/filter thresholds in `galleryIndex.js` are not rendered by
   `BrowsePage.jsx` and are not current controls.
-- **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
-  are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
-  that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
-  Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
 - **Design system · Figma library focus effect.** The library's `shadow/focus-ring` effect still uses
   terracotta-100. The design-system owner must align it with the approved light focus ring:
   2px `surface/canvas` gap plus a 2px terracotta-500 ring
@@ -1305,10 +1339,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   halo. Choose one treatment and align shader and specimen.
 - **F32 · Quest roster icons.** An optional `node.icon` can leave an empty reserved glyph well.
   Give the roster a fallback or remove the unused well.
-- **F50 · Marketing silhouettes.** The app uses bubble layout; `marketing/treeScenes.js` and
-  the Marketing drawings use authored radial compositions. Redraw the marketing scenes in bubble
-  while preserving their names, progress states and unlock ceremony. Engine output alone does not
-  define the marketing framing. Gallery portraits and minimap use the live canvas positions.
+- **F50 · Marketing silhouettes.** The app uses bubble layout; the site's composed trees
+  (`marketing/ComposedTree.jsx`, on the front page and the Roadmap landing) are hand-placed left-to-right
+  compositions, as the approved Marketing boards draw them, with the room's states and rule. The ready paths
+  on the landing use the room's own `QuestThumb`. Gallery portraits and minimap use the live canvas positions.
 - **21 · The fruit tiers in daylight.** The locked fruit is `color-mix(kind 18%, transparent)` with a
   35% ring; the fill measures **1.14–1.29:1** against the canvas in both themes, so a locked step and
   an available step of the same kind differ by an 11px smudge on a phone in daylight. Not a token
@@ -1419,6 +1453,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Gym
 
+- **Brand foundations on the open workout.** [Brand foundations](brand-foundations.md) says under Gym that the phone
+  owns the open workout and the web never finishes a live session. The web now starts, logs and finishes a workout,
+  signed in or signed out ([the web as a device](../foundation/web-device-parity.md) §4, `finishWorkout` in
+  `web/src/products/gym/gymRuntime.js`). Correct the line.
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
   full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
   2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
@@ -1943,8 +1981,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
-  drafts are not named. The account line names what the account holds; *it* for one item, else
+  movements, notes, journal pages, and on iOS roadmaps and conversations (Roadmap · iOS 10.7). Sets go with their workout; settings,
+  movement names and Coach drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
   three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
@@ -2153,7 +2191,7 @@ Android. It and the product differ in these places.
 
 - **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
   2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
-  shell's words and roadmap's in flow 50's.
+  shell's words and roadmap's in flow 50's, or in Roadmap Coach 10.4's where its work holds conversations.
 - **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
   in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
   all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
@@ -2268,8 +2306,9 @@ Android. It and the product differ in these places.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
 - **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
-  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
-  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+  answers, and its answers start at the left. Roadmap Coach 10.4 draws it 460 px wide with compact answers. The web
+  builds flow 50's `AccountDecision` for every product (540 px, the 28 px display title, large answers at the right,
+  Cancel sign-in at the left). The drawings should agree on one.
 - **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
   the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
   weigh-ins*.
@@ -2315,24 +2354,29 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
   Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
   allowance sections then.
-- **Who the pricing page says you pay.** `web/public/pricing.html` names Paddle as seller of record and
-  says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
-  says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
-  the page name the store a person will buy through.
 
 ## Marketing and email
 
-- **The public pages not yet rebuilt.** The front page is built in the Instrument look
-  ([marketing site](marketing-site-proposal.md#the-instrument-look)). Pricing and the three room
-  pages are drawn in it and ✅ Ready for dev (sections `284:2508`, `290:2508`, `294:2508`, `293:2508`),
-  and are still built in the older look: Baloo 2 and Nunito (the room landings through
-  `web/src/shell/marketing/landing.css`, pricing in `web/public/pricing.html`), with a live vignette as
-  each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
-  page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
-  Instrument look.
-- **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
-  (three product bands with per-room platform lines), describe the root the front page replaced. Archive
-  them (🗄 Archived prefix and tag).
+- **The public pages still in the family look.** The front page, pricing and the three room landings are built in the
+  Instrument look ([marketing site](marketing-site-proposal.md#the-instrument-look)). Connect, the legal pages, support,
+  the changelog, the gallery and 404 are not drawn in it and wear the family look (`web/scripts/staticPageChrome.css`).
+  Brand foundations' Fonts and Logo name both looks until each page is rebuilt.
+- **The family template's defects.** The static pages in the family look (`web/scripts/staticPageChrome.css`):
+  `connect.html`, `changelog.html`, `gallery.html`, `privacy.html`, `terms.html`, `refunds.html`, `support.html`,
+  `404.html` and `pause.html`. By day their footer links measure 3.52:1 against the ground. At 390 the appearance
+  switch's segments are 28 px tall, the header buttons 37 px and the footer links 19 px, under the 44 px the site's
+  pages give a control on a phone. With scripts off all four header buttons show at once (Sign in, Start your tree, My
+  account, My trees), because only a script stamps `data-auth`. Fix them in the template, or as each page moves to
+  the Instrument look.
+- **The static pages report nothing.** The pages in `web/public/` load no error reporting. On the pricing page a failed
+  `/instrument.css` leaves the text in the browser's default face with the header unlaid, a failed `/appearance.js` leaves
+  no switch and a failed `/events.js` tells nothing, and none of it reaches Sentry. Give the static pages a failure
+  report, or say which of these the site accepts.
+- **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
+  `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
+- **Superseded landing boards.** The Marketing file's superapp landing boards, among them `98:2538`
+  (three product bands with per-room platform lines), and its boards for the earlier `/roadmap`, `/journal` and `/gym`
+  landings describe pages the Instrument pages replaced. Archive them (🗄 Archived prefix and tag).
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
@@ -2342,9 +2386,5 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
-- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
-  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
-  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
-  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.
