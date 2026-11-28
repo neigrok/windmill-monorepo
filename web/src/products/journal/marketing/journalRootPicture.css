@@ -34,3 +34,15 @@
   .jnPicture-rule { transition-duration: var(--duration-glow) !important; }
   [data-pointed] .jnPicture-rule { transition-duration: calc(var(--duration-glow) / 2) !important; }
 }
+
+/* Without hover nothing is pointed at: the seam plays its light once as the picture's beat, half a glow rising, a glow
+   held and a glow settling, and ends as drawn. */
+@keyframes jn-seam-light {
+  0% { background-color: var(--border-subtle); animation-timing-function: var(--ease-glow); }
+  20% { background-color: color-mix(in srgb, var(--color-brand) 26%, transparent); }
+  60% { background-color: color-mix(in srgb, var(--color-brand) 26%, transparent); animation-timing-function: linear; }
+  100% { background-color: var(--border-subtle); }
+}
+@media (hover: none) {
+  [data-beat] .jnPicture-rule { animation: jn-seam-light calc(var(--duration-glow) * 2.5) linear; }
+}

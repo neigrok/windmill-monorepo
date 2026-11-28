@@ -58,10 +58,25 @@ const animated = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^
   .filter(([, , body]) => /(^|;)\s*animation(-name)?\s*:/.test(body))
   .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim()));
 
+// Every selector of a sheet that answers the pointer, with the media block it stands in ('' outside one).
+const hovered = (css) => {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = [];
+  let rest = text;
+  for (const [block, condition, body] of text.matchAll(/@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*\s*)\}/g)) {
+    for (const [, selectors] of body.matchAll(/([^{}]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), condition.trim()]));
+    rest = rest.replace(block, '');
+  }
+  for (const [, selectors] of rest.matchAll(/([^{}@]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), '']));
+  return found.filter(([selector]) => selector.includes(':hover'));
+};
+
 test('the picture holds nothing a person could press, names no raw colour, and moves nothing at rest', () => {
   assert.ok(!/<(a|button|input|details|summary)[ >]|tabindex|onclick|href=/i.test(html), 'the picture draws a control');
   assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(CSS), 'the sheet names a raw colour');
+  assert.deepEqual(hovered(SHEETS).filter(([, condition]) => !condition.includes('(hover: hover)')), [], 'a part answers a finger, and stays lit after a tap');
+  assert.deepEqual(hovered(SHEETS).map(([selector]) => selector), ['.rmTree .nd:hover', '.rmTree-branch:hover .rmTree-edge:not(.is-lit)', '.rmTree .nd:hover', '.rmPaths-card:hover', '.rmPaths-card:hover .quest-thumb-halo', '.rmStep-subtasks li:hover::before']);
   const selectors = animated(SHEETS);
   assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] |:hover/.test(selector)), [], 'an animation runs before the pointer arrives');
   assert.deepEqual(selectors, [

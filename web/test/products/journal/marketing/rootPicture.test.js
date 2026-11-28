@@ -30,13 +30,28 @@ const animated = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^
   .filter(([, , body]) => /(^|;)\s*animation(-name)?\s*:/.test(body))
   .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim()));
 
+// Every selector of a sheet that answers the pointer, with the media block it stands in ('' outside one).
+const hovered = (css) => {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = [];
+  let rest = text;
+  for (const [block, condition, body] of text.matchAll(/@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*\s*)\}/g)) {
+    for (const [, selectors] of body.matchAll(/([^{}]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), condition.trim()]));
+    rest = rest.replace(block, '');
+  }
+  for (const [, selectors] of rest.matchAll(/([^{}@]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), '']));
+  return found.filter(([selector]) => selector.includes(':hover'));
+};
+
 test('the picture holds nothing a person could press, names no raw colour, and moves nothing at rest', () => {
   assert.ok(!/<(a|button|input|details|summary)[ >]|tabindex|onclick|href=/i.test(html), 'the picture draws a control');
   assert.match(html, /<span class="jnPicture-go">Go to page<\/span>/, 'the echo’s door is a styled span, not a control');
   assert.ok(!/animation|style=/.test(html), 'the picture carries motion or an inline style');
   assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(SHEETS), 'a sheet names a raw colour');
+  assert.deepEqual(hovered(SHEETS).filter(([, condition]) => !condition.includes('(hover: hover)')), [], 'a part answers a finger, and stays lit after a tap');
+  assert.deepEqual(hovered(SHEETS).map(([selector]) => selector), ['.jnSearch li.is-hit:hover::before', '.jnYear i:hover', '.jnYear i:hover']);
   const selectors = animated(SHEETS);
   assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] |:hover/.test(selector)), [], 'an animation runs before the pointer arrives');
-  assert.deepEqual(selectors, ['[data-pointed] .jnCursor']);
+  assert.deepEqual(selectors, ['[data-beat] .jnPicture-rule', '[data-pointed] .jnCursor', '[data-beat] .jnWindow-echo']);
 });

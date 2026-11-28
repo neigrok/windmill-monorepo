@@ -41,12 +41,27 @@ const animated = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^
   .filter(([, , body]) => /(^|;)\s*animation(-name)?\s*:/.test(body))
   .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim()));
 
+// Every selector of a sheet that answers the pointer, with the media block it stands in ('' outside one).
+const hovered = (css) => {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = [];
+  let rest = text;
+  for (const [block, condition, body] of text.matchAll(/@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*\s*)\}/g)) {
+    for (const [, selectors] of body.matchAll(/([^{}]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), condition.trim()]));
+    rest = rest.replace(block, '');
+  }
+  for (const [, selectors] of rest.matchAll(/([^{}@]+)\{[^{}]*\}/g)) found.push(...selectors.split(',').map((selector) => [selector.trim(), '']));
+  return found.filter(([selector]) => selector.includes(':hover'));
+};
+
 test('the picture wears the gym skin, names no raw colour, listens for nothing and moves nothing at rest', () => {
   assert.match(html, /^<div class="gyPicture gym-skin" data-stage="wide">/);
   assert.match(CSS, /^@import '\.\.\/gymTokens\.css';/);
   assert.ok(!/animation|style=/.test(html), 'the picture carries motion or an inline style');
   assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(SHEETS), 'a sheet names a raw colour');
+  assert.deepEqual(hovered(SHEETS).filter(([, condition]) => !condition.includes('(hover: hover)')), [], 'a part answers a finger, and stays lit after a tap');
+  assert.deepEqual(hovered(SHEETS).map(([selector]) => selector), ['.gyPicture-unfold:hover', '.gyLine-plot:hover', '.gyLine-plot:hover .gyLine-ring', '.gyLine-slot:hover .gyLine-ring', '.gyRoutine li:hover .gyRoutine-scheme']);
   const selectors = animated(SHEETS);
   assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] |:hover/.test(selector)), [], 'an animation runs before the pointer arrives');
   assert.deepEqual(selectors, ['[data-beat] .gyRemembered-weight']);

@@ -1,5 +1,7 @@
-// How a picture on the site answers the pointer, knowing nothing of what it draws. It writes two attributes on the
-// frame's body, `data-pointed` and `data-beat`, and the picture's own sheet moves the picture under them.
+// How a picture on the site moves, knowing nothing of what it draws. It writes two attributes on the frame's body, and
+// the picture's own sheet moves the picture under them: `data-pointed` while a mouse or pen is on a seen picture, and
+// `data-beat` while the beat the sheet starts under it runs. On a device without hover nothing is pointed at: a picture
+// plays its beat once, when it has stayed seen for 400ms, one picture at a time across the page.
 
 import { useEffect } from 'react';
 import { track } from '../../telemetry/beacon.js';
@@ -12,19 +14,58 @@ const SEEN_STEPS = Array.from({ length: 101 }, (_, step) => step / 100);
 const REARM_MS = 2400;
 // A pointer that stays this long on a picture has looked at it, and the picture tells so once.
 const DWELL_MS = 1000;
+// On a device without hover, a picture seen this long without a break has been looked at, and plays its beat; a flick
+// past it plays nothing.
+const HOLD_MS = 400;
 
 const told = new Set();
+const played = new Set();
 const reportedRoutes = new Set();
 
-const pointing = (event) => ['mouse', 'pen'].includes(event.pointerType) && window.matchMedia('(hover: hover)').matches;
+const hovering = () => window.matchMedia('(hover: hover)').matches;
+const pointing = (event) => ['mouse', 'pen'].includes(event.pointerType) && hovering();
 const endless = (animation) => animation.effect?.getTiming().iterations === Infinity;
 const cut = (animation) => Boolean(animation.effect?.target?.closest('[data-cut]'));
 
-// Arrival is a mouse or pen inside a seen picture, whichever of the two came last: it sets `data-pointed`, and
-// `data-beat` while the beat is armed. Departure lets every endless animation finish its cycle, then lifts `data-pointed`.
+// On a device without hover one beat plays at a time across the page. A picture that falls due while another plays
+// waits its turn in the order it fell due; one no longer seen when its turn comes leaves the queue unplayed, free to
+// fall due again.
+class BeatQueue {
+  #playing = false;
+  #waiting = [];
+
+  due(motion) {
+    if (!this.#playing) {
+      this.#play(motion);
+      return;
+    }
+    if (!this.#waiting.includes(motion)) this.#waiting.push(motion);
+  }
+
+  #play(motion) {
+    this.#playing = true;
+    motion.playOnce().finally(() => {
+      this.#playing = false;
+      while (this.#waiting.length) {
+        const next = this.#waiting.shift();
+        if (next.due) {
+          this.#play(next);
+          return;
+        }
+      }
+    });
+  }
+}
+
+const pageBeats = new BeatQueue();
+
+// With a mouse or pen, arrival is the pointer inside a seen picture, whichever of the two came last: it sets
+// `data-pointed`, and `data-beat` while the beat is armed. Departure lets every endless animation finish its cycle, then
+// lifts `data-pointed`. Without hover, a picture held in view falls due on the page's beats.
 class PictureMotion {
   #body;
   #picture;
+  #key;
   #inside = false;
   #seen = false;
   #armed = true;
@@ -33,12 +74,19 @@ class PictureMotion {
   #ending = null;
   #rearming = null;
   #dwelling = null;
+  #holding = null;
   #stops = [];
   #off = false;
 
   constructor(body, picture) {
     this.#body = body;
     this.#picture = picture;
+    this.#key = `${picture.page} ${picture.product} ${picture.picture}`;
+  }
+
+  // A picture still waiting its turn on the page's beats plays only if it is still seen and has not played.
+  get due() {
+    return !this.#off && this.#seen && !played.has(this.#key);
   }
 
   start() {
@@ -46,8 +94,11 @@ class PictureMotion {
       this.#listen('pointerenter', (event) => { if (pointing(event)) this.#enter(); });
       this.#listen('pointerleave', () => { if (this.#inside) this.#leave(); });
       const observer = new IntersectionObserver(this.#guarded(([entry]) => {
-        this.#seen = entry.intersectionRatio >= SEEN || entry.intersectionRect.height >= SEEN * entry.rootBounds.height;
-        this.#arrive();
+        const seen = entry.intersectionRatio >= SEEN || entry.intersectionRect.height >= SEEN * entry.rootBounds.height;
+        const changed = seen !== this.#seen;
+        this.#seen = seen;
+        if (hovering()) this.#arrive();
+        else if (changed) this.#hold();
       }), { threshold: SEEN_STEPS });
       observer.observe(this.#body);
       this.#stops.push(() => observer.disconnect());
@@ -57,9 +108,15 @@ class PictureMotion {
   stop() {
     this.#off = true;
     this.#stops.forEach((stop) => stop());
-    [this.#rearming, this.#dwelling].forEach(clearTimeout);
+    [this.#rearming, this.#dwelling, this.#holding].forEach(clearTimeout);
     this.#body.removeAttribute('data-pointed');
     this.#body.removeAttribute('data-beat');
+  }
+
+  // The page's beats call this when the picture's turn comes. It always settles, so the queue moves on.
+  playOnce() {
+    played.add(this.#key);
+    return this.#guarded(() => this.#beat())() ?? Promise.resolve();
   }
 
   #listen(type, handle) {
@@ -68,14 +125,20 @@ class PictureMotion {
     this.#stops.push(() => this.#body.removeEventListener(type, guarded));
   }
 
+  // Seen, the picture falls due after it has stayed seen 400ms; unseen, the wait ends.
+  #hold() {
+    clearTimeout(this.#holding);
+    if (!this.due) return;
+    this.#holding = setTimeout(this.#guarded(() => pageBeats.due(this)), HOLD_MS);
+  }
+
   #enter() {
     this.#inside = true;
     clearTimeout(this.#rearming);
-    const { page, product, picture } = this.#picture;
-    const key = `${page} ${product} ${picture}`;
-    if (!told.has(key)) {
+    if (!told.has(this.#key)) {
       this.#dwelling = setTimeout(this.#guarded(() => {
-        told.add(key);
+        told.add(this.#key);
+        const { page, product, picture } = this.#picture;
         track('front_picture', { page, product, picture });
       }), DWELL_MS);
     }
@@ -110,7 +173,7 @@ class PictureMotion {
     const before = new Set(this.#body.getAnimations({ subtree: true }));
     this.#body.setAttribute('data-beat', '');
     const beat = this.#body.getAnimations({ subtree: true }).filter((animation) => !before.has(animation) && !endless(animation));
-    Promise.allSettled(beat.map((animation) => animation.finished)).then(this.#guarded(() => {
+    return Promise.allSettled(beat.map((animation) => animation.finished)).then(this.#guarded(() => {
       this.#beating = false;
       this.#body.removeAttribute('data-beat');
       this.#rearm();
@@ -143,15 +206,17 @@ class PictureMotion {
   // A failure in here leaves the still picture and reports once per page load for each page.
   #guarded(run) {
     return (...args) => {
-      if (this.#off) return;
+      if (this.#off) return undefined;
       try {
-        run(...args);
+        return run(...args);
       } catch (error) {
         this.stop();
         const { route } = this.#picture;
-        if (reportedRoutes.has(route)) return;
-        reportedRoutes.add(route);
-        captureError('render', 'front-picture-motion', error?.stack ?? '', route);
+        if (!reportedRoutes.has(route)) {
+          reportedRoutes.add(route);
+          captureError('render', 'front-picture-motion', error?.stack ?? '', route);
+        }
+        return undefined;
       }
     };
   }

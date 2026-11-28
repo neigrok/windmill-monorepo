@@ -23,6 +23,16 @@
 /* The echo's edge kindles while the picture is pointed at, as the margin's seam does. */
 [data-pointed] .jnWindow-echo { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent);
                                 transition: border-color calc(var(--duration-glow) / 2) var(--ease-glow); }
+/* Without hover the edge plays its light once as the picture's beat, as the brand root's seam does. */
+@keyframes jn-edge-light {
+  0% { border-color: var(--border-subtle); animation-timing-function: var(--ease-glow); }
+  20% { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent); }
+  60% { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent); animation-timing-function: linear; }
+  100% { border-color: var(--border-subtle); }
+}
+@media (hover: none) {
+  [data-beat] .jnWindow-echo { animation: jn-edge-light calc(var(--duration-glow) * 2.5) linear; }
+}
 .jnWindow-date { margin-top: 9px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-brand); }
 .jnWindow[data-stage="narrow"] { padding: 24px 16px; }
 .jnWindow[data-stage="narrow"] .jnWindow-page { width: 318px; }

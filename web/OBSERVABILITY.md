@@ -364,8 +364,8 @@ drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on t
 A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
 `front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route, once per page
 load for each page and picture, however often the page mounts (`BrandLanding.browser.test.js`,
-`ProductLanding.browser.test.js`). A failure in the code that moves a picture under the pointer
-(`src/shell/marketing/pictureMotion.js`) stops its motion and leaves the still picture, and reports `front-picture-motion`
+`ProductLanding.browser.test.js`). A failure in the code that moves a picture, under a pointer or on a phone as it comes
+into view (`src/shell/marketing/pictureMotion.js`), stops its motion and leaves the still picture, and reports `front-picture-motion`
 with kind `render`, the error's stack frames and the page's path as its route, once per page load for each page
 (`pictureMotion.browser.test.js`). A landing whose own code cannot load (its chunk, its page's words, a stylesheet, or a
 session provider above it) keeps the first HTML the document arrived with, its whole page and links, and reports

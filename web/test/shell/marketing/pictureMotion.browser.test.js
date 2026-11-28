@@ -1,6 +1,7 @@
-// The picture frame under a real pointer: a fixture picture whose sheet starts a beat under `data-beat`, an endless loop
-// under `data-pointed` and a second loop on an element marked `data-cut`, drawn in three frames on one route: one in
-// view, one far down the page and one taller than the view.
+// The picture frame under a real pointer and on a phone: a fixture picture whose sheet starts a beat under `data-beat`,
+// an endless loop under `data-pointed` and a second loop on an element marked `data-cut`, drawn in three frames on one
+// route: one in view, one far down the page and one taller than the view. On `?phone` the frames stand 40px apart, so
+// the first two are seen together at 390, and every beat runs 1500ms.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,6 +17,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { PictureFrame } from '/src/shell/marketing/SiteChrome.jsx';
 import '/src/styles/global.css';
+const phone = new URLSearchParams(location.search).has('phone');
 const sheet = document.createElement('style');
 sheet.textContent = \`
   .fx { height: 100%; }
@@ -23,15 +25,15 @@ sheet.textContent = \`
   [data-beat] .fx-beat { animation: fx-fade 400ms linear; }
   [data-pointed] .fx-loop, [data-pointed] .fx-cut { animation: fx-fade 800ms linear infinite; }
   @keyframes fx-fade { 50% { opacity: .5; } }
-\`;
+\` + (phone ? '[data-beat] .fx-beat { animation-duration: 1500ms; }' : '');
 document.head.append(sheet);
 const e = React.createElement;
-const Fixture = () => e('div', { className: 'fx' }, e('i', { className: 'fx-beat' }), e('i', { className: 'fx-loop' }), e('i', { className: 'fx-cut', 'data-cut': '' }));
+const fixture = (name) => () => e('div', { className: 'fx', 'data-fx': name }, e('i', { className: 'fx-beat' }), e('i', { className: 'fx-loop' }), e('i', { className: 'fx-cut', 'data-cut': '' }));
 const frame = (name, height) => e(PictureFrame, { id: 'fixture', page: 'front', route: '/', theme: 'light',
-  picture: { name, label: 'Composed', stages: [{ name: 'only', width: 400, height }], Picture: Fixture } });
-createRoot(document.getElementById('root')).render(e('div', { style: { width: 600 } },
-  frame('near', 300), e('div', { style: { height: 1200 } }), frame('far', 300), e('div', { style: { height: 1200 } }),
-  frame('tall', 1500), e('div', { style: { height: 1200 } })));
+  picture: { name, label: 'Composed', stages: [{ name: 'only', width: 400, height }], Picture: fixture(name) } });
+const gap = () => e('div', { style: { height: phone ? 40 : 1200 } });
+createRoot(document.getElementById('root')).render(e('div', { style: { width: 600, maxWidth: '100%' } },
+  frame('near', 300), gap(), frame('far', 300), gap(), frame('tall', 1500), e('div', { style: { height: 1200 } })));
 `;
 
 let server, browser, origin;
@@ -67,13 +69,13 @@ ready.catch(() => {});
 after(async () => { try { await ready; } finally { await browser?.close(); server?.close(); } });
 
 // A page with the three frames drawn, and in it `window.log`: every change of the two attributes on each body, timed.
-async function open(options = {}) {
+async function open(options = {}, path = '/') {
   await ready;
   const context = await browser.newContext({ viewport: { width: 800, height: 600 }, ...options });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(origin);
+  await page.goto(origin + path);
   await page.waitForFunction(() => document.querySelectorAll('.fx').length === 3, null, { timeout: 30000 });
   await page.evaluate(() => {
     window.log = [];
@@ -217,16 +219,6 @@ test('a picture arrives only once it is seen: 60% of it in view, or 60% of the v
   assert.deepEqual(errors, []);
 });
 
-test('a finger on a picture is given nothing', { timeout: 120000 }, async () => {
-  const { page, errors, close } = await open({ hasTouch: true });
-  await page.touchscreen.tap(...NEAR);
-  await wait(1300);
-  const seen = { attributes: await attributes(page), events: await page.evaluate(() => window.events ?? []) };
-  await close();
-  assert.deepEqual(seen, { attributes: [], events: [] });
-  assert.deepEqual(errors, []);
-});
-
 test('front_picture is told once, after the pointer has stayed 1000ms, and never for a pass across', { timeout: 120000 }, async () => {
   const { page, errors, close } = await open();
   await page.mouse.move(...NEAR);
@@ -260,5 +252,106 @@ test('a failure in the motion reports once for the route and leaves every pictur
   const seen = { near, far: await attributes(page, 1), captured: await page.evaluate(() => window.captured) };
   await close();
   assert.deepEqual(seen, { near: [], far: [], captured: [['render', 'front-picture-motion', '/', true]] });
+  assert.deepEqual(errors, []);
+});
+
+// A phone: touch, no hover, 390 wide.
+const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
+// Each beat on each body as [body, from, to], in the order they began, from the page's log.
+const beatsIn = (log) => {
+  const beats = [];
+  for (const [time, index, name, on] of log) {
+    if (name !== 'data-beat') continue;
+    if (on) beats.push([index, time, null]);
+    else beats.findLast(([at, , to]) => at === index && to === null)[2] = time;
+  }
+  return beats;
+};
+const scrollToBody = (page, index, offset) => page.evaluate(([at, by]) => {
+  const top = document.querySelectorAll('.front-picture-body')[at].getBoundingClientRect().top + window.scrollY;
+  window.scrollTo(0, top - by);
+  return performance.now();
+}, [index, offset]);
+// Waits until `count` beats have ended on the page.
+const ended = (page, count) => page.waitForFunction((least) => window.log.filter(([, , name, on]) => name === 'data-beat' && !on).length >= least,
+  count, { timeout: 10000 });
+const changes = (log) => log.filter(([, , name]) => name === 'data-beat' || name === 'data-pointed');
+
+test('on a phone two pictures seen together play their beats one after the other, and nothing is ever pointed at', { timeout: 120000 }, async () => {
+  const { page, errors, close } = await open(PHONE, '/?phone');
+  assert.equal(await page.evaluate(() => matchMedia('(hover: none)').matches), true);
+  await ended(page, 2);
+  await wait(300);
+  const log = await logged(page);
+  await close();
+  const beats = beatsIn(log);
+  assert.deepEqual(beats.map(([index]) => index).sort(), [0, 1]);
+  const [[, firstFrom, firstTo], [, secondFrom, secondTo]] = beats;
+  for (const ran of [firstTo - firstFrom, secondTo - secondFrom]) assert.ok(ran >= 1450 && ran < 2100, `a beat ran ${ran}ms of its 1500ms`);
+  assert.ok(secondFrom >= firstTo && secondFrom - firstTo < 150, `the second beat began ${secondFrom - firstTo}ms after the first ended`);
+  assert.deepEqual(log.filter(([, , name]) => name === 'data-pointed'), []);
+  assert.deepEqual(errors, []);
+});
+
+test('on a phone a picture plays once after 400ms seen; a flick past plays nothing, nor does a second look', { timeout: 120000 }, async () => {
+  const { page, errors, close } = await open(PHONE, '/?phone');
+  await ended(page, 2);
+  // A flick: the tall picture over most of the view for 200ms.
+  await scrollToBody(page, 2, 100);
+  await wait(200);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await wait(700);
+  const flicked = beatsIn(await logged(page)).filter(([index]) => index === 2);
+  const shownAt = await scrollToBody(page, 2, 100);
+  await ended(page, 3);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await wait(300);
+  await scrollToBody(page, 2, 100);
+  await wait(900);
+  const log = await logged(page);
+  await close();
+  const tall = beatsIn(log).filter(([index]) => index === 2);
+  assert.deepEqual(flicked, []);
+  assert.equal(tall.length, 1, 'the tall picture played again');
+  const [[, from, to]] = tall;
+  assert.ok(from - shownAt >= 400 && from - shownAt < 900, `the beat began ${from - shownAt}ms after the picture came into view`);
+  assert.ok(to - from >= 1450 && to - from < 2100, `the beat ran ${to - from}ms of its 1500ms`);
+  assert.deepEqual(beatsIn(log).map(([index]) => index).sort(), [0, 1, 2]);
+  assert.deepEqual(errors, []);
+});
+
+test('on a phone a picture that left view before its turn is dropped, and plays when it is seen again', { timeout: 120000 }, async () => {
+  const { page, errors, close } = await open(PHONE, '/?phone');
+  // Both have fallen due by now: one plays its 1500ms and the other waits.
+  await wait(800);
+  const [first] = beatsIn(await logged(page)).map(([index]) => index);
+  // Both leave view; the tall one comes in, falls due and waits behind the one playing.
+  await scrollToBody(page, 2, 100);
+  await ended(page, 2);
+  const beforeReturn = beatsIn(await logged(page)).map(([index]) => index);
+  const backAt = await page.evaluate(() => { window.scrollTo(0, 0); return performance.now(); });
+  await ended(page, 3);
+  const log = await logged(page);
+  await close();
+  const beats = beatsIn(log);
+  const dropped = 1 - first;
+  assert.deepEqual(beforeReturn, [first, 2], 'the waiting picture played out of view, or the tall one did not play in its place');
+  assert.deepEqual(beats.map(([index]) => index), [first, 2, dropped]);
+  assert.ok(beats[2][1] - backAt >= 400, 'the dropped picture played before it had been seen again for 400ms');
+  beats.slice(1).forEach(([, from], index) => assert.ok(from >= beats[index][2], 'two beats overlapped'));
+  assert.deepEqual(errors, []);
+});
+
+test('on a phone a tap changes nothing and tells nothing', { timeout: 120000 }, async () => {
+  const { page, errors, close } = await open(PHONE, '/?phone');
+  await ended(page, 2);
+  const before = changes(await logged(page)).length;
+  await page.touchscreen.tap(195, 200);
+  await wait(1300);
+  const after = changes(await logged(page));
+  const events = await page.evaluate(() => window.events ?? []);
+  await close();
+  assert.deepEqual(after.slice(before), []);
+  assert.deepEqual(events, []);
   assert.deepEqual(errors, []);
 });

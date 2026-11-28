@@ -1,6 +1,6 @@
 // The journal's pictures under a real pointer on its landing: the echo's light kindles while a picture is pointed at
 // and settles after, a caret blinks only while pointed and is solid the moment the pointer leaves, the search hit
-// washes and a day dot grows its ring, and nothing moves at rest.
+// washes and a day dot grows its ring, and nothing moves at rest. On a phone the echo's light plays once as a beat.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,9 +60,9 @@ ready.catch(() => {});
 after(async () => { try { await ready; } finally { await browser?.close(); server?.close(); } });
 
 // The landing with every picture drawn, the pointer parked off them all.
-async function open({ reducedMotion = 'no-preference' } = {}) {
+async function open({ reducedMotion = 'no-preference', device = { viewport: { width: 1440, height: 900 } } } = {}) {
   await ready;
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion });
+  const page = await browser.newPage({ ...device, reducedMotion });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`${origin}/journal`);
@@ -95,6 +95,13 @@ const colourOf = (frame, value) => frame.evaluate((body, colour) => {
   return computed;
 }, value);
 const LIT = 'color-mix(in srgb, var(--color-brand) 26%, transparent)';
+// A colour as the pixel it paints, however the browser writes it: an animated colour reads back in oklab.
+const painted = (page, colour) => page.evaluate((value) => {
+  const context = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d');
+  context.fillStyle = value;
+  context.fillRect(0, 0, 1, 1);
+  return [...context.getImageData(0, 0, 1, 1).data];
+}, colour);
 const pointed = (frame) => frame.evaluate((body) => body.hasAttribute('data-pointed'));
 
 test('at rest nothing moves in any picture on the journal\'s landing', { timeout: 120000 }, async () => {
@@ -259,4 +266,50 @@ test('under reduced motion the caret stays solid, a day dot rings without growin
     caret: { opacity: '1', animations: 0 }, echo: '1.2s', echoOut: '2.4s', seam: '2.4s', hitWash: '0.14s',
     dotSeen: { scale: 'none', ringed: true, time: '0.12s' },
   });
+});
+
+test('on a phone the echo\'s light plays once as each picture\'s beat and ends as drawn; with hover the beat lights nothing', { timeout: 120000 }, async () => {
+  const { page, errors } = await open({ device: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } });
+  const night = page.locator('.front-picture-body:has(.jnWindow)');
+  const edge = night.locator('.jnWindow-echo');
+  const lit = await colourOf(night, LIT);
+  const edgeRest = await colourOf(night, 'var(--border-subtle)');
+  const edgeOf = () => edge.evaluate((element) => ({ colour: getComputedStyle(element).borderTopColor,
+    light: element.getAnimations().filter((animation) => animation instanceof CSSAnimation).map((animation) => [animation.animationName, animation.effect.getTiming().duration]) }));
+  // Tonight's page stands in view as the landing opens, so it falls due first.
+  await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-beat'), null, { timeout: 5000 });
+  await settle(2000);
+  const edgeHeld = await edgeOf();
+  await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-beat'), null, { timeout: 10000 });
+  const edgeAfter = await edgeOf();
+
+  const root = await frameOf(page, '.jnPicture');
+  const seam = root.locator('.jnPicture-rule');
+  const seamOf = () => seam.evaluate((element) => ({ colour: getComputedStyle(element).backgroundColor,
+    light: element.getAnimations().filter((animation) => animation instanceof CSSAnimation).map((animation) => [animation.animationName, animation.effect.getTiming().duration]) }));
+  const seamRest = await colourOf(root, 'var(--border-subtle)');
+  await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnPicture)').hasAttribute('data-beat'), null, { timeout: 5000 });
+  await settle(2000);
+  const seamHeld = await seamOf();
+  await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.jnPicture)').hasAttribute('data-beat'), null, { timeout: 10000 });
+  const seamAfter = await seamOf();
+  const pointed = await page.evaluate(() => [...document.querySelectorAll('.front-picture-body')].some((body) => body.hasAttribute('data-pointed')));
+  const pixels = { lit: await painted(page, lit), edgeHeld: await painted(page, edgeHeld.colour), seamHeld: await painted(page, seamHeld.colour) };
+  await page.close();
+
+  const desk = await open();
+  const deskRoot = await frameOf(desk.page, '.jnPicture');
+  const withHover = await deskRoot.evaluate((body) => {
+    body.setAttribute('data-beat', '');
+    const animations = body.querySelector('.jnPicture-rule').getAnimations().length + body.ownerDocument.querySelector('.jnWindow-echo').getAnimations().length;
+    body.removeAttribute('data-beat');
+    return animations;
+  });
+  await desk.page.close();
+
+  assert.deepEqual([...errors, ...desk.errors], []);
+  assert.deepEqual([edgeHeld.light, edgeAfter.light, seamHeld.light, seamAfter.light], [[['jn-edge-light', 6000]], [], [['jn-seam-light', 6000]], []]);
+  assert.deepEqual([pixels.edgeHeld, pixels.seamHeld], [pixels.lit, pixels.lit], 'the light did not hold at the lamp\'s 26%');
+  assert.deepEqual([edgeAfter.colour, seamAfter.colour], [edgeRest, seamRest], 'the light did not end as drawn');
+  assert.deepEqual({ pointed, withHover }, { pointed: false, withHover: 0 });
 });
