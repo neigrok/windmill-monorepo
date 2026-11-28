@@ -20,7 +20,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 13 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 39 stories, 236 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 52 stories, 394 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -311,9 +311,17 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `end-no-ended`, `end-lost` | §5.4 step 3 |
 | `end-undo`, `end-undo-mark-standing`, `end-undo-after-typing` | §5.4 step 4 |
 | `cut-idle`; `cut-subject-exhausted`, `cut-funding-required`; `cut-paused`, `cut-restarting` | §5.4's table, rows 1 to 3 |
+| `bridge-provider-failed` | §5.4's table, row 4 |
 | `failed-accounting-unavailable`, `failed-invalid-request` | §5.4's table, row 5 |
 | `cut-unnamed` | §5.4: a cut the table does not name |
 | `defect-unreadable`, `defect-started-twice` | §4: a defect |
+| `bridge-lost`, `bridge-lost-again` | §5.5 steps 1 and 3 |
+| `bridge-pause-in-kept` | §5.2: the counts start again at a new session |
+| `bridge-concurrency-retry`, `bridge-retry-past-wait` | §5.5 step 2 |
+| `bridge-ended-meanwhile` | §5.5 step 3, and §5.4 step 2: reading goes on through a recovery |
+| `bridge-no-started`, `bridge-refused` | §5.5 step 4 |
+| `bridge-result-replaces`, `bridge-result-gone`, `bridge-result-unknown` | §5.5 step 5 |
+| `bridge-max` | §5.5: `MAX_BRIDGES` |
 
 Every frame sequence of a story begins its session with a quiet second and sets speech at 1,000,000 against a
 quiet of 0, so a revised floor does not move a commit here.

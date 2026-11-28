@@ -182,6 +182,10 @@ def shut(call):
     return {'close': call}
 
 
+def read(call):
+    return {'read': call}
+
+
 def started(call):
     return dict(WIRE['liveEvents'][0], callId=call)
 
@@ -212,6 +216,10 @@ def heard(call, message):
 
 def lost(call):
     return {'lost': {'callId': call}}
+
+
+def result(call, **answer):
+    return {'result': {'callId': call, **answer}}
 
 
 # One story. Every argument of `step` states what that step's outputs are; what a step does not name stands as the
@@ -513,6 +521,117 @@ def end_stories():
     return out
 
 
+# A take with one settled turn and a second begun, whose connection is then lost.
+def bridged(name, calls=(A, B)):
+    T = NOON
+    s = opening(name, calls=calls); first_turn(s); second_words(s)
+    s.step(T + 4500, lost(A), phase='bridging', do=[door(B), read(A)], heard=[T + 4450, T + 4500], wake=T + 4500 + BRIDGE_WAIT)
+    return s
+
+
+def bridge_stories():
+    T, out = NOON, []
+    cold, water = FIRST + ' Cold', FIRST + ' Cold water.'
+    s = bridged('bridge-lost')
+    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
+    s.step(T + 4700, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]})
+    s.step(T + 7600, heard(B, started(B)), phase='listening', send=[audio(35, 63), COMMIT])
+    s.step(T + 7700, heard(A, text(2, ' water')))
+    s.step(T + 7800, {'frames': [[SPEECH, 3]]}, send=[audio(64, 66)])
+    s.step(T + 8200, heard(B, text(1, 'Tea first')), shown=[[FIRST, U('Cold')], [U('Tea first')]])
+    s.step(T + 8500, heard(B, turn(1, 'Tea first.')), shown=[[FIRST, U('Cold')], ['Tea first.']], saved=[FIRST, 'Tea first.'], heard=[T + 4450, T + 8500])
+    out.append(s)
+
+    s = opening('bridge-provider-failed', calls=(A, B)); first_turn(s); second_words(s)
+    s.step(T + 4500, heard(A, last('provider_failed', cold)), phase='bridging', do=[door(B)], shown=[[cold], []], saved=[cold], heard=[T + 4500, T + 4500], wake=T + 4500 + BRIDGE_WAIT)
+    s.step(T + 5200, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5300, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(35, 63), COMMIT])
+    s.step(T + 8600, heard(B, turn(1, 'Tea first.')), shown=[[cold], ['Tea first.']], saved=[cold, 'Tea first.'], heard=[T + 4500, T + 8600])
+    s.step(T + 9000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 9000 + END_WAIT)
+    s.step(T + 9600, heard(B, last('completed', 'Tea first.')), phase='ended', marked=False, wake=None)
+    s.ends('person', turns=3, bridges=1); out.append(s)
+
+    s = bridged('bridge-pause-in-kept')
+    s.step(T + 4550, result(A, code='conflict'), wake=T + 9550)
+    s.step(T + 4600, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7], [SPEECH, 11], [QUIET, 7]]})
+    s.step(T + 9300, heard(B, started(B)), phase='listening', send=[audio(35, 63), COMMIT, audio(64, 81), COMMIT])
+    out.append(s)
+
+    s = bridged('bridge-concurrency-retry')
+    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
+    s.step(T + 4800, heard(B, refusal('concurrency_exhausted')), wake=T + 4800 + BRIDGE_RETRY)
+    s.step(T + 4900, {'frames': [[QUIET, 10]]})
+    s.step(T + 6800, {'clock': True}, do=[door(B)], wake=T + 9600)
+    s.step(T + 7000, heard(B, refusal('concurrency_exhausted')), wake=T + 7000 + BRIDGE_RETRY)
+    s.step(T + 9000, {'clock': True}, do=[door(B)], wake=T + 9600)
+    s.step(T + 9400, heard(B, started(B)), phase='listening', send=[audio(35, 44)])
+    out.append(s)
+
+    s = bridged('bridge-retry-past-wait')
+    s.step(T + 13000, heard(B, refusal('concurrency_exhausted')))
+    s.step(T + 14500, {'clock': True}, phase='ended', do=[MIC_CLOSED], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 13000], wake=None)
+    s.ends('bridge', heard=False, turns=2, bridges=1); out.append(s)
+
+    s = bridged('bridge-ended-meanwhile')
+    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
+    s.step(T + 4700, {'frames': [[QUIET, 10], [SPEECH, 12]]})
+    s.step(T + 6900, {'end': True}, phase='ending', do=[MIC_CLOSED])
+    s.step(T + 7500, heard(B, started(B)), send=[audio(35, 56), END])
+    s.step(T + 8300, heard(B, last('completed', 'Tea first.')), phase='ended', shown=[[cold], ['Tea first.']], saved=[cold, 'Tea first.'], heard=[T + 4450, T + 8300], wake=None)
+    s.ends('person', turns=2, bridges=1)
+    s.step(T + 8400, {'recover': True}, phase='recovering', do=[read(A), read(B)], wake=T + 4450 + RECOVER_FOR)
+    s.step(T + 8600, result(B, message=last('completed', 'Tea first.')))
+    s.step(T + 8700, result(A, message=last('went_away', water)), phase='recovered', saved=[water, 'Tea first.'], marked=False, wake=None)
+    s.recovers(answered=2); out.append(s)
+
+    s = bridged('bridge-no-started')
+    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
+    s.step(T + 4700, {'frames': [[QUIET, 10]]})
+    s.step(T + 9600, {'clock': True}, do=[read(A)], wake=T + 14500)
+    s.step(T + 9700, result(A, code='conflict'))
+    s.step(T + 14500, {'clock': True}, phase='ended', do=[MIC_CLOSED, shut(B)], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 4500], wake=None)
+    s.ends('bridge', heard=False, turns=2, bridges=1); out.append(s)
+
+    s = bridged('bridge-refused')
+    s.step(T + 4800, heard(B, refusal('accounting_unavailable')), phase='ended', do=[MIC_CLOSED], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 4800], wake=None)
+    s.ends('bridge', 'accounting_unavailable', heard=False, turns=2, bridges=1); out.append(s)
+
+    s = bridged('bridge-result-replaces')
+    s.step(T + 5000, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5100, result(A, code='conflict'), wake=T + 10100)
+    s.step(T + 10100, {'clock': True}, do=[read(A)], wake=T + TAKE_MAX)
+    s.step(T + 10200, result(A, message=last('went_away', water)), shown=[[water], []], saved=[water], heard=[T + 4450, T + 5000])
+    out.append(s)
+
+    s = bridged('bridge-result-gone')
+    s.step(T + 5000, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5100, result(A, code='result_gone'), wake=T + 10100)
+    s.step(T + 10100, {'clock': True}, do=[read(A)], wake=T + TAKE_MAX)
+    s.step(T + 10200, result(A, code='result_gone'), shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 5000])
+    out.append(s)
+
+    s = bridged('bridge-result-unknown')
+    s.step(T + 5000, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5100, result(A, code='call_unknown'), shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 5000])
+    out.append(s)
+
+    s = bridged('bridge-lost-again', calls=(A, B, C))
+    s.step(T + 5000, lost(B), do=[door(C), read(B)], heard=[T + 4450, T + 4500, T + 5000])
+    s.step(T + 5600, heard(C, started(C)), phase='listening', wake=T + TAKE_MAX)
+    out.append(s)
+
+    s = opening('bridge-max', calls=(A, B, C, D)); first_turn(s)
+    s.step(T + 4000, lost(A), phase='bridging', do=[door(B), read(A)], heard=[T + 3900, T + 4000], wake=T + 4000 + BRIDGE_WAIT)
+    s.step(T + 4300, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 4600, lost(B), phase='bridging', do=[door(C), read(B)], heard=[T + 3900, T + 4300, T + 4600], wake=T + 4600 + BRIDGE_WAIT)
+    s.step(T + 4900, heard(C, started(C)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5200, lost(C), phase='bridging', do=[door(D), read(C)], heard=[T + 3900, T + 4300, T + 4900, T + 5200], wake=T + 5200 + BRIDGE_WAIT)
+    s.step(T + 5500, heard(D, started(D)), phase='listening', wake=T + TAKE_MAX)
+    s.step(T + 5800, lost(D), phase='ended', do=[MIC_CLOSED], heard=[T + 3900, T + 4300, T + 4900, T + 5500], wake=None)
+    s.ends('bridge', heard=False, turns=1, bridges=3); out.append(s)
+    return out
+
+
 def story_text(story):
     line = lambda value: json.dumps(value, ensure_ascii=False)
     lines = ['{', f'  "format": {line(story["format"])},', f'  "name": {line(story["name"])},', f'  "given": {line(story["given"])},', '  "steps": [']
@@ -531,7 +650,7 @@ def story_text(story):
 
 
 def documents():
-    stories = [story.document() for story in open_stories() + word_stories() + end_stories()]
+    stories = [story.document() for story in open_stories() + word_stories() + end_stories() + bridge_stories()]
     if len({story['name'] for story in stories}) != len(stories): raise ValueError('story names repeat')
     return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes()),
             **{'takes/' + story['name'] + '.json': story_text(story) for story in stories}}
