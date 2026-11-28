@@ -329,9 +329,11 @@ enum RoadmapFixture {
           try await sent()
         }
         // roadmap-several's two roadmaps under *Learn to sail* arrive before its last completion, the lower first.
-        if board == "roadmap-several" || board == "roadmap-guide-above" {
+        var beside: [String: ID<RoadmapEntry>] = [:]
+        if board == "roadmap-several" || board == "roadmap-guide-above" || board == "roadmap-coach-history" {
           for roadmap in others.prefix(2).reversed() {
             let other = try plant(roadmap, opening: sail.tree, by: remote.roadmapRunner)
+            beside[roadmap.title] = other.tree
             if board == "roadmap-guide-above" && roadmap.title == "Become a day skipper" { try write(Guides.skipper, on: other.tree, by: remote.roadmapRunner) }
             try await sent()
           }
@@ -340,8 +342,8 @@ enum RoadmapFixture {
           try complete(last, of: sail, by: remote.roadmapRunner)
           try await sent()
         }
-        if board == "roadmap-coach-history" {
-          try converse(about: sail, clock: clock, by: remote.roadmapRunner)
+        if board == "roadmap-coach-history", let spanish = beside["Spanish B1"], let skipper = beside["Become a day skipper"] {
+          try converse(about: sail, spanish: spanish, skipper: skipper, clock: clock, by: remote.roadmapRunner)
           try await sent()
         }
       } else {
@@ -1035,8 +1037,8 @@ enum RoadmapFixture {
   // roadmap-coach-history's conversations, each asked and answered at its moment by the board's clock, for History (Roadmap
   // · iOS 11.7): two about *Learn to sail*'s *Read the wind*, today and yesterday, one about every roadmap today, and two
   // about *Spanish B1* and *Become a day skipper*, planted beside it, days before.
-  static func converse(about sail: CreateRoadmap.Result, clock: SteppingBoardClock, by runner: ActionRunner) throws {
-    let spanish = try plant(others[0], opening: sail.tree, by: runner).tree, skipper = try plant(others[1], opening: sail.tree, by: runner).tree
+  static func converse(about sail: CreateRoadmap.Result, spanish: ID<RoadmapEntry>, skipper: ID<RoadmapEntry>, clock: SteppingBoardClock,
+                       by runner: ActionRunner) throws {
     let wind = sail.steps.first { $0.key == "read" }?.id.description
     let hour: Int64 = 3_600_000, day = 24 * hour
     let asked: [(question: String, tree: ID<RoadmapEntry>?, step: String?, at: Int64)] = [

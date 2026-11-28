@@ -68,6 +68,15 @@ final class RoadmapCoachCaptures: DesignCapture {
     return app
   }
 
+  // The sheet's grabber, above the middle of its title bar, dragged to the top: the sheet at large.
+  func large(_ app: XCUIApplication) {
+    let close = app.buttons["roadmap-coach-close"].firstMatch
+    let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: close.frame.minY - 20))
+    grabber.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+    let large = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.frame.minY < app.frame.height / 4 }, object: nil)
+    XCTAssertEqual(XCTWaiter().wait(for: [large], timeout: 10), .completed)
+  }
+
   // 11.3: on an Up next page the composer is a circle beside Complete until it is tapped.
   func circle(_ app: XCUIApplication) {
     XCTAssertTrue(app.buttons["roadmap-coach-circle"].waitForHittable(timeout: 10))
@@ -89,12 +98,7 @@ final class RoadmapCoachCaptures: DesignCapture {
       answered(app)
       ask("Is this realistic?", app)
       XCTAssertTrue(app.staticTexts.matching(identifier: "roadmap-coach-answer").element(boundBy: 1).waitForExistence(timeout: 30))
-      // The sheet's grabber, above the middle of its title bar, dragged to the top: the sheet at large.
-      let close = app.buttons["roadmap-coach-close"].firstMatch
-      let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: close.frame.minY - 20))
-      grabber.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
-      let large = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.frame.minY < app.frame.height / 4 }, object: nil)
-      XCTAssertEqual(XCTWaiter().wait(for: [large], timeout: 10), .completed)
+      large(app)
       return app
     }
     captureBoard("11.6b-roadmap-coach-new-chat") { look in
@@ -119,6 +123,7 @@ final class RoadmapCoachCaptures: DesignCapture {
       let app = coach(look, board: "roadmap-coach-history")
       ask("What’s next?", app)
       answered(app)
+      large(app)
       app.buttons["roadmap-coach-history"].tap()
       XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 10) && app.staticTexts["Other conversations"].exists)
