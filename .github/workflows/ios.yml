@@ -331,9 +331,9 @@ jobs:
               -only-testing:WindmillUITests/RoadmapLandingFlowTests
               -only-testing:WindmillUITests/RoadmapIntegrationFlowTests
               -only-testing:WindmillUITests/RoadmapCoachIntegrationFlowTests
+              -only-testing:WindmillUITests/RoadmapCoachFlowTests
           - shard: gym-journal
             tests: >-
-              -only-testing:WindmillUITests/RoadmapCoachFlowTests
               -only-testing:WindmillUITests/GymCoachFlowTests
               -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
               -only-testing:WindmillUITests/GymWorkoutFlowTests
