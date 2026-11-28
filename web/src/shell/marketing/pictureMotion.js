@@ -123,7 +123,8 @@ class PictureMotion {
     this.#rearming = setTimeout(this.#guarded(() => { this.#armed = true; }), Math.max(0, this.#leftAt + REARM_MS - performance.now()));
   }
 
-  // A loop plays to the end of the cycle it is in and stops there, where it rests, unless it is marked to cut.
+  // A loop plays to the end of the cycle it is in and stops there, where it rests; one on or inside an element marked
+  // `data-cut` stops at once.
   #depart() {
     if (this.#ending || !this.#body.hasAttribute('data-pointed')) return;
     const loops = this.#body.getAnimations({ subtree: true }).filter(endless);

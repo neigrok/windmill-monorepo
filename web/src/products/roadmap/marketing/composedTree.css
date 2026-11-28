@@ -3,7 +3,7 @@
    for the halo. An open ring and a locked node are filled with the plate the tree stands on, --rm-plate. */
 .rmTree { position: relative; flex: none; --rm-plate: var(--look-panel); }
 .rmTree > svg { position: absolute; inset: 0; overflow: visible; }
-.rmTree-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5; pointer-events: none;
+.rmTree-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5;
                transition: stroke var(--duration-fast) var(--ease-standard), stroke-opacity var(--duration-fast) var(--ease-standard); }
 .rmTree-edge.is-lit { stroke: var(--connector-active); stroke-width: 2.2; }
 .rmTree-crown { position: absolute; z-index: 3; display: flex; transform: translate(-50%, -50%); color: var(--kind-gold); pointer-events: none; }
@@ -39,8 +39,7 @@
   .rmTree .nd:hover { scale: 1.06; }
 }
 
-/* ---- the room's motion under the frame's attributes (shell/marketing/pictureMotion.js): the crown breathes while the
-   picture is pointed at, and arrival plays the tree's beat, the open steps' pulse or the room's unlock ---- */
+/* ---- the room's motion under the frame's attributes (shell/marketing/pictureMotion.js): the crown's breath, then a beat ---- */
 .rmTree-travel { opacity: 0; pointer-events: none; }
 .rmTree-travel path { fill: none; stroke: color-mix(in srgb, var(--connector-active) 70%, white); stroke-linecap: round;
                       stroke-dasharray: var(--dash) calc(var(--length) + var(--dash)); stroke-dashoffset: var(--dash); }
@@ -60,7 +59,7 @@
   [data-beat] .rmTree-travel path { animation: rm-travel var(--travel) var(--ease-standard) var(--travel-at) forwards; }
 }
 
-/* Reduced motion keeps the step's brightening and the branch's colour at their own times; the rest is not drawn. */
+/* Reduced motion keeps the step's brightening and the branch's colour at their own times, and plays no scale, breath or beat. */
 @media (prefers-reduced-motion: reduce) {
   .rmTree .nd { transition-duration: var(--duration-base) !important; }
   .rmTree-edge { transition-duration: var(--duration-fast) !important; }
