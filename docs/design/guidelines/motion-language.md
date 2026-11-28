@@ -178,7 +178,7 @@ Turn this down, Complete, Fork this tree, Go to page, Add movement).
 
 - **At rest** a picture is still, and nothing moves before the picture has drawn.
 - **Under the pointer.** A picture answers a mouse or a pen on a device whose primary pointer hovers;
-  a finger never leaves anything lit or lifted. A part gives its room's feedback (§0) at the room's
+  a finger never leaves anything lit or moving. A part gives its room's feedback (§0) at the room's
   values. It takes no press, no focus and no cursor of its own, and it never shows a state, number or
   word the picture does not already show.
 - **Arrival.** When that pointer is on a picture that is at least 60% in view, or that covers at least
