@@ -2,7 +2,7 @@
 
 `Agent` runs product-neutral Coach turns and depends only on `SyncCore`. Its profile, seat, pictures,
 marks and outcomes are plain values. It imports no Foundation, catalog, domain kit, platform or UI.
-The application still uses its existing Gym turn implementation; this package is a library.
+The App's Roadmap Coach runs its turns on it, behind its switch; the App's gym Coach still uses its own turn implementation.
 
 `Turn` sequences `ToolHost`, `AiClient` and `Telemetry` over injected time, cryptographic IDs and a
 work lease. `run` opens records and the initial mark, uploads pictures, writes each round's mark,

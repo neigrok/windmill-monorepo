@@ -67,9 +67,10 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     let expires: Date
   }
   let state = Mutex(State())
-  let boardClock: Bool
+  // The server's clock, the phone's own: a board's stands still, as the phone's does.
+  let wall: any WallClock
   let snapshotURL: URL?
-  init(boardClock: Bool = false, snapshotURL: URL? = nil) { self.boardClock = boardClock; self.snapshotURL = snapshotURL }
+  init(wall: any WallClock = SystemClock(), snapshotURL: URL? = nil) { self.wall = wall; self.snapshotURL = snapshotURL }
   func restore() throws {
     guard let snapshotURL else { throw AppFailure(message: "The model snapshot location is missing.") }
     let saved = try JSON(parsing: Array(Data(contentsOf: snapshotURL)))
@@ -90,7 +91,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     do { try Data(saved.jcs).write(to: snapshotURL, options: .atomic); return true }
     catch { state.persistenceFailed = true; return false }
   }
-  var now: Int64 { boardClock ? BoardClock().nowMs() : SystemClock().nowMs() }
+  var now: Int64 { wall.nowMs() }
   func identity(email: String) -> AuthIdentity {
     let account = "model-" + email.lowercased()
     let token = UUID().uuidString

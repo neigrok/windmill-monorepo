@@ -44,3 +44,22 @@ scratch files contain only synthetic test data and can be removed after reading 
 The probe host persists only its visible values, execution identities and recovery mark. Working
 requests, prompts, passes, carries and full tool results stay in memory. Product integration and
 paid-provider acceptance are separate from this library proof.
+
+## Roadmap Coach in the iPhone's room
+
+`room_stack.py` runs a phone's suite against Roadmap Coach on a local stack: the C++ backend serving roadmap through the
+sync engine (`ROADMAP_ENGINE_ENABLED=1`) and signing passes for `roadmap.coach`, the Rust AI service, a provider it plays
+and one origin in front of both. It creates its databases (`--database-prefix`), signs a throwaway account in, and has
+`room_seed.mjs`, a browser on the web's domain and sync engine, plant *Learn to sail* and begin a conversation about it. The
+provider answers in words, or for a question "add a subtask: <words>" calls `update_node` and then says nothing. The suite
+reads `WM_COACH_E2E_SERVER` and `WM_COACH_E2E_SESSION` (a file of the account, its session and its email), and the
+`TEST_RUNNER_` copies Xcode forwards; the iPhone's is `RoadmapCoachIntegrationFlowTests`, skipped without them.
+
+```sh
+python3 tools/coach-e2e/room_stack.py --backend-binary <build>/windmill_server --ai-binary <target>/windmill-ai \
+  --scratch <empty folder> --command-file <argv.json> --ports 8302 8303 8304 8305 8306
+```
+
+`evidence.json` counts the passes the backend signed, the calls through the origin and the Coach events the phone sent to
+`/v1/events`, and fails the run where a backend credential reached the AI service or a session reached a log. The seed's
+output is in `seed.log`, the suite's in `suite.log`.

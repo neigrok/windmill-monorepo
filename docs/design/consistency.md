@@ -2059,6 +2059,15 @@ Android. It and the product differ in these places.
   `start_session`, `log_set`, `log_sets`, `finish_session`, `discard_session` and `import_session`.
   The spec gives each ability one agent rule for both doors and withholds these until the owner
   rules (its Appendix B-1).
+- **6ab · Access words on the iPhone, gym's against Roadmap Coach's boards.** Roadmap Coach's notices follow its approved
+  boards (Roadmap · iOS 11.19a to 11.21), and the iPhone's gym Coach says the same states otherwise, for gym's owner to
+  align: no connection is *Asking needs a connection.* on 11.21, where gym says *No connection. Your question is kept here.*
+  (`CoachTurnRefusal.offline`) and *Coach needs a connection.* (`CoachCopy.offline`), and offers *Try again* where 11.21
+  offers nothing, Send being the retry; a spent allowance signed out is *You have used all of your AI allowance. Sign in to
+  continue.* with *Sign In* on 11.19a, where gym says the sentence alone with its own Sign in; signed in, 11.19b adds when it
+  renews (*It renews on 1 December.*) and offers *Use Your Agent*, where gym offers nothing; the shared capacity spent for
+  the day (11.20) offers *Use Your Agent*, as gym's *Use your own AI agent*, in title case. A notice stands in the band slot
+  above the composer on the boards, and at the conversation's end in gym's.
 - **6s · Pasted programs.** The Coach contract and both phones accept 8,000 UTF-8 bytes. The web's `QUESTION_BYTES`
   remains at 1,000, and the web textarea also limits character count to 1,000. Align the web when delivering its setup
   flow, preserving the complete draft and a specific length refusal rather than silently truncating a pasted program.

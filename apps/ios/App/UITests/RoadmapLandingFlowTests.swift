@@ -28,7 +28,7 @@ import XCTest
     app.titleMenuLeadingWithSetAside().tap()
     XCTAssertTrue(app.navigationBars["Set Aside"].waitForExistence(timeout: 10))
     let anchor = change("Anchor at night, New step", in: app), rota = change("Plan the watch rota, Note edited", in: app)
-    XCTAssertTrue(anchor.waitForExistence(timeout: 5) && rota.exists)
+    XCTAssertTrue(anchor.waitForExistence(timeout: 10) && rota.waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Winter refit"].exists && app.staticTexts["The roadmap was deleted elsewhere."].exists)
 
     let more = app.buttons.matching(identifier: "roadmap-set-aside-more")

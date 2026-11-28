@@ -8,12 +8,14 @@ import { roadmapBook, runAction, runRead, runScene } from './vectors.js';
 
 const READS = ['account', 'activity', 'board', 'diagnostics', 'effects', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'replica', 'search'].map((name) => `${name}.json`);
 const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing', 'conversation', 'apply'].map((name) => `${name}-actions.json`);
+// A turn's records beyond its opening and end run in turnRecords.test.js.
+const TURN = ['turn-records-actions.json'];
 const SCENES = ['undo.json'];
 const PINNED = ['rules.json', 'values.json'];
 
 test('every file of the roadmap corpus is claimed', () => {
   const files = readdirSync(new URL('../../../../../packages/api-contract/roadmap/domain/', import.meta.url)).filter((name) => name.endsWith('.json')).sort();
-  assert.deepEqual(files, [...READS, ...ACTIONS, ...SCENES, ...PINNED].sort());
+  assert.deepEqual(files, [...READS, ...ACTIONS, ...TURN, ...SCENES, ...PINNED].sort());
 });
 
 for (const file of READS) {
