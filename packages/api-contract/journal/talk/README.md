@@ -361,6 +361,11 @@ A runner fails on a file under this folder that it does not run, on a `format` t
 an input it does not know and on an `op` or an action its switch does not name. A failure names the file and the
 step, never a story's text.
 
+No surface runs these files yet. Each surface's claim test names them as waiting for the work that will run them,
+and fails on a file under this folder that it does not name: `JournalRulesTests.everySharedFileHasARunner` in
+Swift, for the roadmap node `m2-build-the-domain-in-swift`, and the journal corpus test on the web, for the web's
+Talk (R-6).
+
 ## What `check.py` holds
 
 - `pauses.json`: every answer equals a reference of §5.2 written in `check.py`. The cases above are stated by

@@ -109,6 +109,18 @@ test('the web claims every journal vector file', (t) => {
   t.diagnostic(`journal corpus: ${Object.keys(handlers).length + 1}/${Contract.files('journal/domain').length} files, ${1 + Object.keys(handlers).reduce((sum, file) => sum + Contract.vectors(file).length, 0)} comparisons, none pending`);
 });
 
+// Talk's stories land before the rule they pin (journal-talk §9): each waits for the work named beside it to run it.
+const waiting = {
+  'journal/talk/pauses.json': "the web's Talk (journal-talk R-6)",
+  'journal/talk/saves.json': "the web's Talk (journal-talk R-6)",
+  'journal/talk/takes/': "the web's Talk (journal-talk R-6)",
+};
+test('every journal file outside the domain corpus waits by name', () => {
+  const others = Contract.files('journal').filter((file) => !file.startsWith('journal/domain/'));
+  assert.deepEqual(others.filter((file) => !Object.keys(waiting).some((entry) => file.startsWith(entry))), []);
+  assert.deepEqual(Object.keys(waiting).filter((entry) => !others.some((file) => file.startsWith(entry))), []);
+});
+
 test('the two-entity journal book equals the pinned bytes', () => RuleBookParity.check(JournalRules.book, rulesFile));
 test('every journal rule has shared coverage and maps both refusal paths', () => RuleBookCheck.check(JournalRules.book, JournalRefusals, valuesFile, [actionsFile]));
 test('journal declarations agree with the registry', () => {

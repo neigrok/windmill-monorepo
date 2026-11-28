@@ -9,7 +9,12 @@ import Testing
 struct JournalRulesTests {
   @Test func everySharedFileHasARunner() throws {
     let handled = ["echo-quotes.json", "page-actions.json", "rules.json", "values.json"].map { "journal/domain/" + $0 }
-    #expect(try Contract.files(under: "journal") == handled)
+    // Talk's stories land before the rule they pin (journal-talk §9): each waits for the roadmap node beside it to run it.
+    let waiting = ["journal/talk/pauses.json": "m2-build-the-domain-in-swift", "journal/talk/saves.json": "m2-build-the-domain-in-swift",
+                   "journal/talk/takes/": "m2-build-the-domain-in-swift"]
+    let files = try Contract.files(under: "journal")
+    #expect(files.filter { file in !waiting.keys.contains { file.hasPrefix($0) } } == handled)
+    #expect(waiting.keys.filter { entry in !files.contains { $0.hasPrefix(entry) } } == [], "a waiting entry names no file")
   }
 
   @Test func theBookIsThePinnedOne() throws {
