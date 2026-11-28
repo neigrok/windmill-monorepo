@@ -678,11 +678,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
-  the system tells the room nothing of its rename; 01.3 draws the *Rename* tile with a pencil, and no stock tile both
-  carries one and starts the system's rename, so the tile is built as the system draws it, the word alone on iOS 18.6,
-  26.5 and 27: `RenameButton` takes a label style's words but never its symbol, and a tile of the room's own finds no
-  rename to call, neither in `@Environment(\.rename)` nor up the responder chain (`rename:`), so 01.3 is to be redrawn
-  without the pencil for the owner's approval; a long name in the menu wraps onto a second line
+  the system tells the room nothing of its rename; a long name in the menu wraps onto a second line
   where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
   at the domain's 200 characters with no counter, and no board
