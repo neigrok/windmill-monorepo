@@ -30,7 +30,7 @@ import SyncCore
       #expect(socket.closed)
       #expect(socket.sent == [.binary([UInt8](repeating: 1, count: 4_800)), .text(try wire.field("liveFrames").array[1].jcsText),
                               .text(try wire.field("liveFrames").array[2].jcsText)])
-      #expect(diagnostics.reports == (name == "invalid_request" ? ["ai-call/refusal"] : []), "\(name)")
+      #expect(diagnostics.reports == (name == "invalid_request" ? ["ai-live/refusal"] : []), "\(name)")
     }
   }
 
@@ -53,7 +53,7 @@ import SyncCore
       #expect(socket.closed)
       #expect(socket.sent == [])
       #expect(socket.pings.isEmpty)
-      #expect(diagnostics.reports == (["conflict", "invalid_request"].contains(name) ? ["ai-call/refusal"] : []), "\(name)")
+      #expect(diagnostics.reports == (["conflict", "invalid_request"].contains(name) ? ["ai-live/refusal"] : []), "\(name)")
     }
   }
 
@@ -85,7 +85,7 @@ import SyncCore
       }
       #expect(try await connection.next() == .lost(.wire), "\(name)")
       #expect(socket.closed, "\(name)")
-      #expect(diagnostics.reports == ["ai-call/wire"], "\(name)")
+      #expect(diagnostics.reports == ["ai-live/wire"], "\(name)")
     }
     let refused = wire.field("liveFirstFailures").field("funding_required")
     for (name, first) in [("another call", try started.changed(["callId"], to: "bcdefghijklmnopqrstuvw")),
@@ -104,7 +104,7 @@ import SyncCore
       #expect(failure.source == .wire)
       #expect(failure.code == "invalid-answer")
       #expect(socket.closed)
-      #expect(diagnostics.reports == ["ai-call/wire"], "\(name)")
+      #expect(diagnostics.reports == ["ai-live/wire"], "\(name)")
     }
   }
 
@@ -125,7 +125,7 @@ import SyncCore
         Issue.record("The session did not start"); continue
       }
       #expect(try await connection.next() == .end(try Self.end(terminal)))
-      #expect(diagnostics.reports == ["ai-call/code"])
+      #expect(diagnostics.reports == ["ai-live/code"])
       let reader = PolicyDiagnostics()
       let reading = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass")), .success(ValidationTransport.json(terminal))]),
                                     clock: LiveClock(), diagnostics: reader, credentials: { _ in AiCredentials() })
@@ -142,7 +142,7 @@ import SyncCore
                                             seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
     guard case .failed(let end) = opening else { Issue.record("\(opening)"); return }
     #expect(end == (try Self.end(first)))
-    #expect(diagnostics.reports == ["ai-call/code"])
+    #expect(diagnostics.reports == ["ai-live/code"])
   }
 
   @Test func aTerminalTheSocketAlreadyHoldsIsNeverReplacedByLost() async throws {
@@ -228,8 +228,10 @@ import SyncCore
 
   @Test func anUpgradeRefusedTwiceOrMalformedIsADefectAndAnyOtherStatusIsLost() async throws {
     let cases: [(upgrades: [AiUpgrade], code: String?, loss: AiLiveLoss?, reports: [String])] = [
-      ([.refused(status: 401), .refused(status: 401)], "invalid-answer", nil, ["ai-call/wire"]),
-      ([.refused(status: 400)], "invalid_request", nil, ["ai-call/wire"]),
+      ([.refused(status: 401), .refused(status: 401)], "invalid-answer", nil, ["ai-live/wire"]),
+      ([.refused(status: 400)], "invalid_request", nil, ["ai-live/wire"]),
+      ([.refused(status: 302)], "invalid-answer", nil, ["ai-live/wire"]),
+      ([.refused(status: 308)], "invalid-answer", nil, ["ai-live/wire"]),
       ([.refused(status: 502)], nil, .refused(status: 502), []),
       ([.refused(status: 404)], nil, .refused(status: 404), []),
       ([.refused(status: 426)], nil, .refused(status: 426), []),
@@ -241,7 +243,7 @@ import SyncCore
       let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
                                               seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
       switch opening {
-      case .refused(let failure): #expect(failure.code == code); #expect(failure.source == .text)
+      case .refused(let failure): #expect(failure.code == code); #expect(failure.source == .wire)
       case .lost(let reason): #expect(reason == loss)
       default: Issue.record("\(opening)")
       }
@@ -278,7 +280,7 @@ import SyncCore
   @Test func aConnectionThatClosesOrFailsWithoutItsLastMessageIsLost() async throws {
     let started = try Self.wire().field("liveEvents").array[0]
     for (end, loss, reports) in [(Result<AiSocketFrame?, AiTransportFailure>.success(nil), AiLiveLoss.closed, [String]()), (.failure(.offline), .offline, []),
-                                 (.failure(.transport), .transport, ["ai-call/transport"])] {
+                                 (.failure(.transport), .transport, ["ai-live/transport"])] {
       let socket = PlayedSocket([.success(.text(started.jcsText)), end])
       let diagnostics = PolicyDiagnostics()
       let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
@@ -531,7 +533,7 @@ import SyncCore
     }
   }
 
-  @Test func audioTheDoorWouldRefuseIsADefectAndIsNotSent() async throws {
+  @Test func audioTheDoorWouldRefuseIsThrownBackUnreportedAndNotSent() async throws {
     let started = try Self.wire().field("liveEvents").array[0]
     let socket = PlayedSocket([.success(.text(started.jcsText))])
     let diagnostics = PolicyDiagnostics()
@@ -546,7 +548,7 @@ import SyncCore
     }
     try connection.send(audio: [UInt8](repeating: 0, count: 65_536))
     #expect(socket.sent == [.binary([UInt8](repeating: 0, count: 65_536))])
-    #expect(diagnostics.reports == ["ai-call/wire", "ai-call/wire", "ai-call/wire"])
+    #expect(diagnostics.reports == [])
   }
 
   @Test func theLiveDoorAndTheResultCarryOnlyThePass() async throws {
@@ -620,18 +622,75 @@ import SyncCore
       switch index {
       case 0: .http(LoopbackDoor.response(401, #"{"code":"pass_expired","allowance":null}"#))
       case 1: .http("HTTP/1.1 302 Found\r\nLocation: /v1/elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-      default: .socket(protocol: "wm-other.v1", opening: [], closing: [])
+      case 2: .socket(protocol: "wm-other.v1", opening: [], closing: [])
+      default: .socket(protocol: nil, opening: [], closing: [])
       }
     }
     let transport = try AiURLSessionTransport(origin: URL(string: "http://127.0.0.1:\(door.port)")!, allowLoopbackHTTP: true)
     let request = AiRequest(method: "GET", path: "/v1/calls/abcdefghijklmnopqrstuv/transcription?label=talk", headers: ["Authorization": "Bearer pass"])
     guard case .refused(status: 401) = try await transport.upgrade(request, subprotocol: "wm-live.v1") else { Issue.record("401 was not a refusal"); return }
     guard case .refused(status: 302) = try await transport.upgrade(request, subprotocol: "wm-live.v1") else { Issue.record("302 was not a refusal"); return }
-    await #expect(throws: AiTransportFailure.self) { try await transport.upgrade(request, subprotocol: "wm-live.v1") }
+    await #expect(throws: AiTransportFailure.invalidResponse) { try await transport.upgrade(request, subprotocol: "wm-live.v1") }
+    await #expect(throws: AiTransportFailure.invalidResponse) { try await transport.upgrade(request, subprotocol: "wm-live.v1") }
     await #expect(throws: AiTransportFailure.invalidOrigin) {
       try await transport.upgrade(AiRequest(method: "GET", path: "//other.invalid/v1/calls", headers: [:]), subprotocol: "wm-live.v1")
     }
-    #expect(door.heads.map { LoopbackDoor.Head($0).line } == Array(repeating: "GET /v1/calls/abcdefghijklmnopqrstuv/transcription?label=talk HTTP/1.1", count: 3))
+    #expect(door.heads.map { LoopbackDoor.Head($0).line } == Array(repeating: "GET /v1/calls/abcdefghijklmnopqrstuv/transcription?label=talk HTTP/1.1", count: 4))
+  }
+
+  @Test func aHandshakeWithAnotherOrNoSubprotocolOrARedirectIsARefusedDefect() async throws {
+    let started = try Self.wire().field("liveEvents").array[0]
+    let answers: [LoopbackDoor.Answer] = [
+      .socket(protocol: nil, opening: [LoopbackDoor.frame(1, Array(started.jcsText.utf8))], closing: []),
+      .socket(protocol: "wm-other.v1", opening: [LoopbackDoor.frame(1, Array(started.jcsText.utf8))], closing: []),
+      .http("HTTP/1.1 302 Found\r\nLocation: /v1/elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+    ]
+    for answer in answers {
+      let door = try LoopbackDoor { _, head in
+        head.hasPrefix("POST /v1/ai/passes ") ? .http(LoopbackDoor.response(200, #"{"pass":"live-pass","expiresIn":600000}"#)) : answer
+      }
+      let transport = try AiURLSessionTransport(origin: URL(string: "http://127.0.0.1:\(door.port)")!, allowLoopbackHTTP: true)
+      let diagnostics = PolicyDiagnostics()
+      let client = ServiceAiClient(transport: transport, clock: LiveClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials(session: "session") })
+      let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                              seat: Seat(kind: .bound, key: "seat"), livenessMs: 2_000)
+      guard case .refused(let failure) = opening else { Issue.record("\(opening)"); continue }
+      #expect(failure.source == .wire)
+      #expect(failure.code == "invalid-answer")
+      #expect(diagnostics.reports == ["ai-live/wire"])
+      #expect(door.heads.filter { $0.hasPrefix("GET ") }.count == 1)
+    }
+  }
+
+  @Test func aNetworkDropIsAQuietLossAndAnAbnormalCloseIsReported() async throws {
+    let started = try Self.wire().field("liveEvents").array[0]
+    let cases: [(LoopbackDoor.Drop, AiLiveLoss, [String])] = [
+      (.fin, .offline, []), (.reset, .offline, []), (.close(1000), .closed, []), (.close(1001), .closed, []),
+      (.close(1011), .transport, ["ai-live/transport"]), (.close(4000), .transport, ["ai-live/transport"]),
+    ]
+    for (drop, loss, reports) in cases {
+      let door = try LoopbackDoor { _, head in
+        if head.hasPrefix("POST /v1/ai/passes ") { return .http(LoopbackDoor.response(200, #"{"pass":"live-pass","expiresIn":600000}"#)) }
+        return .socket(protocol: "wm-live.v1", opening: [LoopbackDoor.frame(1, Array(started.jcsText.utf8))], closing: [], then: drop)
+      }
+      let transport = try AiURLSessionTransport(origin: URL(string: "http://127.0.0.1:\(door.port)")!, allowLoopbackHTTP: true)
+      let diagnostics = PolicyDiagnostics()
+      let client = ServiceAiClient(transport: transport, clock: LiveClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials(session: "session") })
+      let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                              seat: Seat(kind: .bound, key: "seat"), livenessMs: 2_000)
+      guard case .started(let connection) = opening else { Issue.record("\(drop): \(opening)"); continue }
+      #expect(try await connection.next() == .lost(loss), "\(drop)")
+      #expect(diagnostics.reports == reports, "\(drop)")
+    }
+  }
+
+  @Test func aConnectionErrorOfThePosixFamilyIsOffline() {
+    for code in [ENOTCONN, ECONNRESET, ECONNABORTED, EPIPE, ENETDOWN, ENETUNREACH, EHOSTDOWN, EHOSTUNREACH, ECONNREFUSED] {
+      #expect(AiURLSessionTransport.classify(NSError(domain: NSPOSIXErrorDomain, code: Int(code))) == .offline, "\(code)")
+    }
+    #expect(AiURLSessionTransport.classify(NSError(domain: NSPOSIXErrorDomain, code: Int(EINVAL))) == .transport)
+    #expect(AiURLSessionTransport.classify(URLError(.networkConnectionLost)) == .offline)
+    #expect(AiURLSessionTransport.classify(URLError(.badServerResponse)) == .transport)
   }
 
   static func wire() throws -> JSON {
@@ -740,8 +799,9 @@ import SyncCore
 final class LoopbackDoor: @unchecked Sendable {
   enum Answer: Sendable {
     case http(String)
-    case socket(protocol: String, opening: [[UInt8]], closing: [[UInt8]])
+    case socket(protocol: String?, opening: [[UInt8]], closing: [[UInt8]], then: Drop = .pump)
   }
+  enum Drop: Sendable { case pump, fin, reset, close(UInt16) }
   struct Head {
     let line: String
     let fields: [String: String]
@@ -809,12 +869,13 @@ final class LoopbackDoor: @unchecked Sendable {
     if let length = Head(head).fields["content-length"].flatMap(Int.init), length > 0 { _ = Self.read(client, length) }
     switch answer(index, head) {
     case .http(let response): Self.write(client, Array(response.utf8))
-    case .socket(let subprotocol, let opening, let closing):
+    case .socket(let subprotocol, let opening, let closing, let drop):
       let key = Head(head).fields["sec-websocket-key"] ?? ""
       let accept = Data(Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))).base64EncodedString()
       Self.write(client, Array(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-        + "Sec-WebSocket-Accept: \(accept)\r\nSec-WebSocket-Protocol: \(subprotocol)\r\n\r\n").utf8))
+        + "Sec-WebSocket-Accept: \(accept)\r\n" + (subprotocol.map { "Sec-WebSocket-Protocol: \($0)\r\n" } ?? "") + "\r\n").utf8))
       for frame in opening { Self.write(client, frame) }
+      var dropped = false
       while let header = Self.read(client, 2) {
         let opcode = header[0] & 0x0F
         var length = Int(header[1] & 0x7F)
@@ -826,6 +887,17 @@ final class LoopbackDoor: @unchecked Sendable {
         lock.withLock { recordedFrames.append((opcode, payload)) }
         if opcode == 9 { Self.write(client, Self.frame(10, payload)) }
         if opcode == 1, payload == Array(#"{"type":"end"}"#.utf8) { for frame in closing { Self.write(client, frame) } }
+        guard !dropped else { continue }
+        dropped = true
+        switch drop {
+        case .pump: break
+        case .fin: shutdown(client, SHUT_RDWR); return
+        case .reset:
+          var hold = linger(l_onoff: 1, l_linger: 0)
+          setsockopt(client, SOL_SOCKET, SO_LINGER, &hold, socklen_t(MemoryLayout<linger>.size))
+          return
+        case .close(let code): Self.write(client, Self.frame(8, [UInt8(code >> 8), UInt8(code & 0xFF)]))
+        }
       }
     }
   }

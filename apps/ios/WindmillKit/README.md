@@ -19,22 +19,25 @@ is still open, gone or unknown.
 
 `openLive(callId:use:seat:livenessMs:)` upgrades `/v1/calls/{callId}/transcription` to `wm-live.v1`
 on the pinned origin, with the pass as `Authorization`. URLSession gives a refused upgrade's status
-and never its body, so a 401 renews the pass and tries once more, a second 401 or a 400 is a reported
-defect, and any other status is lost with that status. The opening answers `started` with an
-`AiLiveConnection`, a refusal, a first `failed`, or `lost` with its `AiLiveLoss`. The connection sends
-audio frames, `commit` and `end`, holds no audio, and from `started` on keeps one read of its socket
-outstanding, so each message is taken as it arrives. `next()` answers the next `text` or `turn`, then
-the session's `ended` or `failed`, or `lost`, and that last answer on every later call; callers waiting
-together share the stream, each message going to the one that asked first. A terminal's shape is
-validated field by field and its code need only have the service's form: a code the client does not
-know is reported once and the message still arrives with its words, here and from `liveResult`. A
-loss names its cause: the socket closed, the network or the transport failed, a wire defect, a ping
-unanswered for `livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or
-`close()`. A terminal already taken from the socket is never replaced by a loss. The connection pings
-every `livenessMs` from `started` until `end`. A wire defect is reported. The client holds its
-connections weakly, and one nobody holds closes its socket. A finished connection lets go of its
-socket and the socket of its task, so nothing left behind reaches the pass; a seat change closes every
-connection of the old seat and fences its reads, finished ones too.
+and never its body, so a 401 renews the pass and tries once more; a second 401, a 400, a redirect and
+a handshake that answers no subprotocol or another one are reported defects, and any other status is
+lost with that status. The opening answers `started` with an `AiLiveConnection`, a refusal, a first
+`failed`, or `lost` with its `AiLiveLoss`. The connection sends audio frames, `commit` and `end`,
+holds no audio, and from `started` on keeps one read of its socket outstanding, so each message is
+taken as it arrives. `next()` answers the next `text` or `turn`, then the session's `ended` or
+`failed`, or `lost`, and that last answer on every later call; callers waiting together share the
+stream, each message going to the one that asked first. A terminal's shape is validated field by
+field and its code need only have the service's form: a code the client does not know is reported
+once and the message still arrives with its words, here and from `liveResult`. A loss names its
+cause: the socket closed, the network or the transport failed, a wire defect, a ping unanswered for
+`livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or `close()`. A
+terminal already taken from the socket is never replaced by a loss. The connection pings every
+`livenessMs` from `started` until `end`. A wire defect and a close with an abnormal code are
+reported; a socket the network drops, with a connection error and no close frame, is a quiet loss, as
+it is offline. Audio the door would refuse is thrown back to the caller, unsent and unreported. The
+client holds its connections weakly, and one nobody holds closes its socket. A finished connection
+lets go of its socket and the socket of its task, so nothing left behind reaches the pass; a seat
+change closes every connection of the old seat and fences its reads, finished ones too.
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
@@ -76,7 +79,8 @@ after a clock jump, or during disconnect, background, auth pause or seat transit
 The engine's telemetry port reports ability outcomes and turn state, seat kind, bounded code,
 round/execution/refusal counts, answer bytes and duration. `Telemetry.hostFailure()` reports unexpected
 host and runtime failures under static operation `agent-host`; expected record/seat refusals stay quiet. `AiDiagnostics` reports wire defects and
-unexpected transport errors under static `ai-call` or `ai-pass`; expected refusals remain outcomes.
+unexpected transport errors under static `ai-pass` for the pass door, `ai-live` for the live door and
+`ai-call` for the others; expected refusals remain outcomes.
 Product integration supplies the Sentry and first-party event sinks described in
 [iOS observability](../../../docs/IOS_OBSERVABILITY.md). No SDK key, request, pass, call ID, raw error
 or user content enters either port.

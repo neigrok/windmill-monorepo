@@ -128,10 +128,7 @@ extension AiLiveMessage {
   var finished: Bool { last != nil }
 
   public func send(audio: [UInt8]) throws {
-    guard !audio.isEmpty, audio.count % 2 == 0, audio.count <= 65_536 else {
-      diagnostics.failure(operation: "ai-call", kind: "wire")
-      throw AiFailure(source: .wire, code: "invalid_request")
-    }
+    guard !audio.isEmpty, audio.count % 2 == 0, audio.count <= 65_536 else { throw AiFailure(source: .wire, code: "invalid_request") }
     guard last == nil, !ending, let socket else { return }
     let startedAt = clock.nowMs
     sending.append(startedAt)
@@ -188,7 +185,7 @@ extension AiLiveMessage {
       else { throw AiTransportFailure.invalidResponse }
       remainingSeconds = Int(try started.member("remainingSeconds").asInteger(atLeast: 0))
     } catch {
-      diagnostics.failure(operation: "ai-call", kind: "wire")
+      diagnostics.failure(operation: "ai-live", kind: "wire")
       finish(.lost(.wire))
       return .refused(AiFailure(source: .wire, code: "invalid-answer"))
     }
@@ -220,7 +217,7 @@ extension AiLiveMessage {
     let message: AiLiveMessage
     do { message = try AiLiveMessage(frame) }
     catch {
-      diagnostics.failure(operation: "ai-call", kind: "wire")
+      diagnostics.failure(operation: "ai-live", kind: "wire")
       finish(.lost(.wire))
       return false
     }
@@ -240,7 +237,7 @@ extension AiLiveMessage {
     case .success(nil): finish(.lost(.closed))
     case .failure(let error) where error as? AiTransportFailure == .offline: finish(.lost(.offline))
     case .failure:
-      diagnostics.failure(operation: "ai-call", kind: "transport")
+      diagnostics.failure(operation: "ai-live", kind: "transport")
       finish(.lost(.transport))
     }
     return nil
@@ -261,8 +258,8 @@ extension AiLiveMessage {
   }
 
   func report(_ end: AiLiveEnd, failures: Set<String>) {
-    if !end.isKnown(failures: failures) { diagnostics.failure(operation: "ai-call", kind: "code") }
-    if end.stop == .failed, AiLiveEnd.defects.contains(end.code ?? "") { diagnostics.failure(operation: "ai-call", kind: "refusal") }
+    if !end.isKnown(failures: failures) { diagnostics.failure(operation: "ai-live", kind: "code") }
+    if end.stop == .failed, AiLiveEnd.defects.contains(end.code ?? "") { diagnostics.failure(operation: "ai-live", kind: "refusal") }
   }
 
   func seatChanged() {

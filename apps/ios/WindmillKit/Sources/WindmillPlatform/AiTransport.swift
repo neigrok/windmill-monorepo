@@ -149,6 +149,11 @@ public final class AiURLSessionTransport: AiTransport {
 
   nonisolated static func classify(_ error: Error) -> AiTransportFailure {
     if let error = error as? AiTransportFailure { return error }
+    let posix = error as NSError
+    if posix.domain == NSPOSIXErrorDomain, let code = POSIXErrorCode(rawValue: Int32(posix.code)),
+       [.ENOTCONN, .ECONNRESET, .ECONNABORTED, .EPIPE, .ENETDOWN, .ENETUNREACH, .EHOSTDOWN, .EHOSTUNREACH, .ECONNREFUSED].contains(code) {
+      return .offline
+    }
     if let error = error as? URLError,
        [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code) {
       return .offline
@@ -178,8 +183,11 @@ final class AiURLSessionSocket: AiSocket {
       @unknown default: throw AiTransportFailure.invalidResponse
       }
     } catch {
-      if [.normalClosure, .goingAway].contains(task.closeCode) { return nil }
-      throw AiURLSessionTransport.classify(error)
+      switch task.closeCode {
+      case .normalClosure, .goingAway: return nil
+      case .invalid: throw AiURLSessionTransport.classify(error)
+      default: throw AiTransportFailure.transport
+      }
     }
   }
 
@@ -226,8 +234,11 @@ nonisolated final class AiSocketOpening: NSObject, URLSessionWebSocketDelegate, 
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-    if let status = (task.response as? HTTPURLResponse)?.statusCode, status != 101 { return settle(.refused(status)) }
-    settle(.unanswered(AiURLSessionTransport.classify(error ?? AiTransportFailure.transport)))
+    switch (task.response as? HTTPURLResponse)?.statusCode {
+    case 101?: settle(.unanswered(.invalidResponse))
+    case let status?: settle(.refused(status))
+    case nil: settle(.unanswered(AiURLSessionTransport.classify(error ?? AiTransportFailure.transport)))
+    }
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,

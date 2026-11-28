@@ -137,7 +137,7 @@ extension AiClock {
   }
 
   public func openLive(callId: String, use: AiUse, seat: Seat, livenessMs: Int64) async throws -> AiLiveOpening {
-    guard Self.validID(callId) else { return .refused(defect("invalid_request", source: .wire)) }
+    guard Self.validID(callId) else { return .refused(liveDefect("invalid_request")) }
     let epoch = generation
     var renewed = false
     while true {
@@ -151,9 +151,13 @@ extension AiClock {
           headers: ["Authorization": "Bearer " + token]), subprotocol: "wm-live.v1")
       } catch {
         try fence(epoch)
-        guard error as? AiTransportFailure != .offline else { return .lost(.offline) }
-        diagnostics.failure(operation: "ai-call", kind: "transport")
-        return .lost(.transport)
+        switch error as? AiTransportFailure {
+        case .offline: return .lost(.offline)
+        case .invalidResponse, .invalidOrigin: return .refused(liveDefect("invalid-answer"))
+        default:
+          diagnostics.failure(operation: "ai-live", kind: "transport")
+          return .lost(.transport)
+        }
       }
       do { try fence(epoch) } catch {
         if case .open(let socket) = upgrade { socket.close() }
@@ -169,8 +173,9 @@ extension AiClock {
       case .refused(status: 401) where !renewed:
         renewed = true
         pass = nil
-      case .refused(status: 401): return .refused(defect("invalid-answer", source: .text))
-      case .refused(status: 400): return .refused(defect("invalid_request", source: .text))
+      case .refused(status: 401): return .refused(liveDefect("invalid-answer"))
+      case .refused(status: 400): return .refused(liveDefect("invalid_request"))
+      case .refused(let status) where (300..<400).contains(status): return .refused(liveDefect("invalid-answer"))
       case .refused(let status): return .lost(.refused(status: status))
       }
     }
@@ -489,6 +494,10 @@ extension AiClock {
   func fence(_ epoch: UInt64) throws {
     if epoch != generation { throw HostFailure.staleSeat }
     try Task.checkCancellation()
+  }
+  func liveDefect(_ code: String) -> AiFailure {
+    diagnostics.failure(operation: "ai-live", kind: "wire")
+    return AiFailure(source: .wire, code: code)
   }
   func defect(_ code: String, source: AiFailure.Source, admission: Admission = .none) -> AiFailure {
     diagnostics.failure(operation: source == .pass ? "ai-pass" : "ai-call", kind: "wire")
