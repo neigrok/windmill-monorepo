@@ -17,6 +17,8 @@ on:
       - 'packages/api-contract/roadmap/check_test.py'
       - 'packages/api-contract/roadmap/domain/*-actions.json'
       - 'packages/api-contract/sync/roadmap.registry.json'
+      - 'packages/api-contract/journal/talk/**'
+      - 'packages/api-contract/sync/journal.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
       - 'web/src/products/roadmap/domain/roadmapRules.js'
       - 'docs/foundation/roadmap-coach.md'
@@ -37,6 +39,8 @@ on:
       - 'packages/api-contract/roadmap/check_test.py'
       - 'packages/api-contract/roadmap/domain/*-actions.json'
       - 'packages/api-contract/sync/roadmap.registry.json'
+      - 'packages/api-contract/journal/talk/**'
+      - 'packages/api-contract/sync/journal.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
       - 'web/src/products/roadmap/domain/roadmapRules.js'
       - 'docs/foundation/roadmap-coach.md'
@@ -68,3 +72,7 @@ jobs:
         run: |
           python3 packages/api-contract/roadmap/check.py
           python3 packages/api-contract/roadmap/check_test.py
+      - name: Check Journal Talk's stories against their declarations, the pause rule, the live wire and the mark's row
+        run: |
+          python3 packages/api-contract/journal/talk/generate.py --check
+          python3 packages/api-contract/journal/talk/check.py --self-test
