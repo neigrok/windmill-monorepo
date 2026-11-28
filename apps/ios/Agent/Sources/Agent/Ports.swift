@@ -112,6 +112,14 @@ public struct AiFailure: Error, Sendable {
   }
 }
 
+extension AiFailure: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+  public var description: String { "AiFailure(source: \(source.rawValue), code: \(code ?? "none"), admission: \(admission))" }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror {
+    Mirror(self, children: ["source": source.rawValue, "code": code ?? "none", "admission": "\(admission)"], displayStyle: .struct)
+  }
+}
+
 public struct AiEvent: Sendable {
   public let id: Int64
   public let name: String

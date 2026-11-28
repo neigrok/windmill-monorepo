@@ -103,8 +103,9 @@ person is told why before they speak. It stops at the first row that holds:
 | Talk is off | the pass door's 404 or `unavailable`; the live door's `provider_unavailable` or `paused` | Says Talk is not available now. |
 | A defect | `invalid_request`, `conflict`, `too_large`, `untrusted-origin`, every `pass_` code but one `pass_expired`, an answer that cannot be read | Says Talk is not available now, and is reported. |
 
-- A refusal of the upgrade for `pass_expired` fetches a new pass and tries once more. A browser
-  cannot read why an upgrade failed, so it does the same once for any failed upgrade.
+- On the iPhone a refused upgrade yields its status and no reason: a 401 fetches a new pass and
+  tries once more, a second 401 is a defect, and no other status is tried again. A browser cannot
+  read even that, so it fetches a new pass and tries once more for any failed upgrade.
 - Wherever Talk is offered, the product says that Windmill keeps no audio and that the service that
   writes it down keeps it for 30 days. The microphone permission text says the same. Neither names a
   provider; the privacy page does. (R-3; AI service R-11) The AI service calls one provider and has
@@ -292,7 +293,8 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
     the turns the service had to commit itself, and its bridges as counts;
   - `journal_talk_undone` and `journal_talk_recovered`, the second with how many sessions answered.
 - The web's present `journal_talk_take` and `journal_talk_retry` retire with its held recording.
-- Sentry, under static names: `ai-pass` and `ai-call` as the AI client reports them;
+- Sentry, under static names: `ai-pass`, `ai-call` and, for the live door, `ai-live`, as the AI
+  client reports them;
   `journal-talk-capture` for a microphone or conversion failure; `journal-talk-recover` for a
   recovery that could not read a result it should have. A refusal a person can act on is an event
   and never an Issue.
@@ -319,7 +321,6 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 
 - The iPhone app reads nothing about Windmill One or an allowance, has no microphone code and no
   microphone permission text.
-- The iPhone's AI client fetches a pass only for a Coach profile and speaks no WebSocket.
 - The web never marks a page `spoken`, though the journal's architecture says it does.
 - The web's copy says no audio is kept anywhere, which the provider's 30 days makes untrue.
 - The live door refuses every session in production until its audio billing is verified, and a paid
