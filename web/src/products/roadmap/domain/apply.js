@@ -29,7 +29,6 @@ import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue, importChu
 /** @typedef {import('./conversation.js').CoachProposalValue} CoachProposalValue */
 /** @typedef {import('./conversation.js').ProposalState} ProposalState */
 /** @typedef {import('./abilities/standing.js').Standing} Standing */
-/** @typedef {import('./abilities/proposals.js').Reduced} Reduced */
 /** @typedef {import('./records.js').LandingNote} LandingNote */
 /** @typedef {'undone' | 'skipped' | 'unavailable'} UndoOutcome */
 /** @typedef {{ kind: string, changed?: boolean, localChanged?: boolean, appliedCount?: number, skippedCount?: number, reason?: string }} UndoResult an Undo's result, its ids aside */

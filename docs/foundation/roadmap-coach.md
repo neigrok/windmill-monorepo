@@ -21,7 +21,11 @@ roadmap's entities with a turn's opening, end and withdrawal, the read of a conv
 replaces the one pending about its roadmap, the read of that pending one, and a roadmap's delete taking its
 conversations, in `web/src/products/roadmap/domain/conversation.js` and
 `apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
-`packages/api-contract/roadmap/domain/conversation-actions.json`. Signed out, the records reach the account at sign-in with
+`packages/api-contract/roadmap/domain/conversation-actions.json`; and a proposal decided, applied as the person's own act
+and settled, rejected, and marked undone once its Undo took something back (§7), in
+`web/src/products/roadmap/domain/apply.js` and `apps/ios/Domain/Sources/RoadmapDomain/Coach/Apply.swift`, proven by
+`packages/api-contract/roadmap/domain/apply-actions.json` and the `Roadmap Coach §7` scenes of `undo.json`. No surface offers
+Apply or Reject yet. Signed out, the records reach the account at sign-in with
 the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
 either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
