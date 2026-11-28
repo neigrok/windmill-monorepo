@@ -608,7 +608,7 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
   answer adds or discards (§11). A subtree whose creation the server answers with the subtree its step
   already owns takes that subtree's id; by [sync engine](engine.md) §7.7 a global type's mapping renames
   its id in every scope, and `treeId` is a reference to `tree`, so the conversations and proposals
-  queued about it follow. No test runs that case for Coach's records.
+  queued about it follow, as a vector of the sync corpus's `roadmap/client.json` holds.
 
 ## §8 The turn
 

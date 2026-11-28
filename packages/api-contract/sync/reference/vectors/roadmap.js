@@ -458,6 +458,13 @@ function clientVectors() {
     device, steps: [...queued, { op: 'pushResponse', deviceNow: 6000, response: owner.response }, { op: 'push', deviceNow: 6001 }],
   });
 
+  const followed = conversationAbout(NEW, 5001);
+  const asked = [planted('ownership', R, NEW, 5000), followed.opened, followed.proposed, { op: 'push', deviceNow: 5003 }];
+  const joined = served(server, runSteps({ device, steps: asked }, roadmapRegistry).returns.at(-1), 6000);
+  const following = stepsVector('a conversation and a pending proposal queued about a proposed subtree follow the write map to the subtree the step owns', {
+    device, steps: [...asked, { op: 'pushResponse', deviceNow: 6000, response: joined.response }, { op: 'push', deviceNow: 6001 }],
+  });
+
   const lost = conversationAbout(Z, 5001);
   const everyRoadmap = { op: 'commit', scope: 'self/roadmap', deviceNow: 5003, changes: [
     { op: 'create', t: 'coachThread', id: 'thread0010', f: { treeId: null, stepId: null, title: 'What next?' } }] };
@@ -466,11 +473,11 @@ function clientVectors() {
   const folded = stepsVector('a refused subtree folds the conversation about it with the messages its own entry holds and a later update of one, and the next push sends only the conversation about every roadmap', {
     device, steps: [...refusing, { op: 'pushResponse', deviceNow: 6000, response: spent.response }, { op: 'push', deviceNow: 6001 }],
   });
-  return [settled, redirected, folded];
+  return [settled, redirected, following, folded];
 }
 
 // A turn about `tree` as roadmap's domain writes it: the conversation with the person's question and Coach's message in
-// one act, then Coach's answer ending the turn.
+// one act, then Coach's answer ending the turn, or a pending proposal on it in one act.
 function conversationAbout(tree, deviceNow) {
   const thread = { op: 'create', t: 'coachThread', id: 'thread0009', f: { treeId: tree, stepId: null, title: 'What goes in here?' } };
   const question = { op: 'create', t: 'coachMessage', id: 'message0008', f: { threadId: 'thread0009', role: 'person', text: 'What goes in here?', at: deviceNow } };
@@ -479,6 +486,9 @@ function conversationAbout(tree, deviceNow) {
     opened: { op: 'commit', scope: 'self/roadmap', deviceNow, opts: { atomic: true }, changes: [thread, question, answer] },
     ended: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
       { op: 'update', t: 'coachMessage', id: 'message0009', f: { state: 'completed', text: 'Start with the clouds.' } }] },
+    proposed: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachProposal', id: 'proposal0009', f: { treeId: tree, threadId: 'thread0009', messageId: 'message0009', base: [], changes: [], state: 'pending' } },
+      { op: 'update', t: 'coachMessage', id: 'message0009', f: { proposalId: 'proposal0009' } }] },
   };
 }
 
