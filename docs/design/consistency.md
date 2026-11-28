@@ -1370,27 +1370,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 - **Talk is live (owner, 2026-11-17).** [Journal Talk](../foundation/journal-talk.md) R-1 replaces the finished
   recording of Journal · iOS 03.3P to 03.6P and 03.8P with words that appear as a person speaks. The iPhone is
-  drawn as 🧪 proposals, 03.11P–03.33P with 03.1Pb, 03.2Pb and 03.7Pb, and worded in
-  [Talk — iOS Journal](ios/journal-talk.md). Until the owner approves them 03.1P–03.8P keep ✅, section 03's header
-  and its 2026-11-08 NOTE still describe the finished recording, and nothing of Talk's screens is built. The web is
-  not drawn. Its *No audio is kept anywhere* (`journal.talk.promise`) is untrue of the service's 30 days, and
+  drawn in 03.11P–03.33P with 03.1Pb, 03.2Pb and 03.7Pb and worded in [Talk — iOS Journal](ios/journal-talk.md);
+  each board's status is in its Figma layer name, and nothing of Talk's screens is built. The web is not drawn.
+  Its *No audio is kept anywhere* (`journal.talk.promise`) is untrue of the service's 30 days, and
   `web/public/privacy.html` names OpenAI for Talk without them; both change with the build that ships live Talk.
-- **Talk · a refusal in the band or in the sheet.** Approved 03.2P and 03.7P say a refused microphone and offline
-  in the Talk sheet, and the spec keeps their place (§6). Live Talk has no sheet of its own, so the proposals say
-  every refusal as one sentence in the room's band (03.2Pb, 03.7Pb, 03.25P–03.27P), which runs no timer where the
-  roadmap's bands leave after six or nine seconds. Rule the band, or keep the sheet for every state of §4; in the
-  sheet 03.2P's words stand and 03.7P's sentence becomes *Talk needs a connection. Typing works offline.*
-- **Talk · signed out, the door does not say Windmill One.** A signed-out press opens the Shell's sign-in door
-  (R-4), and a person who signs in for Talk then meets the store door. Rule whether the door opened from Talk
-  says first that Talk is part of Windmill One; the door's words are the Shell's.
-- **Talk · the order of §4.** A refused microphone stands before No Windmill One, so a person without Windmill One
-  is sent to Settings and then meets the store door. An unasked microphone has no row: the boards ask only when
-  every other row has passed (03.1Pb). The spec's table has no row for a page already full at the press, a press
-  in the last 15 seconds of the day, a cut with a code Talk has no sentence for, or a connection that could not be
-  bridged; 03.22P, 03.32P and 03.33P word them.
-- **Talk · the phone locks itself.** A take ends when the app leaves the foreground (R-5), and a phone left
-  untouched locks after its Auto-Lock time while a person is still speaking. The spec does not say Talk keeps the
-  screen awake during a take; the boards assume it does.
+- **Talk · an Undo that changed nothing.** Undo writes only while the page is exactly as the take left it, so a
+  page another device changed in between is left alone. 03.34P proposes the band's line, *Couldn't undo. The page
+  changed.*, as Roadmap · iOS 02.10d says *Couldn't bring back* of its rooms. 🧪, for the owner.
 - **Talk · VoiceOver and the open microphone.** A take captures with echo cancellation off (§5.2), so VoiceOver's
   speech can be heard by the microphone and written on the page. The boards announce nothing while a take runs and
   carry its start, last minute and end by haptics. Not checked on a device.
