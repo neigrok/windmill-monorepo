@@ -20,7 +20,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 13 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 7 stories, 21 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 19 stories, 92 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -299,9 +299,21 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `open-near-day-end` | §5.1 step 5 |
 | `open-lost` | §5.5: a first session lost before `started` |
 | `end-while-connecting` | §5.4: an end before the first `started` |
+| `delta-after-settled`, `turn-unseen`, `multibyte` | §5.3: a turn, its number, bytes and UTF-16 |
+| `turn-out-of-order` | §5.3: a part in turn order |
+| `turn-empty` | §5.3: a turn that holds no text |
+| `turn-forced` | §5.2: the service commits a turn itself |
+| `ended-text-replaces-part` | §5.3: the last text, whole |
+| `open-empty-page`, `page-trailing-whitespace` | §5.3: the passage and the page before it |
+| `page-full`, `open-page-full` | §5.3: the page's size limit |
+| `other-device-meanwhile` | INV-2: the later save stands |
 
 Every frame sequence of a story begins its session with a quiet second and sets speech at 1,000,000 against a
 quiet of 0, so a revised floor does not move a commit here.
+
+`page-full` and `open-page-full` hold their pages whole, 131 KB a copy, as the journal corpus holds its bodies at
+the limit: 1.4 MB and 0.4 MB. A result too large for the page has no story for that cost; `page-full` pins the
+rule for a last message, and `SaveSpoken` refuses the page either way.
 
 ### What has no story
 

@@ -276,6 +276,17 @@ def opening(name, body='Up early.\n', calls=(A,), at=NOON, **given):
     return story
 
 
+# A quiet second, twelve frames of speech and a pause, then the turn's words and its final text.
+def first_turn(story, at=NOON + 500):
+    story.step(at, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    story.step(at + 2900, heard(A, text(1, 'Walked to the river')), shown=[[U('Walked to the river')]])
+    story.step(at + 3400, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[at + 3400])
+
+
+def two_commits(story, at=NOON + 500):
+    story.step(at, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7], [SPEECH, 11], [QUIET, 7]]}, send=[audio(1, 29), COMMIT, audio(30, 47), COMMIT])
+
+
 def open_stories():
     T, out = NOON, []
     s = opening('open-and-end')
@@ -315,6 +326,86 @@ def open_stories():
     return out
 
 
+def word_stories():
+    T, out = NOON, []
+    s = opening('open-empty-page', None)
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3900, heard(A, turn(1, 'Slept well.')), shown=[['Slept well.']], saved=['Slept well.'], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('page-trailing-whitespace', 'Up early.\u0085 \u00a0\n')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3900, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('turn-out-of-order'); two_commits(s)
+    s.step(T + 5300, heard(A, text(1, 'Rain all')), shown=[[U('Rain all')]])
+    s.step(T + 5400, heard(A, text(2, 'Tea first')), shown=[[U('Rain all'), U('Tea first')]])
+    s.step(T + 5600, heard(A, turn(2, 'Tea first.')), shown=[[U('Rain all'), 'Tea first.']], saved=['Tea first.'], source='spoken', heard=[T + 5600])
+    s.step(T + 5900, heard(A, turn(1, 'Rain all morning.')), shown=[['Rain all morning.', 'Tea first.']], saved=['Rain all morning. Tea first.'], heard=[T + 5900])
+    out.append(s)
+
+    s = opening('turn-empty')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3900, heard(A, turn(1, '')), heard=[T + 3900])
+    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5800, heard(A, text(2, 'Tea first')), shown=[[U('Tea first')]])
+    s.step(T + 6100, heard(A, turn(2, 'Tea first.')), shown=[['Tea first.']], saved=['Tea first.'], source='spoken', heard=[T + 6100])
+    out.append(s)
+
+    long = 'Kept talking without a pause.'
+    s = opening('turn-forced')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 30]]}, send=[audio(1, 40)])
+    s.step(T + 4600, heard(A, text(1, 'Kept talking')), shown=[[U('Kept talking')]])
+    s.step(T + 60500, heard(A, turn(1, long)), shown=[[long]], saved=[long], source='spoken', heard=[T + 60500])
+    s.step(T + 60600, heard(A, text(2, 'And on')), shown=[[long, U('And on')]])
+    s.step(T + 61000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 61000 + END_WAIT)
+    s.step(T + 61700, heard(A, last('completed', long + ' And on.')), phase='ended', shown=[[long + ' And on.']], saved=[long + ' And on.'], marked=False, wake=None)
+    s.ends('person', turns=2, forced=1); out.append(s)
+
+    s = opening('delta-after-settled'); first_turn(s)
+    s.step(T + 4000, heard(A, text(1, ' again')))
+    out.append(s)
+
+    s = opening('turn-unseen'); two_commits(s)
+    s.step(T + 5300, heard(A, turn(2, 'Tea first.')), shown=[['Tea first.']], saved=['Tea first.'], source='spoken', heard=[T + 5300])
+    s.step(T + 5400, heard(A, text(4, 'Later')), shown=[['Tea first.', U('Later')]])
+    s.step(T + 5600, heard(A, turn(1, 'Rain all morning.')), shown=[['Rain all morning.', 'Tea first.', U('Later')]], saved=['Rain all morning. Tea first.'], heard=[T + 5600])
+    out.append(s)
+
+    whole = 'Walked down to the river. Cold water today.'
+    s = opening('ended-text-replaces-part'); first_turn(s)
+    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5800, heard(A, text(2, 'Cold')), shown=[[FIRST, U('Cold')]])
+    s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
+    s.step(T + 6800, heard(A, last('completed', whole)), phase='ended', shown=[[whole]], saved=[whole], marked=False, wake=None)
+    s.ends('person', turns=2); out.append(s)
+
+    s = opening('multibyte', 'Déjà vu.\n'); two_commits(s)
+    s.step(T + 5300, heard(A, text(1, 'Thé 🍵')), shown=[[U('Thé 🍵')]])
+    s.step(T + 5600, heard(A, turn(1, 'Thé 🍵 chaud.')), shown=[['Thé 🍵 chaud.']], saved=['Thé 🍵 chaud.'], source='spoken', heard=[T + 5600])
+    s.step(T + 5800, heard(A, text(2, 'Ça va')), shown=[['Thé 🍵 chaud.', U('Ça va')]])
+    out.append(s)
+
+    s = opening('page-full', 'a' * 131069)
+    s.step(T + 3900, heard(A, turn(1, 'b')), shown=[['b']], saved=['b'], source='spoken', heard=[T + 3900])
+    s.step(T + 5600, heard(A, turn(2, 'c')), phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 5600 + END_WAIT)
+    s.step(T + 6300, heard(A, last('completed', 'b c')), phase='ended', marked=False, wake=None)
+    s.ends('pageFull', turns=2, forced=1); out.append(s)
+
+    s = Story('open-page-full', 'a' * 131070, calls=())
+    s.step(T, {'press': True}, phase='ended')
+    s.ends('pageFull', heard=False); out.append(s)
+
+    laptop = 'Up early.\n\nFrom the laptop.'
+    s = opening('other-device-meanwhile'); first_turn(s)
+    s.step(T + 4000, {'changed': {'body': laptop, 'source': 'typed'}}, stored=laptop, source='typed')
+    s.step(T + 4100, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5900, heard(A, turn(2, 'Cold water.')), shown=[[FIRST, 'Cold water.']], saved=[FIRST + ' Cold water.'], source='spoken', heard=[T + 5900])
+    out.append(s)
+    return out
+
+
 def story_text(story):
     line = lambda value: json.dumps(value, ensure_ascii=False)
     lines = ['{', f'  "format": {line(story["format"])},', f'  "name": {line(story["name"])},', f'  "given": {line(story["given"])},', '  "steps": [']
@@ -333,7 +424,7 @@ def story_text(story):
 
 
 def documents():
-    stories = [story.document() for story in open_stories()]
+    stories = [story.document() for story in open_stories() + word_stories()]
     if len({story['name'] for story in stories}) != len(stories): raise ValueError('story names repeat')
     return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes()),
             **{'takes/' + story['name'] + '.json': story_text(story) for story in stories}}

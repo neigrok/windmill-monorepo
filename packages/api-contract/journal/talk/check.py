@@ -87,8 +87,16 @@ PINS = {
     'takes': {
         '§5.1 steps 2 and 3, open': ['open-and-end', 'open-refused', 'open-provider-unavailable', 'open-unopened'],
         '§5.1 step 5, the day\'s end': ['open-near-day-end'],
+        '§5.3 words, a turn and its number': ['delta-after-settled', 'turn-unseen', 'multibyte'],
+        '§5.3 a part in turn order': ['turn-out-of-order'],
+        '§5.3 a turn that holds no text': ['turn-empty'],
+        '§5.3 the last text, whole': ['ended-text-replaces-part'],
+        '§5.3 the passage and the page before it': ['open-empty-page', 'page-trailing-whitespace'],
+        '§5.3 the page\'s size limit': ['page-full', 'open-page-full'],
+        '§5.2 the service commits a turn itself': ['turn-forced'],
         '§5.4 an end before the first `started`': ['end-while-connecting'],
         '§5.5 a first session lost before `started`': ['open-lost'],
+        'INV-2 another device meanwhile': ['other-device-meanwhile'],
     },
 }
 
@@ -580,6 +588,9 @@ def negative_probes(documents, reasons=None):
         ('a commit one frame early', take('open-and-end', lambda story: step(story, 'frames')['out'].update(send=[{'audio': [1, 28]}, {'type': 'commit'}, {'audio': [29, 29]}]))),
         ('a context frame', take('open-and-end', lambda story: step(story, 'frames')['out']['send'].insert(0, {'type': 'context', 'keywords': ['river']}))),
         ('an end that counts a bridge it did not make', take('open-and-end', lambda story: story['end'].update(bridges=1))),
+        ('a save past the page\'s limit', take('page-full', lambda story: story['steps'][3]['out']['saved'].update(body=story['steps'][3]['out']['saved']['body'] + ' c'))),
+        ('a page changed by another hand that moves the mark', take('other-device-meanwhile', lambda story: step(story, 'changed')['out'].update(mark=None))),
+        ('an unsettled range outside the text', take('multibyte', lambda story: story['steps'][-1]['out']['page'].update(unsettled=[[24, 99]]))),
         ('a callId that is not made up', take('open-and-end', lambda story: story['given'].update(callIds=['abcdefghijklmnopqrstuv']))),
     ]
     for name, mutate in probes:
