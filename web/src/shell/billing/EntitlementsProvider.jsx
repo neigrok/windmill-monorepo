@@ -15,7 +15,9 @@ export function useOptionalEntitlements() {
 }
 
 export default function EntitlementsProvider({ children }) {
-  const { status } = useAuth();
+  const { status, user, account } = useAuth();
+  const accountId = user?.id ?? (typeof account === 'string' ? account : account?.id) ?? null;
+  const seatKey = status === 'signed-in' ? (accountId ?? 'signed-in') : status;
   const [state, setState] = useState({
     windmillOne: false,
     subscription: null,
@@ -28,7 +30,7 @@ export default function EntitlementsProvider({ children }) {
     const id = ++reqRef.current;
     if (status !== 'signed-in') {
       if (id === reqRef.current) {
-        setState({ windmillOne: false, subscription: null, readStatus: 'ready', settledFor: status });
+        setState({ windmillOne: false, subscription: null, readStatus: 'ready', settledFor: seatKey });
       }
       return false;
     }
@@ -42,21 +44,26 @@ export default function EntitlementsProvider({ children }) {
         windmillOne,
         subscription,
         readStatus: subscription ? 'ready' : 'error',
-        settledFor: 'signed-in',
+        settledFor: seatKey,
       });
     }
     return windmillOne;
-  }, [status]);
+  }, [status, seatKey]);
 
   useEffect(() => {
     refresh();
-    if (status !== 'signed-in') return undefined;
+    if (status !== 'signed-in') {
+      return () => { reqRef.current += 1; };
+    }
     const onFocus = () => refresh();
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [status, refresh]);
+    return () => {
+      reqRef.current += 1;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [status, seatKey, refresh]);
 
-  const loading = status === 'signed-in' && state.settledFor !== 'signed-in';
+  const loading = status === 'signed-in' && state.settledFor !== seatKey;
   const subscriptionStatus = status === 'loading' || loading
     ? 'loading'
     : status !== 'signed-in'
@@ -65,7 +72,7 @@ export default function EntitlementsProvider({ children }) {
   const subscription = status === 'signed-in' && !loading ? state.subscription : null;
   const value = {
     loading,
-    windmillOne: status === 'signed-in' ? state.windmillOne : false,
+    windmillOne: status === 'signed-in' && !loading ? state.windmillOne : false,
     subscription,
     subscriptionStatus,
     refresh,

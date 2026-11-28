@@ -56,6 +56,7 @@ export function shortDayMonth(ms) {
 }
 
 export function formatMoney(amount, currency) {
+  if (typeof amount !== 'number' && (typeof amount !== 'string' || amount.trim().length === 0)) return '';
   const value = typeof amount === 'number' ? amount : Number(amount);
   if (!Number.isFinite(value) || typeof currency !== 'string' || !currency) return '';
   try {

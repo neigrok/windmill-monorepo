@@ -62,7 +62,7 @@ test('AllowanceSection hides completely on 503 ai_allowance_disabled', async (t)
     json: async () => ({ error: 'AI allowances are not enabled.', code: 'ai_allowance_disabled' }),
   }));
   const { AllowanceSection } = await loadScreen('shell/settings/AllowanceSection.jsx');
-  const view = renderHook(t, () => AllowanceSection());
+  const view = renderHook(t, () => AllowanceSection(), { context: { user: { id: 'account-A' } } });
   assert.equal(textOf(expand(view.tree)).includes('Checking…'), true);
   await settle();
   assert.equal(view.tree, null);
@@ -97,7 +97,7 @@ test('AllowanceSection shows unavailable + Retry on error (never $0) and emits p
   });
 
   const { AllowanceSection } = await loadScreen('shell/settings/AllowanceSection.jsx');
-  const view = renderHook(t, () => AllowanceSection());
+  const view = renderHook(t, () => AllowanceSection(), { context: { user: { id: 'account-A' } } });
   await settle();
 
   const errDom = expand(view.tree);
@@ -153,7 +153,7 @@ test('AllowanceSection shows Resets date for free calendar month, handles $0 wit
   });
 
   const { AllowanceSection } = await loadScreen('shell/settings/AllowanceSection.jsx');
-  const view = renderHook(t, () => AllowanceSection());
+  const view = renderHook(t, () => AllowanceSection(), { context: { user: { id: 'account-A' } } });
   await settle();
   assert.equal(calls, 1);
 
@@ -169,6 +169,62 @@ test('AllowanceSection shows Resets date for free calendar month, handles $0 wit
   host.focus();
   await settle();
   assert.equal(calls, 2);
+  assert.equal(textOf(expand(view.tree)).includes(`${formatMoney(0.5, 'USD')} left of ${formatMoney(0.5, 'USD')}`), true);
+  view.unmount();
+});
+
+test('AllowanceSection resets to checking and refetches when the signed-in account changes', async (t) => {
+  const resolvers = [];
+  installHost(t, () => new Promise((resolve) => { resolvers.push(resolve); }));
+  const { AllowanceSection } = await loadScreen('shell/settings/AllowanceSection.jsx');
+  const authContext = { user: { id: 'account-A' } };
+  const view = renderHook(t, () => AllowanceSection(), { context: authContext });
+
+  resolvers[0]({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      currency: 'USD',
+      period: 'billing_period',
+      tier: 'windmill_one',
+      configured: true,
+      code: 'ok',
+      limit: '7.000000000',
+      used: '0.000000000',
+      reserved: '0.000000000',
+      remaining: '7.000000000',
+      resetsAtMs: 1798970400000,
+      budgetResetsAtMs: null,
+      status: 'available',
+    }),
+  });
+  await settle();
+  assert.equal(textOf(expand(view.tree)).includes(`${formatMoney(7, 'USD')} left of ${formatMoney(7, 'USD')}`), true);
+
+  authContext.user = { id: 'account-B' };
+  view.redraw();
+  assert.equal(textOf(expand(view.tree)).includes('Checking…'), true);
+  assert.equal(resolvers.length, 2);
+
+  resolvers[1]({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      currency: 'USD',
+      period: 'calendar_month_utc',
+      tier: 'logged_in',
+      configured: true,
+      code: 'ok',
+      limit: '0.500000000',
+      used: '0.000000000',
+      reserved: '0.000000000',
+      remaining: '0.500000000',
+      resetsAtMs: 1793491200000,
+      budgetResetsAtMs: null,
+      status: 'available',
+    }),
+  });
+  await settle();
   assert.equal(textOf(expand(view.tree)).includes(`${formatMoney(0.5, 'USD')} left of ${formatMoney(0.5, 'USD')}`), true);
   view.unmount();
 });

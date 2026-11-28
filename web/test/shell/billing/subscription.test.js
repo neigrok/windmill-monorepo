@@ -56,6 +56,7 @@ test('a body that is not a SubscriptionResponse reads as none, and holds no Wind
   assert.equal(windmillOne, true);
   for (const body of [null, [], 'none', { status: 'none', active: false }, { ...closed, environment: 'staging' },
     { ...closed, purchasable: [1] }, { ...closed, accessUntil: '1799056800000' }, { ...closed, others: undefined },
+    { ...closed, others: [null] }, { ...closed, others: ['bad'] }, { ...closed, others: [[]] },
     unanswered, { ...closed, windmillOne: 'true' }]) {
     assert.equal(readSubscription(body), null, JSON.stringify(body));
     assert.equal(holdsWindmillOne(readSubscription(body)), false, JSON.stringify(body));
@@ -144,4 +145,36 @@ test('planTelemetry, refund links, renewal slack and close-account cancel stores
     { store: 'play_store', url: 'https://play.google.com/store/account/subscriptions' },
   ]);
   assert.equal(manageUrlFor(crossStore, crossStore.others[0]), 'https://play.google.com/store/account/subscriptions');
+
+  // Paying twice where App Store entries are on_hold/paused must not show the Apple refund link.
+  const twiceOnHold = {
+    ...byName.on_hold,
+    others: [{ ...byName.on_hold.governing, subscriptionId: 'other-hold', state: 'paused' }],
+  };
+  assert.equal(hasProductionAppStoreRefundLink(twiceOnHold), false);
+
+  // manageUrlFor ignores Object.prototype keys and malformed https URLs with no host.
+  assert.equal(manageUrlFor(byName.active, { store: 'toString' }), null);
+  assert.equal(manageUrlFor(byName.active, { store: '__proto__' }), null);
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'https://' } },
+      { store: 'paddle' },
+    ),
+    null,
+  );
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'javascript:alert(1)' } },
+      { store: 'paddle' },
+    ),
+    null,
+  );
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'https://customer-portal.paddle.com/cpl_123' } },
+      { store: 'paddle' },
+    ),
+    'https://customer-portal.paddle.com/cpl_123',
+  );
 });

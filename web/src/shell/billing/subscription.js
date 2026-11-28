@@ -14,6 +14,16 @@ export const STORE_MANAGE_URLS = Object.freeze({
 
 const objectOrNull = (value) => value === null || (typeof value === 'object' && !Array.isArray(value));
 
+function isSafeHttpsUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function readSubscription(body) {
   if (body === null || !objectOrNull(body)) return null;
   const shaped = typeof body.windmillOne === 'boolean'
@@ -22,7 +32,7 @@ export function readSubscription(body) {
     && (body.plan === null || typeof body.plan === 'string')
     && (body.accessUntil === null || Number.isSafeInteger(body.accessUntil))
     && objectOrNull(body.governing)
-    && Array.isArray(body.others)
+    && Array.isArray(body.others) && body.others.every((entry) => entry !== null && objectOrNull(entry))
     && objectOrNull(body.manage)
     && Array.isArray(body.purchasable) && body.purchasable.every((store) => typeof store === 'string')
     && objectOrNull(body.offer);
@@ -47,20 +57,18 @@ export function isRenewalSlack(entry, now = Date.now()) {
 export function manageUrlFor(subscription, entry) {
   if (!entry) return null;
   const manage = subscription?.manage;
-  if (manage && manage.store === entry.store && typeof manage.url === 'string' && manage.url.startsWith('https://')) {
+  if (manage && manage.store === entry.store && isSafeHttpsUrl(manage.url)) {
     return manage.url;
   }
-  return STORE_MANAGE_URLS[entry.store] ?? null;
+  return typeof entry.store === 'string' && Object.hasOwn(STORE_MANAGE_URLS, entry.store)
+    ? STORE_MANAGE_URLS[entry.store]
+    : null;
 }
 
 export function hasProductionAppStoreRefundLink(subscription) {
   if (!subscription || subscription.environment !== 'production' || !subscription.governing) return false;
-  const others = subscription.others ?? [];
-  if (others.length > 0) {
-    return [subscription.governing, ...others].some((entry) => entry?.store === 'app_store');
-  }
-  const { store, state } = subscription.governing;
-  return store === 'app_store' && (state === 'active' || state === 'grace');
+  const entries = [subscription.governing, ...(subscription.others ?? [])];
+  return entries.some((entry) => entry?.store === 'app_store' && (entry.state === 'active' || entry.state === 'grace'));
 }
 
 function willKeepCharging(entry) {

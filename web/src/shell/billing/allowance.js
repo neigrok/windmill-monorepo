@@ -6,7 +6,7 @@ const TIERS = new Set(['anonymous', 'logged_in', 'windmill_one']);
 const PERIODS = new Set(['lifetime', 'calendar_month_utc', 'billing_period']);
 
 function isDecimalString(value) {
-  return typeof value === 'string' && value.length > 0 && Number.isFinite(Number(value));
+  return typeof value === 'string' && value.trim().length > 0 && Number.isFinite(Number(value));
 }
 
 export function readAllowance(body) {

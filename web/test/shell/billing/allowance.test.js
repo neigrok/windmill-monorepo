@@ -51,8 +51,10 @@ test('readAllowance validates the backend allowance contract and rejects malform
     { ...PAID_ALLOWANCE, period: 'weekly' },
     { ...PAID_ALLOWANCE, configured: 'yes' },
     { ...PAID_ALLOWANCE, remaining: 'NaN' },
+    { ...PAID_ALLOWANCE, remaining: '   ' },
     { ...PAID_ALLOWANCE, remaining: 4.5 },
     { ...PAID_ALLOWANCE, limit: 'oops' },
+    { ...PAID_ALLOWANCE, limit: '   ' },
     { ...PAID_ALLOWANCE, resetsAtMs: '1798970400000' },
   ]) {
     assert.equal(readAllowance(bad), null, JSON.stringify(bad));

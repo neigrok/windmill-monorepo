@@ -331,4 +331,19 @@ test('PlanSection covers every state in the approved state matrix, formats from 
       { name: 'plan_viewed', props: { state: 'active', store: 'app_store', environment: 'sandbox', twice: false } },
     ]);
   }
+
+  // 14. Unknown future state with windmillOne: false never renders a green ACTIVE tag
+  {
+    const unknown = {
+      ...EXAMPLES.on_hold,
+      windmillOne: false,
+      governing: { ...EXAMPLES.on_hold.governing, state: 'pending_review', paymentFailedAt: null },
+    };
+    const view = renderHook(t, () => PlanSection(), { context: { subscriptionStatus: 'ready', subscription: unknown } });
+    const ui = inspect(view.tree);
+    assert.deepEqual(ui.tags, []);
+    assert.deepEqual(telemetry.drain(), [
+      { name: 'plan_viewed', props: { state: 'other', store: 'app_store', environment: 'production', twice: false } },
+    ]);
+  }
 });

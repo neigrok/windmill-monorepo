@@ -84,6 +84,11 @@ test('formatMoney — formats ISO currencies via Intl.NumberFormat and degrades 
   assert.equal(formatMoney('1800', 'JPY'), new Intl.NumberFormat(undefined, { style: 'currency', currency: 'JPY' }).format(1800));
   assert.equal(formatMoney('12.00', 'NOT_A_CURRENCY'), '12.00 NOT_A_CURRENCY');
   assert.equal(formatMoney('bad', 'USD'), '');
+  assert.equal(formatMoney('', 'USD'), '');
+  assert.equal(formatMoney('   ', 'USD'), '');
+  assert.equal(formatMoney(null, 'USD'), '');
+  assert.equal(formatMoney(undefined, 'USD'), '');
+  assert.equal(formatMoney({}, 'USD'), '');
   assert.equal(formatMoney('12.00', ''), '');
 });
 

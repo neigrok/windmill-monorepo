@@ -13,11 +13,14 @@ import { t } from '../i18n/settings/index.js';
 import { formatMoney, shortDayMonth, storeDisplayName } from './format.js';
 import { ExternalLink, Section, styles } from './Section.jsx';
 
-function statusTag(environment, state) {
+function statusTag(environment, state, windmillOne) {
   if (state === 'on_hold') return { label: t('shell.plan.tagOnHold'), style: styles.neutralTag };
   if (state === 'paused') return { label: t('shell.plan.tagPaused'), style: styles.neutralTag };
-  if (environment === 'sandbox') return { label: t('shell.plan.tagSandbox'), style: styles.neutralTag };
-  return { label: t('shell.plan.tagActive'), style: styles.tag };
+  if (state === 'active' || state === 'grace' || windmillOne) {
+    if (environment === 'sandbox') return { label: t('shell.plan.tagSandbox'), style: styles.neutralTag };
+    return { label: t('shell.plan.tagActive'), style: styles.tag };
+  }
+  return null;
 }
 
 function singleStatusMeta(governing, now) {
@@ -169,7 +172,7 @@ export function PlanSection() {
 
   if (others.length > 0) {
     const entries = [governing, ...others];
-    const tag = statusTag(environment, governing.state);
+    const tag = statusTag(environment, governing.state, subscription.windmillOne);
     return (
       <Section title={t('shell.plan.title')}>
         <div className="wm-settings-fade" key="twice">
@@ -178,7 +181,7 @@ export function PlanSection() {
               <div style={styles.primaryText}>{t('shell.plan.windmillOne')}</div>
               <div style={styles.metaText}>{t('shell.plan.multipleSubscriptions', { count: entries.length })}</div>
             </div>
-            <span style={tag.style}>{tag.label}</span>
+            {tag && <span style={tag.style}>{tag.label}</span>}
           </div>
           {entries.map((entry, index) => (
             <BilledByRow
@@ -219,7 +222,7 @@ export function PlanSection() {
     );
   }
 
-  const tag = statusTag(environment, governing.state);
+  const tag = statusTag(environment, governing.state, subscription.windmillOne);
   const meta = singleStatusMeta(governing, now);
 
   return (
@@ -230,7 +233,7 @@ export function PlanSection() {
             <div style={styles.primaryText}>{t('shell.plan.windmillOne')}</div>
             {meta && <div style={styles.metaText}>{meta}</div>}
           </div>
-          <span style={tag.style}>{tag.label}</span>
+          {tag && <span style={tag.style}>{tag.label}</span>}
         </div>
         <BilledByRow subscription={subscription} entry={governing} includeCharge={false} />
         {showRefunds && <RefundsRow />}

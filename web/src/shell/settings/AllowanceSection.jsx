@@ -1,20 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../telemetry/beacon.js';
+import { useAuth } from '../auth/AuthProvider.jsx';
 import { fetchAllowance } from '../billing/allowance.js';
 import { t } from '../i18n/settings/index.js';
 import { formatMoney, shortDayMonth } from './format.js';
 import { Section, styles } from './Section.jsx';
 
 export function AllowanceSection() {
-  const [state, setState] = useState({ status: 'loading', allowance: null });
+  const { user, account } = useAuth();
+  const accountId = user?.id ?? (typeof account === 'string' ? account : account?.id) ?? null;
+  const [state, setState] = useState({ status: 'loading', allowance: null, settledFor: undefined });
   const reqRef = useRef(0);
 
   const load = useCallback(async ({ pending = false } = {}) => {
     const id = ++reqRef.current;
-    if (pending) setState({ status: 'loading', allowance: null });
+    if (pending) setState({ status: 'loading', allowance: null, settledFor: undefined });
     const result = await fetchAllowance();
-    if (id === reqRef.current) setState(result);
-  }, []);
+    if (id === reqRef.current) setState({ ...result, settledFor: accountId });
+  }, [accountId]);
 
   useEffect(() => {
     load();
@@ -26,14 +29,15 @@ export function AllowanceSection() {
     };
   }, [load]);
 
-  if (state.status === 'disabled') return null;
+  const loading = state.settledFor !== accountId || state.status === 'loading';
+  if (!loading && state.status === 'disabled') return null;
 
   const retry = () => {
     track('plan_retry', { section: 'allowance' });
     load({ pending: true });
   };
 
-  if (state.status === 'loading') {
+  if (loading) {
     return (
       <Section title={t('shell.allowance.title')}>
         <div className="wm-settings-fade" key="loading">
