@@ -3,7 +3,7 @@
 `WindmillPlatform` contains the AI service client and native Coach adapters. It depends on `Agent`
 and the sync API/runtime and imports no product. The package uses MainActor isolation and treats
 warnings as errors; transport DTOs and the URLSession delegate explicitly cross that boundary.
-The shipped app retains its existing Coach wiring.
+The App's Roadmap Coach composes these over the room's runner (`App/Sources/Roadmap/Coach/`), behind its switch; the App's gym Coach keeps its own wiring.
 
 `ServiceAiClient` holds passes in memory, counts expiry on its local monotonic clock, refreshes
 with sixty seconds left and fences delayed results against a seat generation. `AiURLSessionTransport`
@@ -31,9 +31,8 @@ the same ID. A seat change cancels local transport, clears cached allowance and 
 late replies to publish under another seat.
 
 `ServiceAiClient.connected` answers whether the device reports a connection, from the `connection`
-it was constructed with. No application constructs this client yet, and until one passes
-`connection` (its path monitor's report, `SyncEngine.PathConnectivity.isOnline`), every turn counts
-as connected. The engine asks once, before a turn's first round, and withdraws a turn begun with no
+it was constructed with; the App's Roadmap Coach passes its sync engine's report. A client given no
+`connection` counts every turn as connected. The engine asks once, before a turn's first round, and withdraws a turn begun with no
 connection, so the client is never called for it. The client itself never asks.
 
 After that, offline policy follows dispatch evidence. A pass or picture failure before text dispatch

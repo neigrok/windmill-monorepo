@@ -9,6 +9,10 @@ packages:
     path: ../Sync
   WindmillDomain:
     path: ../Domain
+  WindmillAgent:
+    path: ../Agent
+  WindmillKit:
+    path: ../WindmillKit
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa.git
     exactVersion: 9.29.0
@@ -20,6 +24,13 @@ targets:
       - Sources
       - WorkoutActivityShared
       - path: Resources
+        buildPhase: resources
+      # The words Roadmap Coach's model reads, shipped as the contract holds them (roadmap-coach.md §8).
+      - path: ../../../packages/api-contract/roadmap/coach
+        type: folder
+        buildPhase: resources
+      # The catalog the model reads its tools from, each with its description (roadmap-coach.md §4).
+      - path: ../../../packages/api-contract/roadmap/catalog.json
         buildPhase: resources
     dependencies:
       - target: WindmillWorkoutActivity
@@ -52,6 +63,10 @@ targets:
         product: RoadmapDomain
       - package: WindmillDomain
         product: RoadmapLayout
+      - package: WindmillAgent
+        product: Agent
+      - package: WindmillKit
+        product: WindmillPlatform
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
@@ -67,6 +82,8 @@ targets:
         WM_APPLE_SIGN_IN_ENABLED: "NO"
         # The Roadmap room, its place in the room menu, its door and its sync scopes: Debug builds only.
         WM_ROADMAP_ROOM_ENABLED: "NO"
+        # Roadmap Coach in the room: Debug builds carry it, and only `-roadmap-coach on` on a simulator turns it on.
+        WM_ROADMAP_COACH_ENABLED: "NO"
         IOS_SENTRY_DSN: ""
         WM_SOURCE_REVISION: ""
         WM_TELEMETRY_ENVIRONMENT: ""
@@ -81,6 +98,7 @@ targets:
         Debug:
           CODE_SIGN_IDENTITY: "-"
           WM_ROADMAP_ROOM_ENABLED: "YES"
+          WM_ROADMAP_COACH_ENABLED: "YES"
           # A roadmap's address on the site opens the Roadmap room (Roadmap on iOS §4), in Debug alone until the App ID
           # carries the associated domain.
           CODE_SIGN_ENTITLEMENTS: Tools/Windmill-Debug-$(WM_APPLE_SIGN_IN_ENABLED).entitlements
@@ -117,6 +135,7 @@ targets:
             CFBundleURLSchemes: [windmill]
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
         WMRoadmapRoomEnabled: $(WM_ROADMAP_ROOM_ENABLED)
+        WMRoadmapCoachEnabled: $(WM_ROADMAP_COACH_ENABLED)
         UILaunchScreen:
           UIColorName: shell/canvas
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

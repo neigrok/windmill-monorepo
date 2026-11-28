@@ -22,8 +22,12 @@ replaces the one pending about its roadmap, the read of that pending one, and a 
 conversations, in `web/src/products/roadmap/domain/conversation.js` and
 `apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
 `packages/api-contract/roadmap/domain/conversation-actions.json`. Signed out, the records reach the account at sign-in with
-the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
-either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). What a turn writes
+beyond its opening and end, its calls and receipts among them, and History's read are built on both domains
+(`turnRecords.js`, `TurnRecords.swift`, proven by `turn-records-actions.json`), and the iPhone claims the context's vectors too.
+On the iPhone a turn runs: Coach in the room, behind a build switch off in Release, runs on the Coach engine's Swift
+libraries with roadmap's profile over the phone's copy, with its composer, conversation, receipts and Undo, History and
+What Coach Read (`apps/ios/App/Sources/Roadmap/Coach/`); it offers no proposal yet. No turn runs on the web yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -689,6 +693,8 @@ what a call answered (INV-5):
   label of the step now followed). A receipt's line is made from these and the app's words, never from the model's text, as
   `packages/api-contract/roadmap/coach/receipts.json` holds it on every surface: at most eight words, a name cut a word at a
   time where the line would pass them. A `coachWriteFate` names its receipt by index; one `undone` makes the line *Undone*.
+- `refusal`: the code a turn that could not answer ended with, its underscores written as hyphens, as the registry's pattern
+  takes a code (`subject_exhausted` is `subject-exhausted`).
 
 What a turn writes beyond its opening and end, and History's read, are proven by
 `packages/api-contract/roadmap/domain/turn-records-actions.json`.
@@ -793,7 +799,7 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
   iPhone, where the tool host throws it to its caller, by the wiring that calls it, as `roadmap_write`
   with the write `coachUndo`.
 - The backend logs nothing of a turn but the pass it signed.
-- They are listed in the web's and the iPhone's observability notes when built.
+- The iPhone's are listed in its observability document (`docs/IOS_OBSERVABILITY.md`); the web's will be in its notes when built.
 
 ## §14 What must be built beneath Coach
 

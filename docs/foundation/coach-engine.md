@@ -8,8 +8,8 @@ roadmap nodes can cite them.
 
 **Status:** Approved by the owner on 2026-11-15. Product-neutral turn libraries and AI clients are
 implemented for web, iOS and Android, together with the optional backend pass issuer and shared
-turn stories. Gym's Coach on Android runs on the Kotlin libraries; the web's and the iPhone's
-screens do not use theirs yet. Those integrations and production acceptance remain separate work. The build order lives in the Coach engine
+turn stories. Gym's Coach on Android runs on the Kotlin libraries, and Roadmap Coach in the iPhone's room on the Swift ones, behind
+a switch off in Release; the web's screens and the iPhone's gym Coach do not use theirs yet. Those integrations and production acceptance remain separate work. The build order lives in the Coach engine
 roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `coach-engine`.
 
 **Scope:** What every Coach shares once its turn runs on the device (AI service I-3): the engine

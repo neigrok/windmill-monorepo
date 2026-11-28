@@ -39,7 +39,7 @@ struct RoadmapFoot<Control: View>: ViewModifier {
               .onAppear { if roadmap.seen(line) { UIAccessibility.post(notification: .announcement, argument: band.says.words) } }
           default:
             RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
-                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
+                          action: band.undo == nil && band.coach == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
                           type: .subheadline, actionWeight: .semibold)
               .accessibilityIdentifier("roadmap-band")
           }
@@ -117,6 +117,8 @@ extension RoadmapModel.Band.Says {
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
     case .landed(let line): return line.band
+    case .coachWrote(let receipt): return CoachReceiptLine.words(receipt)
+    case .coachUndone: return CoachReceiptLine.undone
     // An Undo that brought nothing back (02.10d, 06.5c): a delete names what could not come back, one thing by its name
     // and several steps by their count, and any other act could not be undone.
     case .unrestored(.deletedSteps(let count)):

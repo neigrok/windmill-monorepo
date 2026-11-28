@@ -137,6 +137,16 @@ class RoadmapRoomSwitchTests(unittest.TestCase):
         self.assertNotIn("WM_ROADMAP_ROOM_ENABLED", release)
         self.assertIn("        WMRoadmapRoomEnabled: $(WM_ROADMAP_ROOM_ENABLED)\n", app)
 
+    # Roadmap Coach ships dark inside the room: the app's setting is NO, Debug alone carries it, Release can never turn it on,
+    # and the Info.plist carries it for the launch argument a simulator's Debug build reads.
+    def test_roadmap_coach_is_carried_in_debug_alone(self):
+        app = (Path(__file__).parents[2] / "project.yml").read_text().split("  WindmillWorkoutActivity:\n", 1)[0]
+        debug, release = app.split("        Debug:\n", 1)[1].split("    preBuildScripts:\n", 1)[0].split("        Release:\n", 1)
+        self.assertIn('        WM_ROADMAP_COACH_ENABLED: "NO"\n', app)
+        self.assertIn('          WM_ROADMAP_COACH_ENABLED: "YES"\n', debug)
+        self.assertNotIn("WM_ROADMAP_COACH_ENABLED", release)
+        self.assertIn("        WMRoadmapCoachEnabled: $(WM_ROADMAP_COACH_ENABLED)\n", app)
+
 
 class ReleaseProjectTests(unittest.TestCase):
     def setUp(self):
