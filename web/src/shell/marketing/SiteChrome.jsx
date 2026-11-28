@@ -18,7 +18,7 @@ import { movedSinceArrival } from '../arrival.jsx';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
-import { usePictureMotion } from './pictureMotion.js';
+import { PictureDrawn, usePictureMotion } from './pictureMotion.js';
 import { t } from '../i18n/entry/index.js';
 import './site.css';
 
@@ -281,7 +281,7 @@ function stageFor(stages, width) {
 export function PictureFrame({ id, picture, theme, page, route, className }) {
   const body = useRef(null);
   const [fit, setFit] = useState(null);
-  usePictureMotion(body, { page, product: id, picture: picture.name, route });
+  const drawn = usePictureMotion(body, { page, product: id, picture: picture.name, route });
 
   useLayoutEffect(() => {
     const measure = () => setFit((was) => {
@@ -304,7 +304,7 @@ export function PictureFrame({ id, picture, theme, page, route, className }) {
           <div className="front-picture-stage"
             style={{ width: fit.width / fit.scale, height: fit.stage.height, transform: fit.scale < 1 ? `scale(${fit.scale})` : undefined }}>
             <ErrorBoundary fallback={null} onCrash={() => reportPicture(id, route)}>
-              <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /></Suspense>
+              <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /><PictureDrawn onChange={drawn} /></Suspense>
             </ErrorBoundary>
           </div>
         )}

@@ -70,7 +70,7 @@ export const journalLandingPage = {
       key: 'back',
       title: t('journal.landing.back.title', { break: '\n' }),
       paragraph: t('journal.landing.back.paragraph'),
-      picture: { name: 'lookBack', label: t('journal.landing.back.picture'), stages: SCENE_STAGES, Picture: picture('LookBackBeat') },
+      picture: { name: 'look_back', label: t('journal.landing.back.picture'), stages: SCENE_STAGES, Picture: picture('LookBackBeat') },
       features: [
         { title: t('journal.landing.back.weekTitle'), text: t('journal.landing.back.weekText') },
         { title: t('journal.landing.back.scalesTitle'), text: t('journal.landing.back.scalesText') },

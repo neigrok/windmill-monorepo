@@ -28,10 +28,8 @@
 .gyPicture[data-stage="narrow"] .gyPicture-thread { width: 324px; }
 .gyPicture[data-stage="narrow"] .gyPicture-question { max-width: 282px; }
 
-/* The unchanged lines' run warms under the pointer as the room's unfold does, under reduced motion too. */
-@media (hover: hover) {
-  .gyPicture-unfold:hover { color: var(--gym-ink-dim); }
-}
+/* The unchanged lines' run warms under a counted pointer as the room's unfold does, under reduced motion too. */
+[data-pointed] .gyPicture-unfold:hover { color: var(--gym-ink-dim); }
 @media (prefers-reduced-motion: reduce) {
   .gyPicture-unfold { transition-duration: var(--duration-fast) !important; }
 }

@@ -1,5 +1,6 @@
 /* The journal's pictures on its landing (LandingPictures.jsx), in the night canvas's tokens at any hour; the lamp is
-   --color-brand. Each fills its stage, its contents centred, and answers the pointer as the room does. */
+   --color-brand. Each fills its stage, its contents centred, and answers a counted pointer (the frame's data-pointed)
+   as the room does. */
 .jnNight { box-sizing: border-box; display: flex; align-items: center; justify-content: center; height: 100%;
            background: var(--surface-canvas); color: var(--text-primary); font-family: var(--font-body); text-align: left; }
 .jnNight :where(p, ul) { margin: 0; padding: 0; list-style: none; }
@@ -46,9 +47,7 @@
 .jnSearch li { position: relative; z-index: 0; display: flex; gap: 14px; opacity: .45; }
 .jnSearch li.is-hit::before { content: ""; position: absolute; inset: -6px -18px; z-index: -1; opacity: 0;
                               background: color-mix(in srgb, var(--color-brand) 8%, transparent); transition: opacity 140ms var(--ease-standard); }
-@media (hover: hover) {
-  .jnSearch li.is-hit:hover::before { opacity: 1; }
-}
+[data-pointed] .jnSearch li.is-hit:hover::before { opacity: 1; }
 .jnSearch li.is-hit { opacity: 1; }
 .jnSearch-day { flex: none; width: 56px; padding-top: 2px; font-family: var(--font-mono); font-size: 10px; line-height: 16px; text-transform: uppercase; color: var(--text-tertiary); }
 .is-hit .jnSearch-day { color: var(--color-brand); }
@@ -82,11 +81,9 @@
 .jnYear i.is-lamp5 { border: none; background: var(--lamp-500); }
 .jnYear i.is-lamp6 { border: none; background: var(--lamp-600); }
 .jnScene-legend { margin-top: 14px; font-size: 11px; line-height: 16px; color: var(--text-tertiary); }
-@media (hover: hover) {
-  .jnYear i:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand) 60%, transparent); }
-}
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .jnYear i:hover { scale: 1.25; }
+[data-pointed] .jnYear i:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand) 60%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .jnYear i:hover { scale: 1.25; }
 }
 
 /* Reduced motion keeps the echo's light, the hit's wash and a day's ring at their own times; the caret stays solid. */

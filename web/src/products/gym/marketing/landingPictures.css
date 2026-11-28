@@ -2,7 +2,8 @@
 
 /* Gym's pictures on its landing (LandingPictures.jsx), in the room's own tokens (.gym-skin). The three scenes and the
    connect card keep the room's night stage, its raised step, by day too; the routine stands on the room's ground at
-   the page's hour. A part the room answers under the pointer answers here with the room's own feedback. */
+   the page's hour. A part the room answers under the pointer answers here with the room's own feedback, under a
+   counted pointer (the frame's data-pointed). */
 :where(.gyScene, .gyConnect, .gyRoutine) { box-sizing: border-box; height: 100%; font-family: var(--font-body); color: var(--gym-ink); }
 :where(.gyScene, .gyConnect, .gyRoutine) :where(p, ul) { margin: 0; padding: 0; list-style: none; }
 .gyCaption { color: var(--gym-ink-dim); }
@@ -47,11 +48,9 @@
 .gyLine-slot rect { fill: transparent; }
 .gyLine .gyLine-ring { fill: none; stroke: var(--color-brand); stroke-width: 1.5; opacity: 0; pointer-events: none;
                        transition: opacity 0s calc(1500ms + var(--duration-fast)); }
-@media (hover: hover) {
-  .gyLine-plot:hover { opacity: 1; transition: opacity var(--duration-fast) var(--ease-standard); }
-  .gyLine-plot:hover .gyLine-ring { transition: none; }
-  .gyLine-slot:hover .gyLine-ring { opacity: 1; }
-}
+[data-pointed] .gyLine-plot:hover { opacity: 1; transition: opacity var(--duration-fast) var(--ease-standard); }
+[data-pointed] .gyLine-plot:hover .gyLine-ring { transition: none; }
+[data-pointed] .gyLine-slot:hover .gyLine-ring { opacity: 1; }
 .gyLine-note { font-family: var(--font-mono); font-size: 10.5px; }
 
 /* ---- the connect card an assistant is granted on ---- */
@@ -81,9 +80,7 @@
 .gyRoutine li { display: flex; flex-direction: column; }
 .gyRoutine-movement { font-weight: 600; font-size: 15px; line-height: 22px; }
 .gyRoutine-scheme { font-family: var(--font-mono); font-size: 13px; line-height: 18px; transition: color var(--duration-fast) var(--ease-standard); }
-@media (hover: hover) {
-  .gyRoutine li:hover .gyRoutine-scheme { color: var(--text-link); }
-}
+[data-pointed] .gyRoutine li:hover .gyRoutine-scheme { color: var(--text-link); }
 .gyRoutine-add { display: flex; align-items: center; gap: 10px; height: 56px; box-sizing: border-box; margin-top: 20px; padding: 0 16px;
                  border: 1px dashed var(--gym-line-strong); border-radius: 12px; font-weight: 700; font-size: 14px; color: var(--gym-ink-dim); }
 .gyRoutine[data-stage="narrow"] { padding: 24px 16px; }

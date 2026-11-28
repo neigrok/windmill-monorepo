@@ -1,6 +1,6 @@
 /* Roadmap's pictures on its landing (LandingPictures.jsx), one rule set per picture and stage. Each fills the stage it
    is given, its contents centred; the trees are composedTree.css's. A part the room answers under the pointer answers
-   here with the room's own feedback. */
+   here with the room's own feedback, under a counted pointer (the frame's data-pointed). */
 :where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) { box-sizing: border-box; height: 100%; font-family: var(--font-body); }
 :where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) :where(p, dl, dd, ul) { margin: 0; padding: 0; }
 
@@ -44,10 +44,10 @@
 .rmPaths-dots i { width: 7px; height: 7px; border-radius: 50%; }
 .rmPaths[data-stage="narrow"] { flex-direction: column; gap: 16px; padding: 16px; }
 .rmPaths[data-stage="narrow"] .rmPaths-card { width: 326px; }
-/* The shelf's card under the pointer: it lifts 2px and its crown breathes from its resting crest until the pointer leaves. */
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .rmPaths-card:hover { translate: 0 -2px; }
-  .rmPaths-card:hover .quest-thumb-halo { animation: quest-halo-breathe var(--duration-glow) var(--ease-glow) calc(var(--duration-glow) / -2) infinite; }
+/* The shelf's card under a counted pointer: it lifts 2px and its crown breathes from its resting crest until the pointer leaves. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .rmPaths-card:hover { translate: 0 -2px; }
+  [data-pointed] .rmPaths-card:hover .quest-thumb-halo { animation: quest-halo-breathe var(--duration-glow) var(--ease-glow) calc(var(--duration-glow) / -2) infinite; }
 }
 
 /* ---- a step's page: its state, what it requires and opens, and the workspace that is only the owner's ---- */
@@ -69,9 +69,7 @@
 .rmStep-subtasks li { position: relative; z-index: 0; display: flex; align-items: center; gap: 10px; }
 .rmStep-subtasks li::before { content: ""; position: absolute; inset: -7px -8px; z-index: -1; border-radius: 8px; background: var(--surface-hover);
                               opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
-@media (hover: hover) {
-  .rmStep-subtasks li:hover::before { opacity: 1; }
-}
+[data-pointed] .rmStep-subtasks li:hover::before { opacity: 1; }
 .rmStep-subtasks li.is-done { font-weight: 600; color: var(--text-secondary); }
 .rmStep-box { display: flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; box-sizing: border-box;
               border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--surface-card); color: var(--text-on-accent); }

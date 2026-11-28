@@ -153,7 +153,7 @@ const PAGES = {
     questions: ['How do I find something I wrote if I don’t remember the words?', 'Should I reread my old journal?', 'What happens if I miss a day?',
       'Does the journal write back or ask me questions?', 'Is my journal private?', 'Can I journal online for free without signing up?', 'Does it use AI?'],
     frames: [['night', 'Composed page', ['narrow', 'wide']], ['root', 'Composed page', ['narrow', 'column', 'wide']], ['search', 'Composed page', ['narrow', 'wide']],
-      ['write', 'Composed page', ['narrow', 'wide']], ['lookBack', 'Composed year', ['narrow', 'wide']]],
+      ['write', 'Composed page', ['narrow', 'wide']], ['look_back', 'Composed year', ['narrow', 'wide']]],
   },
 };
 

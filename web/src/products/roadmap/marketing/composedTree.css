@@ -28,15 +28,14 @@
 .rmTree .plq .by b { color: var(--text-secondary); }
 .rmTree .plq .ct { font-family: var(--font-mono); }
 
-/* ---- under the pointer: the room's feedback on a step and a branch, a disc 48px across and a band 24px wide ---- */
+/* ---- under a counted pointer (the frame's data-pointed): the room's feedback on a step and a branch, a disc 48px across
+   and a band 24px wide ---- */
 .rmTree .nd::before { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; translate: -50% -50%; border-radius: 50%; }
 .rmTree-reach { fill: none; stroke: transparent; stroke-width: 24; visibility: hidden; pointer-events: stroke; }
-@media (hover: hover) {
-  .rmTree .nd:hover { filter: brightness(1.12); }
-  .rmTree-branch:hover .rmTree-edge:not(.is-lit) { stroke: var(--connector-active); stroke-opacity: .95; }
-}
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .rmTree .nd:hover { scale: 1.06; }
+[data-pointed] .rmTree .nd:hover { filter: brightness(1.12); }
+[data-pointed] .rmTree-branch:hover .rmTree-edge:not(.is-lit) { stroke: var(--connector-active); stroke-opacity: .95; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .rmTree .nd:hover { scale: 1.06; }
 }
 
 /* ---- the room's motion under the frame's attributes (shell/marketing/pictureMotion.js): the crown's breath, then a beat ---- */
