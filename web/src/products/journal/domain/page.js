@@ -33,6 +33,10 @@ export class PageDocument {
   /** @param {PageDocument} other */
   equals(other) { return this.body === other.body && this.mood === other.mood && this.energy === other.energy && this.source === other.source; }
 
+  // A page Talk has written into stays spoken under typing (Journal Talk §5.3): this document saved over `held`.
+  /** @param {PageDocument | null} held */
+  keepingSpoken(held) { return held?.source === 'spoken' ? new PageDocument({ ...this.fields(), source: 'spoken' }) : this; }
+
   /** @param {Json} json */
   static fromJSON(json) {
     const fields = Fields.object(json, 'page');

@@ -192,6 +192,7 @@ The web domain applies the rulings throughout its commands, editor actions and r
 - Text input retires `placeholder`; scale-only answers and Not now preserve a pending placeholder.
   Anonymous replacement retains all earlier retirements even after clearing the page.
 - Editor saves enforce local today; historical claim and reconciliation commands remain legal.
+- `SaveWords` and the editor's whole-document saves keep a page the device holds as `spoken` spoken.
 - NUL and clock exhaustion return declared refusals. Oversized reconciled bodies retain pending
   writing and the durable clock.
 - Refused pending edits retain their receipt and latest document without queueing a new appending claim.
