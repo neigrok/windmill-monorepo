@@ -59,9 +59,11 @@ person is told. Then the retirement of the backend's transcription route.
   *settled* once its `turn` message has given its final text.
 - **D-4 Passage.** The span of today's page a take writes: every session's part, in order.
 - **D-5 Mark.** The device row `talkTake` of `device/journal`, which does not sync. It names the
-  take in progress: its day, the UTF-8 byte length of the page's text before the passage, and for
-  each session in order its `callId`, the byte length of its part as last saved, and the device's
-  time when it was last heard from.
+  take in progress: its day; the UTF-8 byte length of the page's text before the passage, its
+  trailing whitespace removed; a digest of the page's text as the take last saved it, the first 16
+  hexadecimal characters of its SHA-256; and for each session in order its `callId`, the byte length
+  of its part as last saved, and the device's time when it was last heard from. It is written at the
+  press, with each save and at each bridge, and not for a `text` delta.
 
 ## §3 Where things live
 
@@ -133,11 +135,12 @@ person is told why before they speak. It stops at the first row that holds:
   - Frames are counted from a session's first. Each ten in a row are a *block*, whose energy is the
     sum of its frames' energies divided by ten, rounded down.
   - The *floor* is the lowest energy among the last ten whole blocks. Before one whole block exists
-    it is zero.
+    it is zero. A frame is judged against the blocks complete before it.
   - A frame is *speech* when its energy is at least ten times the floor and at least `SPEECH_MIN`.
   - The device sends `commit` after the frame that makes `PAUSE` of frames in a row that are not
-    speech, once the speech frames since the last commit number at least `MIN_TURN`. The counts
-    start again at a commit and at a new session.
+    speech, once the speech frames since the last commit, in a row or not, number at least
+    `MIN_TURN`. Both counts start again at a commit the device sends and at a new session; the
+    blocks and the floor start again only at a new session.
 - The service commits a turn itself at its `MAX_TURN`. A pause the rule misses delays when words
   settle and loses none of them.
 
@@ -145,20 +148,29 @@ person is told why before they speak. It stops at the first row that holds:
 
 - A `text` delta appends to its turn's unsettled words. A `turn` message replaces that turn's words
   with its final text and settles them; a later delta for that turn is ignored.
+- A turn is known by its session and its number: the service numbers each session's turns from 1.
+  A message for a number not yet seen begins that turn, and numbers need not follow one another. A
+  message after its session's `ended` or `failed`, or from a session that is not the current one,
+  is ignored.
 - **A session's part** is its turns that hold text, in turn order whatever order they settle in,
   joined by one space, until the session's `ended` or `failed` arrives; then it is that message's
-  `text`, whole.
-- **The passage** is the sessions' parts joined by one space. It follows the page's text, with its
-  trailing whitespace removed, after a blank line; on an empty page it stands alone.
+  `text`, whole. A turn holds text when its text is not empty, and nothing is trimmed.
+- **The passage** is the sessions' parts that hold text, joined by one space. It follows the page's
+  text, with its trailing whitespace removed, after a blank line, which is two line feeds; on an
+  empty page it stands alone. While the passage holds no text the page is not saved: its text and
+  its `source` stand, and only the mark is written.
 - **Showing.** The device shows the whole passage as it changes. Unsettled words are shown only:
   they are never in the editor's document or its draft.
 - **Saving.** At each `turn`, and at each session's end, `SaveSpoken` saves the page with every
-  settled turn in place, and writes the mark's lengths in the same local write. It replaces the
-  page's text whole, as typing does, and never carries a page into another day.
+  settled turn in place, and writes the mark's lengths and digest in the same local write. It
+  replaces the page's text whole, as typing does, and never carries a page into another day.
 - A page Talk has written into has `source` `spoken`, and typing keeps it.
 - While a take runs, the page takes no typing on that device, and in a browser no other tab types
   on it.
-- A take stops at the last whole turn that fits the page's size limit, and says the page is full.
+- A take stops at the last whole turn that fits the page's size limit, and says the page is full: a
+  save that would pass the limit is not made, the save before it stands, and the take ends. A
+  session's last `text`, and later its result, replaces its part only when the page then fits. A
+  take is not opened on a page with no room for the blank line and one byte.
 
 ### §5.4 End
 
@@ -167,11 +179,15 @@ before the day ends; when the app leaves the foreground (R-5); when the system t
 for a call, an alarm or its assistant, or the microphone's device goes; and when capture fails.
 
 1. The microphone closes at once. The device sends `end`.
-2. It waits `END_WAIT` for `ended`, places its `text`, saves, and clears the mark. On the iPhone it
-   asks the system for that long when it has left the foreground.
-3. With no `ended` in that time it saves the unsettled words as they arrived, and the mark stays
-   for §5.6.
-4. An ended take offers Undo once, which removes its passage in one save.
+2. It waits `END_WAIT` for `ended`, places its `text` and saves. It clears the mark once every
+   session has answered; while a lost session's result is still to come the mark stays, that
+   session's words are saved as they arrived, and the device goes on reading as §5.6 does. On the
+   iPhone it asks the system for that long when it has left the foreground.
+3. With no `ended` in that time, or by the day's last millisecond when that comes first, it saves
+   the unsettled words as they arrived, and the mark stays for §5.6.
+4. An ended take offers Undo once, which removes its passage in one save: the page's text and
+   `source` are again what they were before the take, and a mark still standing is cleared. Undo
+   writes only while the page's text is as the take last saved it.
 
 A session the service ends is read the same way: its `text` is placed and saved.
 
@@ -187,44 +203,49 @@ A session the service ends is read the same way: its `text` is placed and saved.
 
 A connection is lost when it closes or errors without `ended` or `failed`, and when the device's
 own check says it is dead: audio waiting to be sent passes `LIVENESS`, or on the iPhone a ping goes
-unanswered that long. A lost session, and one the table above names, is *bridged*:
+unanswered that long. A lost session, and one the table above names, is *bridged*. A first session
+lost before its `started` is not: nothing was recorded, and the take ends as §5.1 step 3 ends a
+refused one.
 
 1. The microphone stays open. The device keeps what it captures in memory, at most `BRIDGE_WAIT` of
    it, and opens a new session under a new `callId`, added to the mark.
-2. A new session refused `concurrency_exhausted` is tried again within `BRIDGE_WAIT`: the lost
-   session can hold its place for some tens of seconds.
+2. A new session refused `concurrency_exhausted` is tried again every `BRIDGE_RETRY` within
+   `BRIDGE_WAIT`, under the same `callId`: the lost session can hold its place for some tens of
+   seconds.
 3. When the new session answers `started`, the device sends what it kept, then the live audio. A
    person who ends the take meanwhile is answered the same way: the kept audio is sent, then `end`.
 4. With no `started` within `BRIDGE_WAIT`, or on any other refusal, the take ends with its words.
 5. The lost session's `text` is read from `GET /v1/calls/{callId}/result`, every `RESULT_POLL`
    while the service answers that the session is still open, and replaces that session's part of
-   the passage. A session whose result is gone or unknown keeps the part it has.
+   the passage. An answer that the result is gone is read once more after `RESULT_POLL` before it
+   stands, and a read that fails any other way is made again every `RESULT_POLL`. A session whose
+   result is gone or unknown keeps the part it has, its unsettled words saved as they arrived.
 
 - Audio sent into a failing connection and never transcribed is not sent again, so nothing is
   written twice. Words spoken in that moment can be missing.
-- A take is bridged at most `MAX_BRIDGES` times.
+- A take is bridged at most `MAX_BRIDGES` times; a loss after that ends the take with its words.
 - This is the only audio a device holds: at most `BRIDGE_WAIT` of it, in memory, during a bridge.
 
 ### §5.6 Recovery
 
-When the journal room opens or returns to the foreground and a mark exists, the device recovers
-it, once it has pulled the journal's scope whole.
+When the journal room opens or returns to the foreground, or a take ends with its mark standing,
+and a mark exists, the device recovers it, once it has pulled the journal's scope whole.
 
-- A mark whose day is no longer today, or whose seat is no longer the device's, is cleared and
-  nothing is written.
-- Otherwise the device reads the result of each marked session heard from within `RECOVER_FOR`. A
-  session that answers with its text has its part replaced by it; one whose result is gone or
-  unknown keeps its part.
-- It writes only while the page's text after the mark's first length is exactly the parts the mark
-  recorded. Otherwise it changes nothing.
+- A mark whose day is no longer today is cleared and nothing is written. A mark is a row of the
+  replica that ran its take, so a device reads only the mark of the seat it holds.
+- Otherwise the device reads the result of each marked session heard from within `RECOVER_FOR`, as
+  §5.5 step 5 reads one. A session that answers with its text has its part replaced by it; one
+  whose result is gone or unknown keeps its part.
+- It writes only while the page's text has the mark's digest; the mark's lengths then say where
+  each part stands. Otherwise it changes nothing.
 - It clears the mark once every session has answered or `RECOVER_FOR` has passed for it.
 - It never opens a session and never records.
 
 - **INV-1.** A device writes no audio to storage and holds none in memory beyond §5.5.
 - **INV-2.** On the device that runs a take, nothing but the take changes the page's text while it
-  runs, and only settled words are saved, but for the end §5.4 step 3 names. A change another
-  device makes to the same page meanwhile meets the take's saves as it would meet typing: the later
-  save stands.
+  runs, and only settled words are saved, but for the words §5.4 steps 2 and 3 and §5.5 step 5 save
+  as they arrived. A change another device makes to the same page meanwhile meets the take's saves
+  as it would meet typing: the later save stands.
 - **INV-3.** A device sends audio only while a take is running and the app is in the foreground.
 - **INV-4.** Nothing of a take is logged or reported: no audio, no level, no word, no `callId` and
   no pass.
@@ -265,14 +286,16 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 
 ## §9 Testing
 
-- **Stories.** `packages/api-contract/journal/talk/pauses.json` gives sequences of frame energies
-  and the frames after which a commit is sent: made-up ones for each clause of the rule, and
-  recorded ones from a quiet room, a car, a café, earbuds and a whisper. `takes/` gives scripts:
-  the person's acts, the service's messages and the connection's faults in, and out the frames
-  sent, the page's text and the saved text after each step, the mark, and how the take ends. They
-  cover every row of §5.4's table, each step of §5.5 and §5.6, a turn that settles out of order, an
-  empty turn, a take across the page's size limit, and typing that keeps `spoken`. Each language
-  runs every file, and a story lands before the rule it pins.
+- **Stories.** `packages/api-contract/journal/talk/pauses.json` gives frames of samples and their
+  energies, and sequences of frame energies and the frames after which a commit is sent: made-up
+  ones for each clause of the rule, and recorded ones from a quiet room, a car, a café, earbuds and
+  a whisper. `takes/` gives scripts: the person's acts, the service's messages and the connection's
+  faults in, and out the frames sent, the page's text and the saved text after each step, the mark,
+  and how the take ends. They cover every row of §5.4's table, each step of §5.5 and §5.6, a turn
+  that settles out of order, an empty turn and a take across the page's size limit. `saves.json`
+  gives `SaveSpoken`'s decisions in the journal corpus's forms, and the journal corpus's
+  `page-actions.json` holds typing that keeps `spoken`. Each language runs every file, and a story
+  lands before the rule it pins.
 - **The service played.** No test in CI calls the AI service or a provider. Tests play the live
   door from `packages/api-contract/ai`.
 - **Through the real door.** Before a product screen depends on it, each surface drives a take
@@ -311,6 +334,7 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 | `LIVENESS` | 2 s | Talk's |
 | `BRIDGE_WAIT` | 10 s, the service's `LIVE_BURST` | Talk's |
 | `MAX_BRIDGES` | 3 | Talk's |
+| `BRIDGE_RETRY` | 2 s | Talk's |
 | `END_WAIT` | 15 s, over the service's `LIVE_CLOSE_WAIT` | Talk's |
 | `RESULT_POLL` | 5 s | Talk's |
 | `RECOVER_FOR` | 10 min from when a session was last heard, the service's `RESULT_LINGER` | Talk's |
