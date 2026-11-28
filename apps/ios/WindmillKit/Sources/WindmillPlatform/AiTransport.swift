@@ -158,7 +158,7 @@ public final class AiURLSessionTransport: AiTransport {
 }
 
 final class AiURLSessionSocket: AiSocket {
-  let task: URLSessionWebSocketTask
+  var task: URLSessionWebSocketTask?
   init(task: URLSessionWebSocketTask) { self.task = task }
 
   func send(_ frame: AiSocketFrame, sent: @escaping @MainActor () -> Void) {
@@ -166,10 +166,11 @@ final class AiURLSessionSocket: AiSocket {
     case .text(let text): .string(text)
     case .binary(let bytes): .data(Data(bytes))
     }
-    task.send(message) { _ in Task { @MainActor in sent() } }
+    task?.send(message) { _ in Task { @MainActor in sent() } }
   }
 
   func receive() async throws -> AiSocketFrame? {
+    guard let task else { return nil }
     do {
       switch try await task.receive() {
       case .string(let text): return .text(text)
@@ -183,10 +184,13 @@ final class AiURLSessionSocket: AiSocket {
   }
 
   func ping(answered: @escaping @MainActor () -> Void) {
-    task.sendPing { error in if error == nil { Task { @MainActor in answered() } } }
+    task?.sendPing { error in if error == nil { Task { @MainActor in answered() } } }
   }
 
-  func close() { task.cancel(with: .normalClosure, reason: nil) }
+  func close() {
+    task?.cancel(with: .normalClosure, reason: nil)
+    task = nil
+  }
 }
 
 nonisolated final class AiSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {

@@ -120,6 +120,11 @@ extension AiLiveMessage {
     self.socket = socket; self.clock = clock; self.diagnostics = diagnostics; self.livenessMs = livenessMs
   }
 
+  isolated deinit {
+    for task in tasks { task.cancel() }
+    socket?.close()
+  }
+
   var finished: Bool { last != nil }
 
   public func send(audio: [UInt8]) throws {

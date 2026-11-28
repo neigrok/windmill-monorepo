@@ -418,8 +418,72 @@ import SyncCore
     #expect(socket.closed)
     #expect(socket.sent == [])
     #expect(client.pass == nil)
-    #expect(client.connections.isEmpty)
+    #expect(client.connections.allObjects.isEmpty)
     #expect(diagnostics.reports == [])
+  }
+
+  @Test func aConnectionDroppedWithoutCloseClosesItsSocketAndStopsPinging() async throws {
+    let started = try Self.wire().field("liveEvents").array[0]
+    let socket = PlayedSocket([.success(.text(started.jcsText))])
+    let clock = LiveClock()
+    let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: clock,
+                                 diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials() })
+    guard case .started = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                    seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
+      Issue.record("The session did not start"); return
+    }
+    await Self.yields { socket.closed && clock.sleepers.isEmpty }
+    #expect(socket.closed)
+    let pings = socket.pings.count
+    clock.advance(to: 60_000)
+    await Self.yields { false }
+    #expect(socket.pings.count == pings)
+    #expect(pings <= 1)
+    #expect(clock.sleepers.isEmpty)
+    #expect(client.connections.allObjects.isEmpty)
+  }
+
+  @Test func aSeatChangeFencesAFinishedConnectionAfterAnotherOpened() async throws {
+    let wire = try Self.wire()
+    let started = try wire.field("liveEvents").array[0]
+    let first = PlayedSocket([.success(.text(started.jcsText)), .success(.text(wire.field("liveTerminals").field("completed").jcsText))])
+    let second = PlayedSocket([.success(.text(try started.changed(["callId"], to: "bcdefghijklmnopqrstuvw").jcsText))])
+    let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(first), .open(second)]), clock: LiveClock(),
+                                 diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials() })
+    guard case .started(let old) = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                             seat: Seat(kind: .anon, key: "old"), livenessMs: 2_000) else {
+      Issue.record("The first session did not start"); return
+    }
+    #expect(try await old.next() == .end(try Self.end(wire.field("liveTerminals").field("completed"))))
+    guard case .started = try await client.openLive(callId: "bcdefghijklmnopqrstuvw", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                    seat: Seat(kind: .anon, key: "old"), livenessMs: 2_000) else {
+      Issue.record("The second session did not start"); return
+    }
+    client.seatWillChange()
+    await #expect(throws: HostFailure.self) { try await old.next() }
+  }
+
+  @Test func aSeatChangeLeavesNoPassReachableThroughAConnection() async throws {
+    let started = try Self.wire().field("liveEvents").array[0]
+    let door = try LoopbackDoor { _, head in
+      if head.hasPrefix("POST /v1/ai/passes ") { return .http(LoopbackDoor.response(200, #"{"pass":"MARKER-PASS","expiresIn":600000}"#)) }
+      return .socket(protocol: "wm-live.v1", opening: [LoopbackDoor.frame(1, Array(started.jcsText.utf8))], closing: [])
+    }
+    let transport = try AiURLSessionTransport(origin: URL(string: "http://127.0.0.1:\(door.port)")!, allowLoopbackHTTP: true)
+    let client = ServiceAiClient(transport: transport, clock: LiveClock(), diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials(session: "session") })
+    let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                            seat: Seat(kind: .bound, key: "old"), livenessMs: 2_000)
+    guard case .started(let connection) = opening else { Issue.record("\(opening)"); return }
+    let socket = try #require(connection.socket as? AiURLSessionSocket)
+    #expect(socket.task?.originalRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer MARKER-PASS")
+    client.seatWillChange()
+    #expect(connection.socket == nil)
+    #expect(socket.task == nil)
+    #expect(client.pass == nil)
+    var dumped = ""
+    dump(connection, to: &dumped)
+    #expect(!dumped.contains("MARKER-PASS"))
+    await #expect(throws: HostFailure.self) { try await connection.next() }
   }
 
   @Test func aSessionsResultAnswersItsLastMessageOrThatItIsOpenGoneOrUnknown() async throws {

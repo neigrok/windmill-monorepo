@@ -72,7 +72,7 @@ extension AiClock {
   var stop = false
   var waitTask: Task<Void, Error>?
   var cancelPreparation: (() -> Void)?
-  var connections: [AiLiveConnection] = []
+  let connections = NSHashTable<AiLiveConnection>.weakObjects()
   public private(set) var lastAllowance: JSON?
 
   public init(transport: any AiTransport, clock: any AiClock, diagnostics: any AiDiagnostics,
@@ -87,8 +87,8 @@ extension AiClock {
   public func seatWillChange() {
     generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel()
     cancelPreparation?(); cancelPreparation = nil
-    for connection in connections { connection.seatChanged() }
-    connections = []
+    for connection in connections.allObjects { connection.seatChanged() }
+    connections.removeAllObjects()
     transport.cancel()
   }
   public func invalidAnswer() { diagnostics.failure(operation: "ai-call", kind: "wire") }
@@ -162,8 +162,7 @@ extension AiClock {
       switch upgrade {
       case .open(let socket):
         let connection = AiLiveConnection(socket: socket, clock: clock, diagnostics: diagnostics, livenessMs: livenessMs)
-        connections.removeAll { $0.finished }
-        connections.append(connection)
+        connections.add(connection)
         let opening = try await connection.firstMessage(callId: callId)
         try fence(epoch)
         return opening

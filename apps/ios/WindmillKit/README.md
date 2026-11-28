@@ -31,8 +31,10 @@ know is reported once and the message still arrives with its words, here and fro
 loss names its cause: the socket closed, the network or the transport failed, a wire defect, a ping
 unanswered for `livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or
 `close()`. A terminal already taken from the socket is never replaced by a loss. The connection pings
-every `livenessMs` from `started` until `end`. A wire defect is reported, and a seat change closes
-every connection and fences its reads.
+every `livenessMs` from `started` until `end`. A wire defect is reported. The client holds its
+connections weakly, and one nobody holds closes its socket. A finished connection lets go of its
+socket and the socket of its task, so nothing left behind reaches the pass; a seat change closes every
+connection of the old seat and fences its reads, finished ones too.
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
