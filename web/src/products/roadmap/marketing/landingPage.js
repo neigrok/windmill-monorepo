@@ -18,6 +18,7 @@ export const roadmapLandingPage = {
     links: [start, { href: '#/demo', label: t('roadmap.landing.tryDemo'), to: 'demo' }],
     trust: t('roadmap.landing.trust'),
     picture: {
+      name: 'hero',
       label: t('roadmap.scene.composed'),
       stages: [{ name: 'narrow', width: 356, height: 376 }, { name: 'wide', width: 1310, height: 605 }],
       Picture: picture('HeroTree'),
@@ -41,6 +42,7 @@ export const roadmapLandingPage = {
       title: t('roadmap.landing.unlock.title', { break: '\n' }),
       paragraph: t('roadmap.landing.unlock.paragraph'),
       picture: {
+        name: 'unlock',
         label: t('roadmap.scene.composed'),
         stages: [{ name: 'narrow', width: 356, height: 528 }, { name: 'wide', width: 1100, height: 413 }],
         Picture: picture('UnlockStages'),
@@ -56,6 +58,7 @@ export const roadmapLandingPage = {
       title: t('roadmap.landing.start.title', { break: '\n' }),
       paragraph: t('roadmap.landing.start.paragraph'),
       picture: {
+        name: 'paths',
         label: t('roadmap.landing.start.picture'),
         stages: [{ name: 'narrow', width: 356, height: 450 }, { name: 'wide', width: 1192, height: 297 }],
         Picture: picture('PathCards'),
@@ -71,6 +74,7 @@ export const roadmapLandingPage = {
       title: t('roadmap.landing.step.title', { break: '\n' }),
       paragraph: t('roadmap.landing.step.paragraph'),
       picture: {
+        name: 'step',
         label: t('roadmap.landing.step.picture'),
         stages: [{ name: 'panel', width: 356, height: 676 }],
         Picture: picture('StepPanel'),
@@ -86,6 +90,7 @@ export const roadmapLandingPage = {
       title: t('roadmap.landing.publish.title', { break: '\n' }),
       paragraph: t('roadmap.landing.publish.paragraph'),
       picture: {
+        name: 'fork',
         label: t('roadmap.scene.composed'),
         stages: [{ name: 'narrow', width: 356, height: 312 }, { name: 'wide', width: 860, height: 472 }],
         Picture: picture('ForkTree'),

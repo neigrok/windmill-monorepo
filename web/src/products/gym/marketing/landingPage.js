@@ -20,7 +20,7 @@ export const gymLandingPage = {
     line: t('gym.landing.line'),
     links: [openLog, where],
     trust: t('gym.landing.trust'),
-    picture: { label: t('gym.landing.firstPicture'), stages: SCENE_STAGES, Picture: picture('SetLogger') },
+    picture: { name: 'logger', label: t('gym.landing.firstPicture'), stages: SCENE_STAGES, Picture: picture('SetLogger') },
   },
   sections: [
     {
@@ -41,6 +41,7 @@ export const gymLandingPage = {
       title: t('gym.landing.own.title', { break: '\n' }),
       paragraph: t('gym.landing.own.paragraph'),
       picture: {
+        name: 'connect',
         label: t('gym.landing.own.picture'),
         stages: [{ name: 'narrow', width: 356, height: 400 }, { name: 'wide', width: 600, height: 336 }],
         Picture: picture('ConnectCard'),
@@ -57,7 +58,7 @@ export const gymLandingPage = {
       key: 'remembers',
       title: t('gym.landing.remembers.title', { break: '\n' }),
       paragraph: t('gym.landing.remembers.paragraph'),
-      picture: { label: t('gym.landing.firstPicture'), stages: SCENE_STAGES, Picture: picture('RememberedSet') },
+      picture: { name: 'remembered', label: t('gym.landing.firstPicture'), stages: SCENE_STAGES, Picture: picture('RememberedSet') },
       features: [
         { title: t('gym.landing.remembers.lockTitle'), text: t('gym.landing.remembers.lockText') },
         { title: t('gym.landing.remembers.receiptTitle'), text: t('gym.landing.remembers.receiptText') },
@@ -68,7 +69,7 @@ export const gymLandingPage = {
       key: 'overload',
       title: t('gym.landing.overload.title', { break: '\n' }),
       paragraph: t('gym.landing.overload.paragraph'),
-      picture: { label: t('gym.landing.overload.picture'), stages: SCENE_STAGES, Picture: picture('StrengthLine') },
+      picture: { name: 'strength', label: t('gym.landing.overload.picture'), stages: SCENE_STAGES, Picture: picture('StrengthLine') },
       features: [
         { title: t('gym.landing.overload.e1rmTitle'), text: t('gym.landing.overload.e1rmText') },
         { title: t('gym.landing.overload.gapsTitle'), text: t('gym.landing.overload.gapsText') },
@@ -80,6 +81,7 @@ export const gymLandingPage = {
       title: t('gym.landing.program.title', { break: '\n' }),
       paragraph: t('gym.landing.program.paragraph'),
       picture: {
+        name: 'routine',
         label: t('gym.landing.program.picture'),
         stages: [{ name: 'narrow', width: 356, height: 380 }, { name: 'wide', width: 600, height: 428 }],
         Picture: picture('Routine'),
