@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Roadmap Coach's records end to end (roadmap-coach.md §9): two browser engines of one account and one of another,
+// Roadmap Coach's records end to end (roadmap-coach.md §9): three browser engines of one account and one of another,
 // driven by roadmap's domain on the kit, against windmill_server serving roadmap's scopes on :$PORT, its MCP's shared
 // bearer acting as the account $WM_E2E_MCP_USER names, and a THROWAWAY Postgres. This script wipes every sync_* row of
 // $WM_E2E_DB, and roadmap's engine rows with them.
@@ -7,6 +7,9 @@
 // - The first browser makes a roadmap, opens a conversation about it and ends its turn, and opens one about every roadmap.
 // - The account's second browser, which never runs a gesture on the roadmap, draws both conversations by sync; the other
 //   account draws neither.
+// - The first browser gives the roadmap's step a subtree. The third, which has not heard of it, makes one on the same step
+//   and queues a conversation and a pending proposal about it; the server answers the first's subtree, and both browsers
+//   and the server hold the conversation and the proposal about that subtree (engine §7.7).
 // - MCP's delete_tree deletes the roadmap: the second browser no longer draws the conversation about it, the server
 //   holds none of its messages, and the conversation about every roadmap stays.
 // The output names checks only, never a record id, a question or an answer.
@@ -26,8 +29,8 @@ import { HttpTransport } from '../../../web/src/platform/sync/transport.js';
 import { ActionRunner, EngineReplica } from '../../../web/src/platform/domain-kit/runner.js';
 import { Id } from '../../../web/src/platform/domain-kit/entities.js';
 import { FixedZone } from '../../../web/src/platform/domain-kit/time.js';
-import { CreateRoadmap } from '../../../web/src/products/roadmap/domain/roadmaps.js';
-import { CoachMessage, CoachThread, Conversation, EndTurn, OpenTurn } from '../../../web/src/products/roadmap/domain/conversation.js';
+import { CreateRoadmap, CreateSubtree } from '../../../web/src/products/roadmap/domain/roadmaps.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn } from '../../../web/src/products/roadmap/domain/conversation.js';
 import { RoadmapScopes } from '../../../web/src/products/roadmap/domain/roadmapRules.js';
 import { FakeLocks, FakeTimers } from '../../../web/test/platform/sync/fakes.js';
 
@@ -140,9 +143,10 @@ check(registry.version === 15 && hello.schema === 15 && hello.minSchema === 15, 
 const first = await browser('coach-first', ACCOUNT);
 const second = await browser('coach-second', ACCOUNT);
 const other = await browser('coach-other', OTHER);
+const third = await browser('coach-third', ACCOUNT);
 try {
   await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'sync-roadmap-coach', version: '1' } });
-  const made = await first.runner.runAct(new CreateRoadmap('A coach roadmap'));
+  const made = await first.runner.runAct(new CreateRoadmap('A coach roadmap', { steps: [{ key: 'start', label: 'Start here' }], links: [] }));
   const tree = String(made.result?.tree);
   const asked = await first.runner.runAct(new OpenTurn({ about: { treeId: tree }, question: 'What should I do next?' }));
   const turn = asked.result;
@@ -166,6 +170,33 @@ try {
   check(['coachThread', 'coachMessage'].every((t) => other.rows(t).length === 0) && conversationOn(other, turn.thread) === null,
     'the other account draws no conversation of this one', `${other.rows('coachThread').length} conversations`);
 
+  const step = String(made.result.steps.start);
+  await third.engine.subscribe(RoadmapScopes.tree(tree));
+  await third.settle();
+  const theirs = await first.runner.runAct(new CreateSubtree(tree, step));
+  await first.settle();
+  const ours = await third.runner.runAct(new CreateSubtree(tree, step));
+  const proposed = String(ours.result?.subtree);
+  const about = await third.runner.runAct(new OpenTurn({ about: { treeId: proposed }, question: 'What goes in here?' }));
+  const answer = new Id(about.result?.coach, CoachMessage);
+  const answered = await third.runner.runAct(new EndTurn(answer, { state: 'completed', text: 'Start small.' }));
+  const minted = await third.runner.runAct(new MintProposal({ proposal: third.runner.mint(CoachProposal), treeId: proposed, thread: new Id(about.result?.thread, CoachThread),
+    message: answer, changes: [{ op: 'add', label: 'A first step' }], base: [] }));
+  await third.settle();
+  await first.settle();
+  const owned = String(theirs.result?.subtree);
+  const aboutOn = (phone) => phone.runner.read(RoadmapScopes.account, (read) => ({
+    thread: read.repository(CoachThread).find(new Id(about.result.thread, CoachThread), 'drawn')?.treeId ?? null,
+    proposals: read.repository(CoachProposal).all('drawn').filter((proposal) => proposal.threadId.record === about.result.thread).map((proposal) => proposal.treeId),
+  }));
+  const heldBy = [aboutOn(first), aboutOn(third)];
+  check([theirs, ours, about, answered, minted].every((outcome) => outcome.kind === 'committed') && owned !== proposed
+    && heldBy.every((held) => held.thread === owned && held.proposals.length === 1 && held.proposals[0] === owned)
+    && count(`select count(*) from roadmap_coach_threads where id = '${about.result.thread}' and tree_id = '${owned}'`) === 1
+    && count(`select count(*) from roadmap_coach_proposals where thread_id = '${about.result.thread}' and tree_id = '${owned}'`) === 1,
+  'a subtree the account\'s third browser made on a step the first already gave one joins the first\'s, and the conversation and the proposal queued about it follow its id on both browsers and the server',
+  `${[theirs, ours, about, answered, minted].map((outcome) => outcome.kind).join(',')}; ${heldBy.map((held) => `${held.thread === owned}/${held.proposals.length}`).join(' ')}`);
+
   const deleted = await tool('roadmap_delete_tree', { treeId: tree, requestId: 'e2e-coach-delete' });
   check(!deleted.error, 'MCP deletes the roadmap', 'the tool refused');
   await second.settle();
@@ -181,7 +212,7 @@ try {
 } catch (error) {
   check(false, 'the run completes', error instanceof Error ? error.constructor.name : 'a thrown value');
 } finally {
-  for (const phone of [first, second, other]) phone.engine.close();
+  for (const phone of [first, second, other, third]) phone.engine.close();
 }
 console.log(`\n${results.pass} passed, ${results.fail} failed`);
 process.exit(results.fail ? 1 : 0);
