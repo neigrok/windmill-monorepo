@@ -26,12 +26,10 @@ import { registry } from '../../../web/src/platform/sync/schema.js';
 import { HttpTransport } from '../../../web/src/platform/sync/transport.js';
 import { ActionRunner, EngineReplica } from '../../../web/src/platform/domain-kit/runner.js';
 import { Id } from '../../../web/src/platform/domain-kit/entities.js';
-import { Plan } from '../../../web/src/platform/domain-kit/plans.js';
 import { FixedZone } from '../../../web/src/platform/domain-kit/time.js';
-import { Valid } from '../../../web/src/platform/domain-kit/validation.js';
 import { CreateRoadmap, Roadmap } from '../../../web/src/products/roadmap/domain/roadmaps.js';
-import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, OpenTurn } from '../../../web/src/products/roadmap/domain/conversation.js';
-import { RoadmapScopes, writeIn } from '../../../web/src/products/roadmap/domain/roadmapRules.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn } from '../../../web/src/products/roadmap/domain/conversation.js';
+import { RoadmapScopes } from '../../../web/src/products/roadmap/domain/roadmapRules.js';
 import { FakeLocks, FakeTimers } from '../../../web/test/platform/sync/fakes.js';
 
 const DEADLINE_MS = 180_000;
@@ -135,24 +133,11 @@ async function browser(name, account = null) {
   };
 }
 
-// A pending proposal about `tree` on Coach's answer, written raw: minting one is the propose ability's
-// (m4-model-proposals), so the run writes the record's fields as the registry admits them.
-class PendingProposal {
-  constructor(tree, turn) {
-    this.tree = tree;
-    this.turn = turn;
-  }
-
-  load(read) { return read.inScope(RoadmapScopes.account, (account) => ({ moment: account.moment })); }
-
-  decide({ moment }, ids) {
-    const id = ids.mint(CoachProposal);
-    const fields = () => ({ treeId: this.tree, threadId: this.turn.thread, messageId: this.turn.coach, base: { steps: {} },
-      changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }], state: 'pending' });
-    const plan = new Plan();
-    plan.create(new Valid({ id, fields }, moment));
-    return writeIn(RoadmapScopes.account, plan, id.record);
-  }
+// A pending proposal about `tree` on Coach's answer, minted as Coach's tool host mints one: a rename of `step`, its base
+// left empty, since nothing here applies it.
+function proposed(runner, tree, step, turn) {
+  return runner.runAct(new MintProposal({ proposal: runner.mint(CoachProposal), treeId: tree, thread: new Id(turn.thread, CoachThread),
+    message: new Id(turn.coach, CoachMessage), changes: [{ op: 'rename', nodeId: step, label: 'Read the wind well' }], base: [] }));
 }
 
 // Signed out, on `phone`: a roadmap, a conversation about it whose turn Coach ended, and a pending proposal about it.
@@ -161,8 +146,8 @@ async function signedOutWork(phone) {
   const tree = String(made.result?.tree);
   const asked = await phone.runner.runAct(new OpenTurn({ about: { treeId: tree }, question: 'What should I do first?' }));
   const ended = await phone.runner.runAct(new EndTurn(new Id(asked.result?.coach, CoachMessage), { state: 'completed', text: 'Start with the first step.' }));
-  const proposed = await phone.runner.runAct(new PendingProposal(tree, asked.result));
-  return { tree, made: [made, asked, ended, proposed].every((outcome) => outcome.kind === 'committed') };
+  const minted = await proposed(phone.runner, tree, String(made.result?.steps?.wind), asked.result);
+  return { tree, made: [made, asked, ended, minted].every((outcome) => outcome.kind === 'committed') };
 }
 
 const hello = await (await fetch(`${base}/v1/sync/hello`, { headers: { 'Sync-Schema': String(registry.version) }, signal: AbortSignal.timeout(REQUEST_MS) })).json();

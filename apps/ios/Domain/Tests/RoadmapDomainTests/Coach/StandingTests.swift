@@ -25,6 +25,12 @@ struct StandingTests {
     }
     let standing = try StandingRoadmaps(reading: phone.runner)
     let marked = try phone.runner.read(tree.overlay) { try $0.repository(StepMark.self).record(ID(dock.record), in: .drawn)?.stamps["mark"]?.ms }
+    let held = try phone.runner.read(tree.tree) { try $0.repository(RoadmapStep.self).record(ID(knot.record), in: .drawn) }
+    #expect(standing.stamps.first { $0.t == RoadmapStep.type && $0.id == knot.json }?.life == held?.life?.stamp.text, "the step's life as the delete stamps it")
+    #expect(standing.stamps.first { $0.t == RoadmapStep.type && $0.id == knot.json }?.f == held?.stamps.mapValues(\.text))
+    #expect(standing.stamps.map { "\($0.scope) \($0.t)" }.sorted() == (["\(RoadmapEntry.scope) tree", "\(tree.overlay) progress"]
+      + ["edge", "edge", "kind", "kind", "kind", "meta", "node", "node", "node"].map { "\(tree.tree) \($0)" }).sorted(),
+      "the list record, every record of the tree scope and the overlay's mark")
     let read = { (name: String, input: JSON) -> JSON in
       RoadmapAbilities.answer(name, input, over: standing, about: tree.description, ids: { "" }).form
     }

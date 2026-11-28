@@ -4,8 +4,9 @@ import SyncCore
 import SyncSchema
 
 // Roadmap Coach's records (roadmap-coach.md §9), kept in the person's `self/roadmap`: a conversation, its messages, the
-// proposals and write fates they carry; the read of one conversation; and what a turn writes as it opens, ends, or is
-// withdrawn before it began (§8). A removal of any of them is held, as a roadmap's is, so one held delete can carry both.
+// proposals and write fates they carry; the read of one conversation and of a roadmap's pending proposal; what a turn writes
+// as it opens, ends, or is withdrawn before it began (§8); and a proposal minted (§7). A removal of any of them is held, as
+// a roadmap's is, so one held delete can carry both.
 
 // The states of a Coach message, in the registry's rank: a terminal state beats running, and a writer's terminal state
 // beats another device's interrupted.
@@ -90,14 +91,16 @@ public struct CoachPicture: ValueObject, Equatable {
     return CoachPicture(id: id, mediaType: try RoadmapSpecs.coachMediaType.apply(mediaType, at: path + "mediaType"), localOnly: localOnly)
   }
 
-  // The registry's pattern for a picture's id, `[A-Za-z0-9_-]`, which its device row's key repeats.
+  // The registry's pattern for a minted id, `[A-Za-z0-9_-]`, a picture's and a proposal's among them, which a picture's device
+  // row's key repeats.
   static func idCharacter(_ byte: UInt8) -> Bool {
     (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte) || byte == 0x5F || byte == 0x2D
   }
 }
 
-// One message: the person's question, or Coach's answer with the state of its turn, `truncated` and the code a turn that
-// could not answer ended with. The calls, receipts and proposal a turn records are m3's and m4's to write.
+// One message: the person's question, or Coach's answer with the state of its turn, `truncated`, the code a turn that could
+// not answer ended with, and the proposal it minted (§7; a message about all roadmaps may mint more than one, and names the
+// last, so a message's proposals are read by their `messageId`). The calls and receipts a turn records are m3's to write.
 public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public static let type = Roadmap.Types.coachMessage
   public static let scope = Roadmap.scope
@@ -111,11 +114,13 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public var state: CoachMessageState
   public var truncated: Bool
   public var refusal: String?
+  public var proposalId: ID<CoachProposal>?
   public var pictures: [CoachPicture]
   public let at: Instant
 
   public init(id: ID<CoachMessage>, threadId: ID<CoachThread>, role: String, replica: String? = nil, text: String = "",
-              state: CoachMessageState = .running, truncated: Bool = false, refusal: String? = nil, pictures: [CoachPicture] = [], at: Instant) {
+              state: CoachMessageState = .running, truncated: Bool = false, refusal: String? = nil, proposalId: ID<CoachProposal>? = nil,
+              pictures: [CoachPicture] = [], at: Instant) {
     self.id = id
     self.threadId = threadId
     self.role = role
@@ -124,6 +129,7 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
     self.state = state
     self.truncated = truncated
     self.refusal = refusal
+    self.proposalId = proposalId
     self.pictures = pictures
     self.at = at
   }
@@ -132,12 +138,14 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
     let state = CoachMessageState(rawValue: try r.string("state", default: CoachMessageState.running.rawValue)) ?? .running
     self.init(id: ID(r.id), threadId: try r.ref("threadId", CoachThread.self), role: try r.string("role"), replica: try r.optionalString("replica"),
               text: try r.string("text", default: ""), state: state, truncated: try r.bool("truncated", default: false),
-              refusal: try r.optionalString("refusal"), pictures: try r.optionalList("pictures", of: CoachPicture.self) ?? [], at: try r.instant("at"))
+              refusal: try r.optionalString("refusal"), proposalId: try r.optionalRef("proposalId", CoachProposal.self),
+              pictures: try r.optionalList("pictures", of: CoachPicture.self) ?? [], at: try r.instant("at"))
   }
 
   public var isCoach: Bool { role == "coach" }
 
-  // A person's message carries its conversation, role, text, pictures and moment only.
+  // A person's message carries its conversation, role, text, pictures and moment only; Coach's names a proposal once it has
+  // minted one.
   public var fields: [String: JSON] {
     var fields: [String: JSON?] = ["threadId": threadId.json, "role": .string(role), "at": .of(at), "text": .string(text),
                                    "pictures": pictures.isEmpty ? nil : .array(pictures.map(\.json))]
@@ -146,6 +154,7 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
       fields["state"] = .string(state.rawValue)
       fields["truncated"] = .bool(truncated)
       fields["refusal"] = .some(refusal.map { .string($0) } ?? .null)
+      fields["proposalId"] = proposalId.map(\.json)
     }
     return fields.compactMapValues { $0 }
   }
@@ -157,6 +166,10 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
     Check("refusal") { m, _ in
       guard let refusal = try RoadmapSpecs.coachRefusal.apply(m.refusal, at: "refusal") else { return }
       if !CoachMessage.isCode(refusal) { throw Violation(rule: RoadmapSpecs.coachRefusal.path, path: "refusal", reason: .custom("notACode")) }
+    },
+    Check("proposalId") { m, _ in
+      guard let id = try RoadmapSpecs.coachProposalId.apply(m.proposalId?.record.description, at: "proposalId") else { return }
+      if !id.utf8.allSatisfy(CoachPicture.idCharacter) { throw Violation(rule: RoadmapSpecs.coachProposalId.path, path: "proposalId", reason: .custom("notAnId")) }
     },
     Check("pictures") { m, _ in m.pictures = try RoadmapSpecs.coachPictures.apply(m.pictures, at: "pictures") },
   ]
@@ -171,9 +184,15 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   }
 }
 
-// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes, none where its record names none, and
-// where it was made. Minting one, with its base and changes, is m4's.
-public struct CoachProposal: ProductEntity, Removable, Equatable {
+// The states of a proposal (§7), in the registry's rank: each of the four outranks `pending`, and `applied` the other three.
+public enum CoachProposalState: String, Sendable, CaseIterable, Equatable {
+  case pending, applied, rejected, stale, replaced
+}
+
+// A proposal (§7): the roadmap it changes, none where its record names none; the conversation and Coach's message that
+// minted it; its changes, each new step and kind under its id; its base, the copy's stamp of every register they touch; its
+// state, `pending` and then one of the four it never leaves; and whether the person undid it once applied.
+public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
   public static let type = Roadmap.Types.coachProposal
   public static let scope = Roadmap.scope
   public static let heldRemoval = true
@@ -182,12 +201,52 @@ public struct CoachProposal: ProductEntity, Removable, Equatable {
   public let treeId: String?
   public let threadId: ID<CoachThread>
   public let messageId: ID<CoachMessage>
+  public let changes: [JSON]
+  public let base: [JSON]
+  public var state: CoachProposalState
+  public let undone: Bool
+
+  public init(id: ID<CoachProposal>, treeId: String?, threadId: ID<CoachThread>, messageId: ID<CoachMessage>, changes: [JSON] = [], base: [JSON] = [],
+              state: CoachProposalState = .pending, undone: Bool = false) {
+    self.id = id
+    self.treeId = treeId
+    self.threadId = threadId
+    self.messageId = messageId
+    self.changes = changes
+    self.base = base
+    self.state = state
+    self.undone = undone
+  }
 
   public init(_ r: Fields) throws(DecodeError) {
-    id = ID(r.id)
-    treeId = try r.optionalString("treeId")
-    threadId = try r.ref("threadId", CoachThread.self)
-    messageId = try r.ref("messageId", CoachMessage.self)
+    let listed = { (value: JSON?) -> [JSON] in if case .array(let items)? = value { items } else { [] } }
+    self.init(id: ID(r.id), treeId: try r.optionalString("treeId"), threadId: try r.ref("threadId", CoachThread.self),
+              messageId: try r.ref("messageId", CoachMessage.self), changes: listed(r.json("changes")), base: listed(r.json("base")),
+              state: CoachProposalState(rawValue: try r.string("state", default: CoachProposalState.pending.rawValue)) ?? .pending,
+              undone: try r.bool("undone", default: false))
+  }
+
+  public var fields: [String: JSON] {
+    ["treeId": treeId.map { .string($0) } ?? .null, "threadId": threadId.json, "messageId": messageId.json, "changes": .array(changes),
+     "base": .array(base), "state": .string(state.rawValue), "undone": .bool(undone)]
+  }
+
+  public static let checks: [Check<CoachProposal>] = [
+    Check("changes") { p, _ in _ = try RoadmapSpecs.coachProposalChanges.apply(p.changes, at: "changes") },
+  ]
+
+  // §7 The pending proposal about a roadmap, as the device draws its proposals: the latest born of those pending, by birth
+  // and then id, so where two devices each minted one before they synced the later stands; none where none is pending. An
+  // earlier pending one reads as replaced, which the next proposal minted about the roadmap writes.
+  public static func pending(about treeId: String, in read: Reader) throws -> CoachProposal? {
+    let proposals = read.repository(CoachProposal.self)
+    var latest: (proposal: CoachProposal, born: Stamp)?
+    for proposal in try proposals.all(in: .drawn) where proposal.state == .pending && proposal.treeId.map({ $0.utf8.elementsEqual(treeId.utf8) }) == true {
+      let born = try proposals.record(proposal.id, in: .drawn)?.born ?? .unset
+      guard let held = latest else { latest = (proposal, born); continue }
+      if born > held.born || (born == held.born && held.proposal.id < proposal.id) { latest = (proposal, born) }
+    }
+    return latest?.proposal
   }
 }
 
@@ -391,5 +450,51 @@ public struct WithdrawTurn: ActAction {
     if loaded.thread != nil && withdrawn.count == loaded.messages.count { plan.remove(turn.thread) }
     if loaded.marked { plan.device(TurnMark.key(turn.coach), nil) }
     return .write(plan, in: Roadmap.scope, pictures)
+  }
+}
+
+// §7: a proposal minted, in one write of the person's records: its record, pending, about the roadmap it changes, from the
+// conversation and Coach's message that made it; that message naming it; and every other proposal pending about the roadmap
+// replaced, in id order, so the roadmap holds one pending proposal. The proposal comes under the id the tool host drew; one
+// the device holds is taken. It answers the proposal's id.
+public struct MintProposal: ActAction {
+  public let proposal: ID<CoachProposal>
+  public let treeId: String
+  public let thread: ID<CoachThread>
+  public let message: ID<CoachMessage>
+  public let changes: [JSON]
+  public let base: [JSON]
+
+  public init(proposal: ID<CoachProposal>, treeId: String, thread: ID<CoachThread>, message: ID<CoachMessage>, changes: [JSON], base: [JSON]) {
+    self.proposal = proposal
+    self.treeId = treeId
+    self.thread = thread
+    self.message = message
+    self.changes = changes
+    self.base = base
+  }
+
+  public func load(_ read: ActReader) throws -> (message: CoachMessage?, taken: Bool, pending: [CoachProposal], moment: Moment) {
+    try read.inScope(Roadmap.scope) { account in
+      let proposals = account.repository(CoachProposal.self)
+      let taken = try proposals.record(proposal, in: .stored) != nil || proposals.spentBorn(proposal) != nil
+      let pending = try proposals.all(in: .drawn).filter { $0.state == .pending && $0.treeId.map { $0.utf8.elementsEqual(treeId.utf8) } == true }
+      return (try account.repository(CoachMessage.self).find(message, in: .drawn), taken, pending, account.moment)
+    }
+  }
+
+  public func decide(_ loaded: (message: CoachMessage?, taken: Bool, pending: [CoachProposal], moment: Moment), ids: ActIDSource) throws(Violation)
+    -> ActDecision<ID<CoachProposal>, RoadmapRefusal> {
+    guard var naming = loaded.message, naming.isCoach, naming.threadId == thread else { return .refuse(.gone(message.ref, .predicted)) }
+    if loaded.taken { return .refuse(.taken(proposal.ref, .predicted)) }
+    var plan = Plan()
+    plan.create(try Valid(CoachProposal(id: proposal, treeId: treeId, threadId: thread, messageId: message, changes: changes, base: base), at: loaded.moment))
+    naming.proposalId = proposal
+    plan.update(try Valid(naming, fields: ["proposalId"], at: loaded.moment), fields: ["proposalId"])
+    for var earlier in loaded.pending.sorted(by: { $0.id < $1.id }) {
+      earlier.state = .replaced
+      plan.update(try Valid(earlier, fields: ["state"], at: loaded.moment), fields: ["state"])
+    }
+    return .write(plan, in: Roadmap.scope, proposal)
   }
 }

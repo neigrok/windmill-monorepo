@@ -1,12 +1,15 @@
 // @ts-check
 // Roadmap Coach's records (roadmap-coach.md §9), kept in the person's `self/roadmap`: a conversation, its messages, the
-// proposals and write fates they carry; the read of one conversation; and what a turn writes as it opens, ends, or is
-// withdrawn before it began (§8). A removal of any of them is held, as a roadmap's is, so one held delete can carry both.
+// proposals and write fates they carry; the read of one conversation and of a roadmap's pending proposal; what a turn
+// writes as it opens, ends, or is withdrawn before it began (§8); and a proposal minted (§7). A removal of any of them is
+// held, as a roadmap's is, so one held delete can carry both.
 
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
-import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
+import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, TextSpec, Violation, precondition } from '../../../platform/domain-kit/values.js';
 import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
@@ -17,10 +20,10 @@ import { RoadmapChecks, RoadmapLimits, RoadmapRefusals, RoadmapScopes, RoadmapSp
 /** @typedef {'running' | 'interrupted' | 'completed' | 'declined' | 'failed' | 'stopped'} MessageState */
 /** @typedef {{ thread: Id<CoachThreadValue>, person: Id<CoachMessageValue>, coach: Id<CoachMessageValue> }} Turn */
 
-// The registry's patterns for a roadmap's id, for a picture's id, which its device row's key repeats, and for a refusal
-// code.
+// The registry's patterns for a roadmap's id, for a minted id, a picture's and a proposal's among them, which a picture's
+// device row's key repeats, and for a refusal code.
 const TREE_ID = /^t_[0-9a-f]{16}$/u;
-const PICTURE_ID = /^[A-Za-z0-9_-]{8,64}$/u;
+const MINTED_ID = /^[A-Za-z0-9_-]{8,64}$/u;
 const CODE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/u;
 
 // The registry's rank: a terminal state beats running, and a writer's terminal state beats another device's interrupted.
@@ -80,7 +83,7 @@ export class CoachPicture {
   /** @param {Path} at */
   validated(at) {
     const id = RoadmapSpecs.coachPictureId.apply(this.id, at.plus('id'));
-    if (!PICTURE_ID.test(id)) throw new Violation(RoadmapSpecs.coachPictureId.path, at.plus('id'), { kind: 'custom', custom: 'notAnId' });
+    if (!MINTED_ID.test(id)) throw new Violation(RoadmapSpecs.coachPictureId.path, at.plus('id'), { kind: 'custom', custom: 'notAnId' });
     return new CoachPicture(id, RoadmapSpecs.coachMediaType.apply(this.mediaType, at.plus('mediaType')), this.localOnly);
   }
 
@@ -94,14 +97,16 @@ export class CoachPicture {
 
 /** @typedef {'person' | 'coach'} Role */
 
-// One message: the person's question, or Coach's answer with the state of its turn, `truncated` and the code a turn
-// that could not answer ended with. The calls, receipts and proposal a turn records are m3's and m4's to write.
+// One message: the person's question, or Coach's answer with the state of its turn, `truncated`, the code a turn that
+// could not answer ended with, and the proposal it minted (§7; a message about all roadmaps may mint more than one, and
+// names the last, so a message's proposals are read by their `messageId`). The calls and receipts a turn records are m3's
+// to write.
 export class CoachMessageValue {
   /**
    * @param {{ id: Id<CoachMessageValue>, threadId: Id<CoachThreadValue>, role: Role, replica?: string | null, text?: string, state?: MessageState,
-   *   truncated?: boolean, refusal?: string | null, pictures?: readonly CoachPicture[], at: Instant }} message
+   *   truncated?: boolean, refusal?: string | null, proposalId?: Id<CoachProposalValue> | null, pictures?: readonly CoachPicture[], at: Instant }} message
    */
-  constructor({ id, threadId, role, replica = null, text = '', state = 'running', truncated = false, refusal = null, pictures = [], at }) {
+  constructor({ id, threadId, role, replica = null, text = '', state = 'running', truncated = false, refusal = null, proposalId = null, pictures = [], at }) {
     this.id = id;
     this.threadId = threadId;
     this.role = role;
@@ -110,6 +115,7 @@ export class CoachMessageValue {
     this.state = state;
     this.truncated = truncated;
     this.refusal = refusal;
+    this.proposalId = proposalId;
     this.pictures = Object.freeze([...pictures]);
     this.at = at;
     Object.freeze(this);
@@ -118,17 +124,19 @@ export class CoachMessageValue {
   /** @param {Partial<ConstructorParameters<typeof CoachMessageValue>[0]>} changes */
   with(changes) {
     return new CoachMessageValue({ id: this.id, threadId: this.threadId, role: this.role, replica: this.replica, text: this.text, state: this.state,
-      truncated: this.truncated, refusal: this.refusal, pictures: this.pictures, at: this.at, ...changes });
+      truncated: this.truncated, refusal: this.refusal, proposalId: this.proposalId, pictures: this.pictures, at: this.at, ...changes });
   }
 
   get isCoach() { return this.role === 'coach'; }
 
-  // A person's message carries its conversation, role, text, pictures and moment only.
+  // A person's message carries its conversation, role, text, pictures and moment only; Coach's names a proposal once it
+  // has minted one.
   /** @returns {Record<string, Json>} */
   fields() {
     return { threadId: this.threadId.json, role: this.role, at: this.at.ms, text: this.text,
       ...(this.pictures.length ? { pictures: this.pictures.map((picture) => picture.json) } : {}),
-      ...(this.isCoach ? { ...(this.replica === null ? {} : { replica: this.replica }), state: this.state, truncated: this.truncated, refusal: this.refusal } : {}) };
+      ...(this.isCoach ? { ...(this.replica === null ? {} : { replica: this.replica }), state: this.state, truncated: this.truncated, refusal: this.refusal,
+        ...(this.proposalId === null ? {} : { proposalId: this.proposalId.json }) } : {}) };
   }
 }
 
@@ -140,7 +148,8 @@ export const CoachMessage = new EntityType({
     return new CoachMessageValue({ id: new Id(f.id, CoachMessage), threadId: f.ref('threadId', CoachThread),
       role: /** @type {Role} */ (f.string('role')), replica: f.optionalString('replica'),
       text: f.string('text', ''), state: MessageStates.all.find((known) => known === state) ?? 'running', truncated: f.bool('truncated', false),
-      refusal: f.optionalString('refusal'), pictures: f.optionalList('pictures', CoachPicture.decode) ?? [], at: f.instant('at') });
+      refusal: f.optionalString('refusal'), proposalId: f.optionalRef('proposalId', CoachProposal), pictures: f.optionalList('pictures', CoachPicture.decode) ?? [],
+      at: f.instant('at') });
   },
   checks: [
     new Check('role', (message) => { RoadmapSpecs.coachRole.apply(message.role, new Path('role')); return message; }),
@@ -149,6 +158,11 @@ export const CoachMessage = new EntityType({
     new Check('refusal', (message) => {
       const refusal = RoadmapSpecs.coachRefusal.applyOptional(message.refusal, new Path('refusal'));
       if (refusal !== null && !CODE.test(refusal)) throw new Violation(RoadmapSpecs.coachRefusal.path, new Path('refusal'), { kind: 'custom', custom: 'notACode' });
+      return message;
+    }),
+    new Check('proposalId', (message) => {
+      const id = RoadmapSpecs.coachProposalId.applyOptional(message.proposalId === null ? null : String(message.proposalId.record), new Path('proposalId'));
+      if (id !== null && !MINTED_ID.test(id)) throw new Violation(RoadmapSpecs.coachProposalId.path, new Path('proposalId'), { kind: 'custom', custom: 'notAnId' });
       return message;
     }),
     new Check('pictures', (message) => {
@@ -160,17 +174,37 @@ export const CoachMessage = new EntityType({
 
 /** @typedef {'pending' | 'applied' | 'rejected' | 'stale' | 'replaced'} ProposalState */
 
-// A proposal (§7) as far as a roadmap's delete reads it: the roadmap it changes, none where its record names none, where
-// it was made, and its state. Minting one, with its base and changes, is m4's.
+// A proposal (§7): the roadmap it changes, none where its record names none; the conversation and Coach's message that
+// minted it; its changes, each new step and kind under its id; its base, the copy's stamp of every register they touch;
+// its state, `pending` and then one of the four it never leaves; and whether the person undid it once applied.
 export class CoachProposalValue {
-  /** @param {Id<CoachProposalValue>} id @param {{ treeId: string | null, threadId: Id<CoachThreadValue>, messageId: Id<CoachMessageValue>, state?: ProposalState }} values */
-  constructor(id, { treeId, threadId, messageId, state = 'pending' }) {
+  /**
+   * @param {Id<CoachProposalValue>} id
+   * @param {{ treeId: string | null, threadId: Id<CoachThreadValue>, messageId: Id<CoachMessageValue>, changes?: readonly Json[], base?: readonly Json[],
+   *   state?: ProposalState, undone?: boolean }} values
+   */
+  constructor(id, { treeId, threadId, messageId, changes = [], base = [], state = 'pending', undone = false }) {
     this.id = id;
     this.treeId = treeId;
     this.threadId = threadId;
     this.messageId = messageId;
+    this.changes = Object.freeze([...changes]);
+    this.base = Object.freeze([...base]);
     this.state = state;
+    this.undone = undone;
     Object.freeze(this);
+  }
+
+  /** @param {{ state?: ProposalState }} changes */
+  with(changes) {
+    return new CoachProposalValue(this.id, { treeId: this.treeId, threadId: this.threadId, messageId: this.messageId, changes: this.changes, base: this.base,
+      state: this.state, undone: this.undone, ...changes });
+  }
+
+  /** @returns {Record<string, Json>} */
+  fields() {
+    return { treeId: this.treeId, threadId: this.threadId.json, messageId: this.messageId.json, changes: [...this.changes], base: [...this.base],
+      state: this.state, undone: this.undone };
   }
 }
 
@@ -178,13 +212,31 @@ const PROPOSAL_STATES = Object.freeze(['pending', 'applied', 'rejected', 'stale'
 
 /** @type {EntityType<CoachProposalValue, string>} */
 export const CoachProposal = new EntityType({
-  type: 'coachProposal', scope: RoadmapScopes.account, heldRemoval: true, checks: [],
+  type: 'coachProposal', scope: RoadmapScopes.account, heldRemoval: true,
   decode: (f) => {
     const state = f.string('state', 'pending');
+    const changes = f.json('changes');
+    const base = f.json('base');
     return new CoachProposalValue(new Id(f.id, CoachProposal), { treeId: f.optionalString('treeId'), threadId: f.ref('threadId', CoachThread),
-      messageId: f.ref('messageId', CoachMessage), state: /** @type {ProposalState} */ (PROPOSAL_STATES.find((known) => known === state) ?? 'pending') });
+      messageId: f.ref('messageId', CoachMessage), changes: Array.isArray(changes) ? changes : [], base: Array.isArray(base) ? base : [],
+      state: /** @type {ProposalState} */ (PROPOSAL_STATES.find((known) => known === state) ?? 'pending'), undone: f.bool('undone', false) });
   },
+  checks: [
+    new Check('changes', (proposal) => { RoadmapSpecs.coachProposalChanges.apply([...proposal.changes], new Path('changes'), (change) => change); return proposal; }),
+  ],
 });
+
+// §7 The pending proposal about a roadmap, as the device draws its proposals: the latest born of those pending, by birth
+// and then id, so where two devices each minted one before they synced the later stands; null where none is pending. An
+// earlier pending one reads as replaced, which the next proposal minted about the roadmap writes.
+/** @param {Reader} read @param {string} treeId */
+export function pendingProposal(read, treeId) {
+  const proposals = read.repository(CoachProposal);
+  /** @param {CoachProposalValue} proposal */
+  const born = (proposal) => proposals.record(proposal.id.record, 'drawn')?.born ?? Stamp.UNSET;
+  return proposals.all('drawn').filter((proposal) => proposal.treeId === treeId && proposal.state === 'pending')
+    .sort((a, b) => Stamp.compare(born(b), born(a)) || compareText(String(b.id.record), String(a.id.record)))[0] ?? null;
+}
 
 /** @typedef {'undone' | 'refused'} Fate */
 
@@ -359,5 +411,53 @@ export class WithdrawTurn {
     if (thread !== null && withdrawn.length === messages.length) plan.remove(this.turn.thread);
     if (marked) plan.device(TurnMark.key(this.turn.coach), null);
     return writeIn(RoadmapScopes.account, plan, pictures);
+  }
+}
+
+// §7: a proposal minted, in one write of the person's records: its record, pending, about the roadmap it changes, from the
+// conversation and Coach's message that made it; that message naming it; and every other proposal pending about the
+// roadmap replaced, in id order, so the roadmap holds one pending proposal. The proposal comes under the id the tool host
+// drew; one the device holds is taken. It answers the proposal's id.
+export class MintProposal {
+  /**
+   * @param {{ proposal: Id<CoachProposalValue>, treeId: string, thread: Id<CoachThreadValue>, message: Id<CoachMessageValue>, changes: readonly Json[],
+   *   base: readonly Json[] }} minted
+   */
+  constructor({ proposal, treeId, thread, message, changes, base }) {
+    this.proposal = proposal;
+    this.treeId = treeId;
+    this.thread = thread;
+    this.message = message;
+    this.changes = Object.freeze([...changes]);
+    this.base = Object.freeze([...base]);
+    this.refusals = RoadmapRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {import('../../../platform/domain-kit/acts.js').ActReader} read */
+  load(read) {
+    return read.inScope(RoadmapScopes.account, (account) => {
+      const proposals = account.repository(CoachProposal);
+      return {
+        message: account.repository(CoachMessage).find(this.message, 'drawn'),
+        taken: proposals.record(this.proposal.record, 'stored') !== undefined || proposals.spentBorn(this.proposal) !== null,
+        pending: proposals.all('drawn').filter((proposal) => proposal.treeId === this.treeId && proposal.state === 'pending'),
+        moment: account.moment,
+      };
+    });
+  }
+
+  /** @param {ReturnType<MintProposal['load']>} loaded */
+  decide({ message, taken, pending, moment }) {
+    if (message === null || !message.isCoach || !message.threadId.equals(this.thread)) return gone(CoachMessage.type, this.message.record);
+    if (taken) return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('id-taken', this.proposal.ref, null, 'predicted')));
+    const plan = new Plan();
+    plan.create(new Valid(new CoachProposalValue(this.proposal, { treeId: this.treeId, threadId: this.thread, messageId: this.message, changes: this.changes,
+      base: this.base }), moment));
+    plan.update(new Valid(message.with({ proposalId: this.proposal }), moment, ['proposalId']), { fields: ['proposalId'] });
+    for (const earlier of [...pending].sort((a, b) => Id.compare(a.id, b.id))) {
+      plan.update(new Valid(earlier.with({ state: 'replaced' }), moment, ['state']), { fields: ['state'] });
+    }
+    return writeIn(RoadmapScopes.account, plan, this.proposal.record);
   }
 }

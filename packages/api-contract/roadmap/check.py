@@ -37,6 +37,16 @@ EDGE = ({'from', 'to', 'present'}, set())
 KIND = ({'id', 'present', 'born', 'hue', 'label', 'description', 'ord'}, set())
 MARK = ({'node', 'status', 'outOfOrder', 'recordedAt', 'deviceAt'}, {'stamp'})
 POINTER = ({'node', 'present', 'opens'}, {'setAt'})
+# The stamps of one record's registers, as the standing roadmap carries them, the copy's and the turn's alike.
+STAMPS = {'scope', 't', 'id', 'life', 'f'}
+# A register of a proposal's base (§7), and the types of record it may name.
+BASE = {'t', 'id', 'register', 'stamp'}
+BASE_TYPES = {'node', 'edge', 'kind', 'progress'}
+# The fields of the roadmap a proposal leaves, as `folded` pins it, each kind and each step.
+FOLDED_KIND = {'id', 'label', 'hue', 'description'}
+FOLDED_STEP = {'id', 'label', 'color', 'description', 'links', 'prerequisites', 'state'}
+# The fields of a change that name a step or a kind, a ref among them.
+NAMES = ('nodeId', 'prerequisiteId', 'removeId', 'kind')
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
 # The codes §6 refuses a write with before its caps: the roadmap and whether the write may reach it (rules 1 to 3), and
@@ -426,7 +436,7 @@ class Contract:
         if self.unstorable(ability, case['call']['input']) and code not in BEFORE_CAPS: refuse(where, 'a text the domain cannot store that is not refused as `invalid-input`')
         if 'refused' in expect: return self.check_refusal(ability, case, where, found)
         kind = 'proposal' if ability['agent'] == 'proposes' else 'read' if ability['class'] == 'read' else 'write'
-        wanted = {'read': [['result']], 'proposal': [['proposal', 'result'], ['folded', 'proposal', 'result']], 'write': [['result', 'writes']]}[kind]
+        wanted = {'read': [['result']], 'proposal': [['folded', 'proposal', 'result']], 'write': [['result', 'writes']]}[kind]
         if sorted(expect) not in wanted: refuse(where, f'a {kind} that expects `{" ".join(sorted(expect))}` where it expects `{" ".join(wanted[0])}`')
         result = fault(expect['result'], result_schema(ability), 'result')
         if result: refuse(where, result)
@@ -448,7 +458,14 @@ class Contract:
         if header and 'title' in header and header['title'] != tree['meta']['title']: refuse(where, 'a header whose title is not the roadmap\'s')
 
     def check_given(self, case, where):
-        members(case['given'], {'trees'}, f'{where} · given', {'held', 'ids', 'subtasks'})
+        members(case['given'], {'trees'}, f'{where} · given', {'held', 'ids', 'subtasks', 'stamps', 'seen'})
+        for key in ('stamps', 'seen'):
+            stamps = case['given'].get(key, [])
+            if not isinstance(stamps, list): refuse(where, f'`{key}` that are not a list')
+            for record in stamps:
+                members(record, STAMPS, f'{where} · {key}')
+                if not isinstance(record['f'], dict) or not all(isinstance(stamp, str) for stamp in record['f'].values()) or not (record['life'] is None or isinstance(record['life'], str)):
+                    refuse(where, f'{key} of `{record["t"]}` `{record["id"]}` that are not stamps')
         trees = case['given']['trees']
         if not isinstance(trees, list): refuse(where, '`trees` that are not a list')
         for tree in trees:
@@ -503,6 +520,16 @@ class Contract:
     def count_over(self, ability, case):
         input = case['call']['input']
         tree = next((tree for tree in case['given']['trees'] if tree['id'] == input.get('treeId')), None)
+        if ability['name'] == 'propose_roadmap_change' and tree is not None:
+            at = case['expect'].get('refused', {}).get('at')
+            changes = input.get('changes', [])[:at + 1] if isinstance(at, int) else []
+            caps = self.limits['limits']
+            held = {each['step'] for each in case['given'].get('held', []) if each['tree'] == tree['id']}
+            steps = sum(1 for node in tree['nodes'] if node['present'] or node['id'] in held)
+            steps += sum(1 if change.get('op') == 'add_step' else len(change.get('parts', [])) - 1 if change.get('op') == 'split' else 0 for change in changes)
+            links = sum(1 for edge in tree['edges'] if edge['present']) + sum(len(set(change.get('prerequisites', []))) if change.get('op') == 'add_step' else 1 if change.get('op') == 'connect' else 0 for change in changes)
+            kinds = sum(1 for kind in tree['kinds'] if kind['present']) + sum(1 for change in changes if change.get('op') == 'add_kind')
+            return steps > caps['steps']['max'] or links > caps['links']['max'] or kinds > caps['kinds']['max']
         adding = {'create_node': (1, len(set(input.get('prerequisites', []))), 0), 'connect': (0, 1, 0),
                   'update_node': (0, 0, len(input.get('subtasks', [])))}.get(ability['name'])
         if tree is None or adding is None: return False
@@ -537,6 +564,11 @@ class Contract:
         if code == 'out-of-scope' and case['about'] in (None, input.get('treeId')): refuse(where, '`out-of-scope` for a write to the conversation\'s roadmap')
         if code == 'roadmap-not-ready' and refusal.get('id') not in {held['step'] for held in given.get('held', [])}: refuse(where, '`roadmap-not-ready` that names no held step')
         if code == 'over-limit' and not (self.over_cap(ability, input) or self.count_over(ability, case)): refuse(where, '`over-limit` for a call that passes no cap of limits.json')
+        if code == 'roadmap-changed' and ability['agent'] == 'proposes' and not self.moved(given):
+            refuse(where, '`roadmap-changed` where the turn saw every register at the copy\'s stamp')
+        if code == 'takes-every-start':
+            change = input['changes'][refusal['at']] if isinstance(refusal.get('at'), int) and 0 <= refusal['at'] < len(input.get('changes', [])) else {}
+            if change.get('op') != 'remove_step' or refusal.get('id') != change.get('nodeId'): refuse(where, '`takes-every-start` on no `remove_step` of the step it names')
         if ability['agent'] != 'proposes':
             if 'at' in refusal: refuse(where, 'an `at` on a refusal of no proposal')
             if code == 'over-limit':
@@ -547,6 +579,7 @@ class Contract:
             return
         changes = input.get('changes') if isinstance(input.get('changes'), list) else []
         count = self.limits['limits']['proposalChanges']['max']
+        if code == 'over-limit' and refusal.get('id') == input.get('treeId') and self.count_over(ability, case): return
         first = self.change_over(changes) if code == 'over-limit' else None
         at = first if first is not None and first < count else count if code == 'over-limit' and len(changes) > count else None
         whole = code in CALL_CODES or code == 'over-limit' and at is None
@@ -573,25 +606,26 @@ class Contract:
             refuse(where, 'a new step whose id is not the one id minted')
 
     def check_proposal(self, case, where):
-        expect, changes, ids = case['expect'], case['call']['input']['changes'], case['given'].get('ids', [])
+        expect, changes, ids, given = case['expect'], case['call']['input']['changes'], case['given'].get('ids', []), case['given']
         if not ids or expect['result']['proposalId'] != ids[0]: refuse(where, 'a `proposalId` that is not the first id minted')
-        members(expect['proposal'], {'changes'}, f'{where} · proposal')
+        members(expect['proposal'], {'changes', 'base'}, f'{where} · proposal')
         refs = {}
         for change in changes:
-            for given in [change.get('ref')] + [part.get('ref') for part in change.get('parts', [])]:
-                if given is not None: refs[given] = ids[1 + len(refs)] if 1 + len(refs) < len(ids) else None
+            for given_ref in [change.get('ref')] + [part.get('ref') for part in change.get('parts', [])]:
+                if given_ref is not None: refs[given_ref] = ids[1 + len(refs)] if 1 + len(refs) < len(ids) else None
         if len(ids) != 1 + len(refs) or None in refs.values(): refuse(where, f'{len(ids)} ids minted, where the proposal and its {len(refs)} refs take {1 + len(refs)}')
-        def minted(value):
-            if isinstance(value, str): return refs.get(value, value)
-            if isinstance(value, list): return [minted(item) for item in value]
-            return {('kind' if key == 'ref' and value.get('op') == 'add_kind' else 'nodeId' if key == 'ref' else key): minted(member) for key, member in value.items()}
-        if expect['proposal']['changes'] != [minted(change) for change in changes]: refuse(where, 'a record whose changes are not the call\'s with each ref under its minted id')
+        def name(value): return refs.get(value, value) if isinstance(value, str) else value
+        def minted(change, op):
+            return {('kind' if key == 'ref' and op == 'add_kind' else 'nodeId' if key == 'ref' else key):
+                    name(member) if key in NAMES or key == 'ref' else [name(each) for each in member] if key == 'prerequisites'
+                    else [minted(part, None) for part in member] if key == 'parts' else member for key, member in change.items()}
+        if expect['proposal']['changes'] != [minted(change, change['op']) for change in changes]: refuse(where, 'a record whose changes are not the call\'s with each ref under its minted id')
         removed = []
         for change in changes:
-            if change['op'] in ('remove_step', 'split'): removed.append(minted(change['nodeId']))
-            if change['op'] == 'merge': removed.append(minted(change['removeId']))
+            if change['op'] in ('remove_step', 'split'): removed.append(name(change['nodeId']))
+            if change['op'] == 'merge': removed.append(name(change['removeId']))
         if [entry['nodeId'] for entry in expect['result']['removes']] != removed: refuse(where, f'removes of {[entry["nodeId"] for entry in expect["result"]["removes"]]}, where the changes remove {removed}')
-        tree = next((tree for tree in case['given']['trees'] if tree['id'] == case['call']['input']['treeId']), None)
+        tree = next((tree for tree in given['trees'] if tree['id'] == case['call']['input']['treeId']), None)
         nodes = {node['id']: node for node in tree['nodes']} if tree else {}
         entries, named = iter(expect['result']['removes']), set()
         for change in changes:
@@ -600,12 +634,54 @@ class Contract:
                 node = nodes.get(entry['nodeId'])
                 if node and entry['nodeId'] not in named and (entry['label'], entry['descriptionChars'], entry['links']) != (node['label'], len(node['description']), len(node['links'])):
                     refuse(where, f'a removes entry for `{entry["nodeId"]}` that is not the step as the roadmap holds it')
-            named |= {minted(change[field]) for field in ('nodeId', 'removeId') if field in change}
-        if any(change['op'] == 'recolor_kind' for change in changes) and 'folded' not in expect: refuse(where, 'a recolour with no `folded` colours pinned')
-        if 'folded' in expect:
-            members(expect['folded'], {'kinds', 'steps'}, f'{where} · folded')
-            hues = [kind['hue'] for kind in expect['folded']['kinds']]
-            if len(set(hues)) != len(hues): refuse(where, 'folded kinds that share a hue')
+            named |= {name(change[field]) for field in ('nodeId', 'removeId') if field in change}
+        self.check_base(case, expect['proposal']['base'], tree, set(refs.values()), where)
+        members(expect['folded'], {'kinds', 'steps'}, f'{where} · folded')
+        for kind in expect['folded']['kinds']: members(kind, FOLDED_KIND, f'{where} · folded.kinds')
+        for step in expect['folded']['steps']: members(step, FOLDED_STEP, f'{where} · folded.steps')
+        hues = [kind['hue'] for kind in expect['folded']['kinds']]
+        if len(set(hues)) != len(hues): refuse(where, 'folded kinds that share a hue')
+        added = {name(change['ref']) for change in changes if change['op'] == 'add_step'} | {name(part['ref']) for change in changes if change['op'] == 'split' for part in change['parts']}
+        kept = ({node['id'] for node in tree['nodes'] if node['present']} | added) - set(removed) if tree else set()
+        if {step['id'] for step in expect['folded']['steps']} != kept: refuse(where, f'folded steps {sorted(step["id"] for step in expect["folded"]["steps"])}, where the changes leave {sorted(kept)}')
+
+    # §7 A proposal's base: every register it names with the copy's stamp, null for a record the copy does not hold, the
+    # being there of every step a change names, and, where the turn saw a register, the stamp it saw.
+    def check_base(self, case, base, tree, minted, where):
+        stamps = {(record['scope'], record['t'], json.dumps(record['id'])): record for record in case['given'].get('stamps', [])}
+        seen = {(record['scope'], record['t'], json.dumps(record['id'])): record for record in case['given'].get('seen', [])}
+        def stamp_of(table, entry):
+            scope = f'self/overlay/{tree["id"]}' if entry['t'] == 'progress' else f'tree/{tree["id"]}'
+            record = table.get((scope, entry['t'], json.dumps(entry['id'])))
+            if record is None: return False, None
+            return (record['life'] is not None, record['life']) if entry['register'] == 'life' else (entry['register'] in record['f'], record['f'].get(entry['register']))
+        holds = {('node', node['id']) for node in tree['nodes']} | {('edge', json.dumps([edge['from'], edge['to']])) for edge in tree['edges']} \
+            | {('kind', kind['id']) for kind in tree['kinds']} | {('progress', mark['node']) for mark in tree['marks']}
+        if not isinstance(base, list): refuse(where, 'a base that is not a list')
+        for entry in base:
+            members(entry, BASE, f'{where} · proposal.base')
+            if entry['t'] not in BASE_TYPES: refuse(where, f'a base register of `{entry["t"]}`, which is no type a change writes')
+            key = (entry['t'], entry['id'] if isinstance(entry['id'], str) else json.dumps(entry['id']))
+            if key in holds:
+                held, stamp = stamp_of(stamps, entry)
+                if not held or entry['stamp'] != stamp: refuse(where, f'a base stamp of `{entry["id"]}` {entry["register"]} that is not the one the copy holds')
+                saw, seen_stamp = stamp_of(seen, entry)
+                if saw and seen_stamp != stamp: refuse(where, f'`{entry["id"]}` {entry["register"]} accepted, which the turn saw at another stamp than the copy\'s')
+            elif entry['stamp'] is not None: refuse(where, f'a base stamp of `{entry["id"]}`, a record the copy does not hold')
+        lives = {entry['id'] for entry in base if entry['t'] == 'node' and entry['register'] == 'life'}
+        for change in case['call']['input']['changes']:
+            for step in [change.get('removeId'), change.get('prerequisiteId'), *change.get('prerequisites', []), None if change['op'] == 'add_step' else change.get('nodeId')]:
+                if isinstance(step, str) and not REF.match(step) and step not in lives: refuse(where, f'no base register of the being there of `{step}`, a step a change names')
+
+    # Whether the turn saw a register at another stamp than the copy holds.
+    def moved(self, given):
+        stamps = {(record['scope'], record['t'], json.dumps(record['id'])): record for record in given.get('stamps', [])}
+        for record in given.get('seen', []):
+            copy = stamps.get((record['scope'], record['t'], json.dumps(record['id'])))
+            if copy is None: continue
+            if record['life'] is not None and record['life'] != copy['life']: return True
+            if any(field in copy['f'] and copy['f'][field] != stamp for field, stamp in record['f'].items()): return True
+        return False
 
     # --- the context
     def check_context(self):

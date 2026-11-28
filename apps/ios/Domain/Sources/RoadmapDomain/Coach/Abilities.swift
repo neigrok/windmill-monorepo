@@ -4,9 +4,11 @@ import SyncCore
 // Roadmap Coach §4, §6.1: the abilities of catalog `roadmap/1` that run on the device's copy, each a pure function of the
 // standing roadmap (D-2), the call's input and the roadmap the conversation is about (D-7, none for all of the person's),
 // and what each answers: what it read, the room's acts a direct write is carried out as with what it answers, or the
-// refusal of the call. Every ability answers in this form, the vectors' `expect`.
+// refusal of the call. Every ability answers in this form, the vectors' `expect`; the one that proposes answers in its own
+// (`ProposalAnswer`).
 
-// §6.1 What refused a call: its code, and as `id` what the failing check is about where that is a step or a roadmap.
+// §6.1 What refused a call: its code, as `id` what the failing check is about where that is a step, a ref, a kind or a
+// roadmap, and for a proposal's change its index, `at` (§7).
 public struct CoachRefusal: Error, Equatable, Sendable {
   public enum Code: String, Sendable {
     case invalidInput = "invalid-input"
@@ -18,20 +20,52 @@ public struct CoachRefusal: Error, Equatable, Sendable {
     case overLimit = "over-limit"
     case unknownStep = "unknown-step"
     case closesCycle = "closes-cycle"
+    case takesEveryStart = "takes-every-start"
     case unknownKind = "unknown-kind"
     case addressNotAllowed = "address-not-allowed"
     case opensRoadmap = "opens-roadmap"
     case stepLocked = "step-locked"
+    case hueTaken = "hue-taken"
     case roadmapChanged = "roadmap-changed"
     case noChange = "no-change"
   }
 
   public let code: Code
   public let id: String?
+  public let at: Int?
 
-  public init(_ code: Code, _ id: String? = nil) {
+  public init(_ code: Code, _ id: String? = nil, at: Int? = nil) {
     self.code = code
     self.id = id
+    self.at = at
+  }
+
+  // The refusal of a proposal's change at `at`.
+  func at(_ index: Int) -> CoachRefusal { CoachRefusal(code, id, at: index) }
+}
+
+extension CoachRefusal.Code {
+  // §6.1, §6 rule 4: what the door would refuse of the texts a write sends, by the spec it applies to each, none where it
+  // takes every one. A text the domain cannot store, one that holds U+0000, or one it takes no blank of, a subtask's, is
+  // `invalid-input`, before any cap; one past its cap, measured as its spec measures it after the trim it applies, is
+  // `over-limit`. A blank address is the address rule's (rule 5). A lone surrogate, which no store takes either, never
+  // reaches Swift: its decoder refuses one first.
+  init?(refusing texts: [(String?, TextSpec)]) {
+    var codes: [CoachRefusal.Code] = []
+    for (text, spec) in texts {
+      guard let text else { continue }
+      do throws(Violation) {
+        _ = try spec.apply(text, at: Path(spec.path))
+      } catch {
+        switch error.reason {
+        case .tooLong: codes.append(.overLimit)
+        case .nul: codes.append(.invalidInput)
+        default: if spec.path != RoadmapSpecs.linkUrl.path { codes.append(.invalidInput) }
+        }
+      }
+    }
+    guard let first = codes.first else { return nil }
+    self = codes.contains(.invalidInput) ? .invalidInput : first
   }
 }
 

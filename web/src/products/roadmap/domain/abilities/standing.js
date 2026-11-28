@@ -6,6 +6,7 @@
 
 import { compareText } from '../../../../platform/domain-kit/entities.js';
 import { precondition } from '../../../../platform/domain-kit/values.js';
+import { registry } from '../../../../platform/sync/schema.js';
 import { RoadmapAccount } from '../account.js';
 import { diagnose, pointerDiagnostics } from '../diagnostics.js';
 import { FollowGraph } from '../graph.js';
@@ -13,7 +14,8 @@ import { RoadmapTree } from '../records.js';
 import { LegendRead } from '../reads.js';
 import { readRoadmap } from '../roadmaps.js';
 import { RoadmapScopes } from '../roadmapRules.js';
-import { RoadmapStep } from '../steps.js';
+import { RoadmapKind } from '../kinds.js';
+import { RoadmapLink, RoadmapStep } from '../steps.js';
 import { StepMark, StepPointer } from '../progress.js';
 import { Subtask } from '../workspace.js';
 import { AbilityCodes, refusal } from './answers.js';
@@ -117,12 +119,33 @@ export class StandingRoadmaps {
     return reading;
   }
 
-  /** @param {Standing} standing */
-  constructor({ trees, held = [], subtasks = [], listRead = true }) {
-    this.account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)));
+  // `account` is the account the domain reads over the roadmaps, built of `trees` unless given.
+  /** @param {Standing} standing @param {RoadmapAccount} [account] */
+  constructor({ trees, held = [], subtasks = [], listRead = true }, account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)))) {
+    this.account = account;
     this.held = held;
     this.subtasks = subtasks;
     this.listRead = listRead;
+  }
+
+  // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading
+  // reaches: those above it and those its steps open, and theirs in turn. A proposal's fold reads its scratch copy so, at
+  // the cost of the roadmaps it reads rather than of every roadmap the device holds.
+  /** @param {RoadmapTree} tree */
+  replacing(tree) {
+    /** @type {Map<string, RoadmapTree>} */
+    const reached = new Map([[tree.id, tree]]);
+    for (const pending = [tree]; pending.length;) {
+      const next = /** @type {RoadmapTree} */ (pending.pop());
+      const named = [next.parent?.tree, next.meta?.root, ...next.nodes.map((node) => node.branch), ...[...next.pointers.values()].map((pointer) => pointer.opens)];
+      for (const id of named) {
+        const held = id == null || reached.has(id) ? undefined : this.account.trees.get(id);
+        if (held === undefined) continue;
+        reached.set(held.id, held);
+        pending.push(held);
+      }
+    }
+    return new StandingRoadmaps({ trees: [], held: this.held, subtasks: this.subtasks, listRead: this.listRead }, new RoadmapAccount([...reached.values()]));
   }
 
   // §10, §6 rule 1: the roadmap a call names, where it is the conversation's (`about`) or one of the person's own and
@@ -225,6 +248,15 @@ export class StandingRoadmaps {
   }
 }
 
+// §6 rule 4: the sync registry's caps of a roadmap's steps, links and kinds, and of the subtasks of its owner's checklists.
+/** @param {{ type: string }} entity */
+function capOf(entity) {
+  const cap = registry.type(entity.type)?.cap;
+  precondition(cap !== undefined, `the sync registry caps ${entity.type}`);
+  return cap;
+}
+export const RoadmapCaps = Object.freeze({ steps: capOf(RoadmapStep), links: capOf(RoadmapLink), kinds: capOf(RoadmapKind), subtasks: capOf(Subtask) });
+
 // §5.1 The fields a step comes with where a call names none: the context's line.
 export const STEP_LINE = Object.freeze(['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary']);
 // §5.1 A summary is the description's first 160 Unicode scalars, `…` added where it is longer.
@@ -304,6 +336,15 @@ export class StandingRoadmap {
     const waiting = this.graph.ids.map(() => []);
     for (const [slot, prerequisites] of this.follows().entries()) for (const prerequisite of prerequisites) waiting[prerequisite]?.push(slot);
     return waiting;
+  }
+
+  // §6 rule 4: whether more steps, links or subtasks would pass the caps of the roadmap, which counts what it holds alive
+  // as the engine does: each step the room shows and each under a delete the person can still undo, until its hold ends,
+  // each link, and each subtask of its checklists, a removed step's included.
+  /** @param {{ steps?: number, links?: number, subtasks?: number }} adding */
+  passesCaps({ steps = 0, links = 0, subtasks = 0 }) {
+    return this.graph.ids.length + this.held.size + steps > RoadmapCaps.steps || this.graph.edges.length + links > RoadmapCaps.links
+      || this.subtaskCount + subtasks > RoadmapCaps.subtasks;
   }
 
   // The step the room shows under `id`, undefined where it shows none: a step removed, or under a delete the person can

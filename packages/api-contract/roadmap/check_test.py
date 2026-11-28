@@ -152,7 +152,7 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready'}, 'writes': []}), ': a refusal beside `writes`'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'result': {}}), ': a write that expects `result` where it expects `result writes`'),
             self.vector('get_progress', 1, lambda case, c: case.update(expect={'writes': []}), ': a read that expects `writes` where it expects `result`'),
-            self.vector('propose_roadmap_change', 0, lambda case, c: case['expect'].pop('proposal'), ': a proposal that expects `result` where it expects `proposal result`'),
+            self.vector('propose_roadmap_change', 0, lambda case, c: case['expect'].pop('proposal'), ': a proposal that expects `folded result` where it expects `folded proposal result`'),
         ], 'check_vectors')
 
     def test_what_a_case_gives_out_of_shape_is_refused(self):
@@ -251,10 +251,26 @@ class VectorsTest(Rows):
             self.vector('propose_roadmap_change', 0, lambda case, c: case['expect']['proposal']['changes'].pop(), ': a record whose changes are not the call\'s with each ref under its minted id'),
             self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['result'].update(removes=[]), ": removes of [], where the changes remove ['d']"),
             self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['result']['removes'][0].update(descriptionChars=9), ': a removes entry for `d` that is not the step as the roadmap holds it'),
-            self.vector('propose_roadmap_change', 4, lambda case, c: case['expect'].pop('folded'), ': a recolour with no `folded` colours pinned'),
+            self.vector('propose_roadmap_change', 4, lambda case, c: case['expect'].pop('folded'), ': a proposal that expects `proposal result` where it expects `folded proposal result`'),
             self.vector('propose_roadmap_change', 4, lambda case, c: case['expect']['folded']['kinds'][1].update(hue='gold'), ': folded kinds that share a hue'),
             self.vector('propose_roadmap_change', 4, lambda case, c: case['expect']['folded'].pop('steps'), ' · folded: no `steps`'),
-            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal'].update(base={}), ' · proposal: `base` is not one of its keys'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal'].update(base={}), ': a base that is not a list'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal'].pop('base'), ' · proposal: no `base`'),
+            self.vector('propose_roadmap_change', 4, lambda case, c: case['expect']['folded']['steps'][0].pop('state'), ' · folded.steps: no `state`'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['folded']['steps'].pop(), ": folded steps ['a', 'b'], where the changes leave ['a', 'b', 'c']"),
+        ], 'check_vectors')
+
+    def test_a_base_other_than_the_copy_holds_is_refused(self):
+        self.refused([
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal']['base'][2].pop('stamp'), ' · proposal.base: no `stamp`'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal']['base'][2].update(t='meta'), ': a base register of `meta`, which is no type a change writes'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal']['base'][2].update(stamp='2002:5:r_aaaaaaaaaaaa'), ': a base stamp of `c` label that is not the one the copy holds'),
+            self.vector('propose_roadmap_change', 0, lambda case, c: case['expect']['proposal']['base'][1].update(stamp='1000:0:r_aaaaaaaaaaaa'), ': a base stamp of `k1x9q2m7p4z8w3r5`, a record the copy does not hold'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['expect']['proposal']['base'].pop(1), ': no base register of the being there of `d`, a step a change names'),
+            self.vector('propose_roadmap_change', 27, lambda case, c: case['given']['seen'][1]['f'].update(label='2001:5:r_aaaaaaaaaaaa'), ': `b` label accepted, which the turn saw at another stamp than the copy\'s'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['given'].update(stamps={}), ': `stamps` that are not a list'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['given']['stamps'][0].pop('f'), ' · stamps: no `f`'),
+            self.vector('propose_roadmap_change', 1, lambda case, c: case['given']['stamps'][0].update(life=1000), ': stamps of `node` `a` that are not stamps'),
         ], 'check_vectors')
 
     def test_a_refusal_other_than_the_case_allows_is_refused(self):
@@ -281,6 +297,9 @@ class VectorsTest(Rows):
             self.vector('propose_roadmap_change', 11, lambda case, c: case['expect']['refused'].update(id='a'), ': an `id` on a refusal of the count of changes'),
             self.vector('propose_roadmap_change', 13, lambda case, c: case['expect']['refused'].update(at=0), ': an `at` of 0 on a Shape refusal of changes[1]'),
             self.vector('propose_roadmap_change', 0, lambda case, c: case.update(expect={'refused': {'code': 'not-owner', 'at': 0}}), ': `not-owner` for a roadmap the person owns'),
+            self.vector('propose_roadmap_change', 26, lambda case, c: case['given'].update(seen=case['given']['stamps']), ': `roadmap-changed` where the turn saw every register at the copy\'s stamp'),
+            self.vector('propose_roadmap_change', 19, lambda case, c: case['expect']['refused'].update(at=0), ': `takes-every-start` on no `remove_step` of the step it names'),
+            self.vector('propose_roadmap_change', 39, lambda case, c: case['given']['trees'][0]['kinds'].pop(), ': `over-limit` for a call that passes no cap of limits.json'),
         ], 'check_vectors')
 
     def test_a_proposal_refused_as_not_owner_carries_no_at(self):

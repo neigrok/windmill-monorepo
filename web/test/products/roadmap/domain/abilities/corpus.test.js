@@ -1,7 +1,8 @@
 // @ts-check
 // The one runner of Roadmap Coach's ability vectors (`packages/api-contract/roadmap/abilities/`): each case's call through
 // its ability over the case's roadmaps, and each context case through the context, its answer compared whole by
-// canonical text. A direct write draws its new ids from the case's `ids`, in order.
+// canonical text. A direct write and a proposal draw their new ids from the case's `ids`, in order; a proposal's record
+// is folded again over the case's roadmaps for what it leaves (`folded`).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -9,20 +10,22 @@ import { jcs, jcsBytes } from '../../../../../../packages/api-contract/sync/refe
 import { Catalog, JsonSchema } from '../../../../../src/platform/domain-kit/abilities.js';
 import { ContextBounds, readContext } from '../../../../../src/products/roadmap/domain/abilities/context.js';
 import { MAX_BYTES } from '../../../../../src/products/roadmap/domain/abilities/pages.js';
+import { ProposalAbilities, ProposalFold } from '../../../../../src/products/roadmap/domain/abilities/proposals.js';
 import { ReadAbilities } from '../../../../../src/products/roadmap/domain/abilities/reads.js';
 import { WriteAbilities } from '../../../../../src/products/roadmap/domain/abilities/writes.js';
 import { Contract } from '../../../../platform/domain-kit/vectors.js';
 
 /** @typedef {import('../../../../../src/products/roadmap/domain/abilities/standing.js').Standing} Standing */
-/** @typedef {{ case: string, about: string | null, given: Standing & { ids?: string[] }, call: { name: string, input: any }, expect: any }} AbilityCase */
+/** @typedef {import('../../../../../src/products/roadmap/domain/abilities/standing.js').RecordStamps} RecordStamps */
+/** @typedef {{ case: string, about: string | null, given: Standing & { ids?: string[], seen?: RecordStamps[] }, call: { name: string, input: any }, expect: any }} AbilityCase */
 /** @typedef {{ case: string, about: string | null, step: string | null, given: Standing, expect: any }} ContextCase */
 
 const catalog = new Catalog(Contract.json('roadmap/catalog.json'));
-const abilities = /** @type {Record<string, (standing: any, input: any, about: string | null, ids: () => string) => any>} */ ({ ...ReadAbilities, ...WriteAbilities });
+const abilities = /** @type {Record<string, (standing: any, input: any, about: string | null, ids: () => string, seen: RecordStamps[]) => any>} */ ({
+  ...ReadAbilities, ...WriteAbilities, ...ProposalAbilities });
 const files = Contract.files('roadmap/abilities').filter((path) => path.endsWith('.json'));
 const claimed = Object.keys(abilities).map((name) => `roadmap/abilities/${name}.json`);
 const contextFile = 'roadmap/abilities/context.json';
-// The proposal has no executor on the web yet.
 const unclaimed = files.filter((path) => !claimed.includes(path) && path !== contextFile);
 
 /** @param {string} path @returns {AbilityCase[]} */
@@ -42,14 +45,15 @@ function spelled(given) {
   return { ...given, trees: given.trees.map((tree) => ({ ...tree, nodes: read(tree.nodes), edges: read(tree.edges), marks: read(tree.marks) })) };
 }
 
-test('every ability of the catalog that runs on the copy runs, every read answers within its cap, and every file but the proposal\'s is claimed, the context\'s among them', () => {
+test('every ability of the catalog runs or proposes on the copy, every read answers within its cap, and every file is claimed, the context\'s among them', () => {
   const runs = catalog.abilities.filter((ability) => ability.agent === 'runs');
-  assert.deepEqual(runs.map((ability) => ability.name).sort(), Object.keys(abilities).sort());
+  assert.deepEqual(catalog.abilities.filter((ability) => ability.agent !== 'withheld').map((ability) => ability.name).sort(), Object.keys(abilities).sort());
+  assert.deepEqual(Object.keys(ProposalAbilities), catalog.abilities.filter((ability) => ability.agent === 'proposes').map((ability) => ability.name));
   assert.deepEqual(Object.keys(ReadAbilities).sort(), runs.filter((ability) => ability.kind === 'read').map((ability) => ability.name).sort());
   const reads = catalog.abilities.filter((ability) => ability.kind === 'read');
   assert.deepEqual(reads.map((ability) => /** @type {{ maxBytes?: number }} */ (ability.result).maxBytes), reads.map(() => MAX_BYTES));
   assert.deepEqual(files.filter((path) => claimed.includes(path) || path === contextFile), [...claimed, contextFile].sort());
-  assert.deepEqual(unclaimed, ['roadmap/abilities/propose_roadmap_change.json'], 'only the proposal goes unclaimed');
+  assert.deepEqual(unclaimed, [], 'every file is claimed');
 });
 
 for (const path of claimed) {
@@ -61,7 +65,8 @@ for (const path of claimed) {
         assert.ok(id !== undefined, 'the call draws no more ids than the case gives');
         return id;
       };
-      const answer = abilities[each.call.name]?.(each.given, each.call.input, each.about, ids);
+      const answered = abilities[each.call.name]?.(each.given, each.call.input, each.about, ids, each.given.seen ?? []);
+      const answer = 'proposal' in answered ? { ...answered, folded: foldedAgain(each.given, each.call.input.treeId, answered.proposal.changes) } : answered;
       assert.equal(jcs(answer), jcs(each.expect));
       if (!('result' in answer)) return;
       const schema = /** @type {any} */ (catalog.ability(each.call.name)?.result);
@@ -69,6 +74,15 @@ for (const path of claimed) {
       assert.ok(jcsBytes(answer.result).length <= (schema.maxBytes ?? MAX_BYTES));
     });
   }
+}
+
+// A minted proposal's record folded again over the roadmaps it was minted over, as the review and Apply fold it: what its
+// changes leave.
+/** @param {Standing} standing @param {string} treeId @param {any[]} changes */
+function foldedAgain(standing, treeId, changes) {
+  const over = ProposalFold.over(standing, treeId, changes);
+  assert.ok('fold' in over, `the record folds again: ${jcs(over)}`);
+  return over.fold.folded;
 }
 
 for (const each of contextCases) {

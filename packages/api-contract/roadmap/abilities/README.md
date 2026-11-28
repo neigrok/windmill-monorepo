@@ -6,7 +6,7 @@ make, or a refusal ([Roadmap Coach](../../../../docs/foundation/roadmap-coach.md
 ([The context](#the-context)), and holds an array of cases, each giving the function both and what it must answer:
 
 ```json
-{"case": "…", "about": "t_…", "given": {"trees": […], "held": […], "subtasks": […], "ids": […]}, "call": {"name": "…", "input": {…}}, "expect": {…}}
+{"case": "…", "about": "t_…", "given": {"trees": […], "held": […], "subtasks": […], "ids": […], "stamps": […], "seen": […]}, "call": {"name": "…", "input": {…}}, "expect": {…}}
 ```
 
 - `case` says what the case shows.
@@ -31,6 +31,12 @@ make, or a refusal ([Roadmap Coach](../../../../docs/foundation/roadmap-coach.md
 - `given.ids`, which a case may leave out, are the ids the tool host's random source gives, in the order it draws them:
   for `create_node`, the new step's; for a proposal, the proposal's own and then one for each ref, in the order the
   changes give them (§7).
+- `given.stamps`, which a case may leave out, are the stamps of the registers the copy holds, one record each as the
+  standing roadmap carries them: `{scope, t, id, life, f}`, the record's scope, type and id (`[from, to]` for a link),
+  the stamp of its life, null for a type with none, and of each field it holds, by name. A proposal's case gives those
+  of every record its base names that the roadmap holds.
+- `given.seen`, which a case may leave out, are the stamps of the registers the turn's context and reads returned, in
+  the same form, as the tool host noted them (§5): what the turn saw. A case that leaves them out saw nothing.
 - `call` names the file's ability and gives its input. The input stands inside the ability's `input` schema, but in a
   case that expects `invalid-input`. A text of an input may hold U+0000, escaped in the file, where a case shows a direct
   write refusing text the domain cannot store. A lone surrogate is refused the same way, but no case here holds one: a
@@ -43,10 +49,11 @@ make, or a refusal ([Roadmap Coach](../../../../docs/foundation/roadmap-coach.md
     carries out, in order, and the answer. Each action is one §6 gives the ability, named and shaped as the domain
     corpus's cases in `../domain/*-actions.json` name and shape it, whose vectors pin what it writes. An ability has no
     door of its own (INV-2), so a write is never anything else;
-  - `{"result": …, "proposal": {"changes": […]}, "folded"?: …}` for `propose_roadmap_change`: its answer, whose
-    `proposalId` is the first of `given.ids`, and the changes the minted record holds, each ref under its id. A case
-    with a `recolor_kind` also pins `folded`, `{kinds: [{id, hue}], steps: [{id, color}]}`: the kinds and the present
-    steps' colours once every change has folded, in the room's order, which the record alone does not show;
+  - `{"result": …, "proposal": {"changes": […], "base": […]}, "folded": …}` for `propose_roadmap_change`: its answer,
+    whose `proposalId` is the first of `given.ids`; what the minted record holds, its changes, each ref under its id,
+    and its base, `[{t, id, register, stamp}]` (§7); and `folded`, `{kinds: [{id, label, hue, description}], steps:
+    [{id, label, color, description, links, prerequisites, state}]}`, the present kinds and steps in the room's order
+    once the record's changes have folded over the given roadmap again, which the record alone does not show;
   - `{"refused": {"code", "id"?, "at"?}}`: a code of §6.1, the id §6.1 says the refusal names, and, for a proposal,
     `at` as §7 says.
 
@@ -134,10 +141,14 @@ running an ability:
 - a write is an action §6 gives the ability, its input of the shape the domain's cases give that action, and
   `create_node`'s answer the id minted;
 - a proposal's record is the call's changes with each ref under the id minted for it, in order; its `removes` name the
-  steps its changes remove, each as the given roadmap holds it until a change names it; and a recolour pins `folded`;
+  steps its changes remove, each as the given roadmap holds it until a change names it; its base holds each register's
+  stamp as `given.stamps` holds it, null for a record the roadmap does not hold, and the being there of every step a
+  change names, and the turn saw none of them at another stamp; and `folded` holds the given roadmap's present steps,
+  less those the changes remove and with those they add, with no two kinds of one hue;
 - a refusal's code is one of §6.1, and holds to what the case gives: `unknown-roadmap` for a roadmap not given,
   `roadmap-unavailable` for one unread, `not-owner` for one the person does not own, `out-of-scope` for a write outside
-  `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap: a value, measured as
+  `about`, `roadmap-not-ready` naming a held step, `roadmap-changed` for a proposal where `seen` and `stamps` differ,
+  `takes-every-start` on a `remove_step` of the step it names, and `over-limit` for a call that passes a cap: a value, measured as
   the domain stores it, or a direct write's count of the roadmap's steps, links or subtasks. An input that passes a cap
   must be refused as `over-limit`, or by a rule §6 checks before the caps, and a direct write that sends a text the
   domain cannot store as `invalid-input`. A direct write's `over-limit` names the step whose value passes, none for a
@@ -159,11 +170,9 @@ running an ability:
   beside that many, the two together its available steps, with `omitted` no more than the person's roadmaps the case gives.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
-prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, which code a refusal is,
+prerequisites and unlock count, a cursor's digest or where a page is cut, what a fold leaves, which code a refusal is,
 which steps lie around the frontier and in what order they are taken, or which guides lie above a roadmap. Those are
 the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's runner,
-`web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files, the direct writes' and
-`context.json`, and the iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, the read
-abilities' files and the direct writes'. Each draws a write's new ids from the case's `ids` and compares each answer whole
-by canonical text; no executor claims the proposal's yet. The format holds no register stamps, so no case shows §7's
-`roadmap-changed` over a register.
+`web/test/products/roadmap/domain/abilities/corpus.test.js`, claims every file, `context.json` among them, and the
+iPhone's, `apps/ios/Domain/Tests/RoadmapDomainTests/Coach/AbilitiesCorpusTests.swift`, every file but `context.json`. Each draws new ids from the case's `ids`, folds a minted proposal's record again over the case's
+roadmaps for `folded`, and compares each answer whole by canonical text.

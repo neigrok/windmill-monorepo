@@ -81,9 +81,11 @@ export const RoadmapSpecs = Object.freeze({
   coachReplica: chars('coachMessage.replica', 35, { min: 35 }),
   coachText: bytes('coachMessage.text', 131072),
   coachRefusal: chars('coachMessage.refusal', 64, { min: 1 }),
+  coachProposalId: chars('coachMessage.proposalId', 64, { min: 8 }),
   coachPictures: new CountSpec('coachMessage.pictures', { min: 0, max: 1 }),
   coachPictureId: chars('coachMessage.pictures.id', 64, { min: 8 }),
   coachMediaType: bytes('coachMessage.pictures.mediaType', 255, { min: 1 }),
+  coachProposalChanges: new CountSpec('coachProposal.changes', { min: 1, max: 100 }),
 });
 
 // The web links a person is shown and the server takes (packages/api-contract/roadmap-link-urls.json): an address that
