@@ -105,6 +105,29 @@ public struct CoachReceipt: Sendable, Equatable {
   }
 }
 
+// A receipt as Coach's message holds it: read, or written in a shape this build does not read, kept as it was written so
+// it keeps its place among the message's receipts, the index a write fate names; a receipt not read is drawn as nothing.
+public enum HeldReceipt: Sendable, Equatable {
+  case read(CoachReceipt)
+  case unreadable(JSON)
+
+  public init(json: JSON) {
+    self = (try? CoachReceipt(json: json)).map(HeldReceipt.read) ?? .unreadable(json)
+  }
+
+  public var receipt: CoachReceipt? {
+    guard case .read(let receipt) = self else { return nil }
+    return receipt
+  }
+
+  public var json: JSON {
+    switch self {
+    case .read(let receipt): receipt.json
+    case .unreadable(let json): json
+    }
+  }
+}
+
 // A turn's mark as this device holds it: the Coach message the turn writes and the round in flight, `callId` nil before the
 // first. A row in any other shape is no mark.
 public struct RunningMark: Sendable, Equatable {
@@ -314,11 +337,14 @@ extension CoachWriteFate: Writable {
 
 // §6: what became of one receipt's write after its turn ended, so its receipt reads so on every device: undone, or refused by
 // the server with its code. A receipt keeps one fate; the same one asked again is unchanged, and a message with no such
-// receipt is gone. It answers the fate's id.
+// receipt, past its receipts or outside the registry's 0…5, is gone. It answers the fate's id.
 public struct RecordWriteFate: ActAction {
   public enum Fate: String, Sendable {
     case undone, refused
   }
+
+  // The receipts a message can hold, one for each direct write a turn may make.
+  public static let receipts = 0...5
 
   public let message: ID<CoachMessage>
   public let receipt: Int
@@ -341,7 +367,9 @@ public struct RecordWriteFate: ActAction {
 
   public func decide(_ loaded: (message: CoachMessage?, fates: [CoachWriteFate], moment: Moment), ids: ActIDSource) throws(Violation)
     -> ActDecision<ID<CoachWriteFate>, RoadmapRefusal> {
-    guard let written = loaded.message, written.isCoach, receipt < (written.receipts?.count ?? 0) else { return .refuse(.gone(message.ref, .predicted)) }
+    guard let written = loaded.message, written.isCoach, RecordWriteFate.receipts.contains(receipt), receipt < (written.receipts?.count ?? 0) else {
+      return .refuse(.gone(message.ref, .predicted))
+    }
     if let kept = loaded.fates.filter({ $0.receipt == receipt }).min(by: { $0.id < $1.id }) { return .unchanged(kept.id) }
     let id = ids.mint(CoachWriteFate.self)
     var plan = Plan()

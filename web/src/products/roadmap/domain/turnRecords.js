@@ -291,8 +291,11 @@ export class InterruptStaleTurn {
 
 // §6: what became of one receipt's write after its turn ended, so its receipt reads so on every device: undone, or refused
 // by the server with its code. A receipt keeps one fate; the same one written again is unchanged, and a message with no
-// such receipt is gone. It answers the fate's id.
+// such receipt, past its receipts or outside the registry's 0…5, is gone. It answers the fate's id.
 export class RecordWriteFate {
+  // The receipts a message can hold, one for each direct write a turn may make.
+  static receipts = Object.freeze({ first: 0, last: 5 });
+
   /** @param {Id<CoachMessageValue>} message @param {{ receipt: number, fate: 'undone' | 'refused', code?: string | null }} fate */
   constructor(message, { receipt, fate, code = null }) {
     this.message = message;
@@ -313,7 +316,9 @@ export class RecordWriteFate {
 
   /** @param {ReturnType<RecordWriteFate['load']>} loaded @param {import('../../../platform/domain-kit/acts.js').ActIDSource} ids */
   decide({ message, fates, moment }, ids) {
-    if (message === null || !message.isCoach || this.receipt >= (message.receipts ?? []).length) return gone(CoachMessage.type, this.message.record);
+    const { first, last } = RecordWriteFate.receipts;
+    const held = Number.isInteger(this.receipt) && this.receipt >= first && this.receipt <= last && this.receipt < (message?.receipts ?? []).length;
+    if (message === null || !message.isCoach || !held) return gone(CoachMessage.type, this.message.record);
     const kept = fates.filter((fate) => fate.receipt === this.receipt).sort((a, b) => Id.compare(a.id, b.id))[0];
     if (kept !== undefined) return ActDecision.unchanged(kept.id.record);
     const plan = new Plan();

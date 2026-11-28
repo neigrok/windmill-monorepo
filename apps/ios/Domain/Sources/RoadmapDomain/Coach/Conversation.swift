@@ -101,7 +101,7 @@ public struct CoachPicture: ValueObject, Equatable {
 // One message: the person's question, or Coach's answer with the state of its turn, `truncated`, the code a turn that could
 // not answer ended with, the proposal it minted (§7; a message about all roadmaps may mint more than one, and names the
 // last, so a message's proposals are read by their `messageId`), and the calls and receipts its turn recorded as it ended
-// (`TurnRecords.swift`), as facts, nil until then.
+// (`TurnRecords.swift`), as facts, nil until then, each receipt in its place even where this build does not read it.
 public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public static let type = Roadmap.Types.coachMessage
   public static let scope = Roadmap.scope
@@ -119,11 +119,11 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
   public var pictures: [CoachPicture]
   public let at: Instant
   public var calls: [CoachCall]?
-  public var receipts: [CoachReceipt]?
+  public var receipts: [HeldReceipt]?
 
   public init(id: ID<CoachMessage>, threadId: ID<CoachThread>, role: String, replica: String? = nil, text: String = "",
               state: CoachMessageState = .running, truncated: Bool = false, refusal: String? = nil, proposalId: ID<CoachProposal>? = nil,
-              pictures: [CoachPicture] = [], at: Instant, calls: [CoachCall]? = nil, receipts: [CoachReceipt]? = nil) {
+              pictures: [CoachPicture] = [], at: Instant, calls: [CoachCall]? = nil, receipts: [HeldReceipt]? = nil) {
     self.id = id
     self.threadId = threadId
     self.role = role
@@ -146,7 +146,7 @@ public struct CoachMessage: ProductEntity, Writable, Removable, Equatable {
               text: try r.string("text", default: ""), state: state, truncated: try r.bool("truncated", default: false),
               refusal: try r.optionalString("refusal"), proposalId: try r.optionalRef("proposalId", CoachProposal.self),
               pictures: try r.optionalList("pictures", of: CoachPicture.self) ?? [], at: try r.instant("at"),
-              calls: listed("calls")?.compactMap { try? CoachCall(json: $0) }, receipts: listed("receipts")?.compactMap { try? CoachReceipt(json: $0) })
+              calls: listed("calls")?.compactMap { try? CoachCall(json: $0) }, receipts: listed("receipts")?.map(HeldReceipt.init(json:)))
   }
 
   public var isCoach: Bool { role == "coach" }
@@ -436,7 +436,7 @@ public struct EndTurn: ActAction {
       written.append("calls")
     }
     if let receipts {
-      ended.receipts = receipts
+      ended.receipts = receipts.map(HeldReceipt.read)
       written.append("receipts")
     }
     var plan = Plan()
