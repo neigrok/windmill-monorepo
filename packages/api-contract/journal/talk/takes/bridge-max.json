@@ -8,7 +8,7 @@
              "page": {"text": "Up early.\n", "unsettled": []},
              "saved": {"body": "Up early.\n", "source": "typed"},
              "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "7650ff28ded081a8", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 0, "heardAt": 1790856000000}]},
-             "wakeAt": 1790856600000}},
+             "wakeAt": 1790856010000}},
     {"at": 1790856000400, "in": {"heard": {"callId": "AAAAAAAAAAAAAAAAAAAAAA", "message": {"type": "started", "callId": "AAAAAAAAAAAAAAAAAAAAAA", "remainingSeconds": 24705}}},
      "out": {"phase": "listening", "do": [{"microphone": "open"}], "send": [],
              "page": {"text": "Up early.\n", "unsettled": []},
@@ -76,6 +76,6 @@
              "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "2b52e661f19e998f", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856003900}, {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "bytesSaved": 0, "heardAt": 1790856004300}, {"callId": "CCCCCCCCCCCCCCCCCCCCCC", "bytesSaved": 0, "heardAt": 1790856004900}, {"callId": "DDDDDDDDDDDDDDDDDDDDDD", "bytesSaved": 0, "heardAt": 1790856005500}]},
              "wakeAt": null}}
   ],
-  "end": {"cause": "bridge", "code": null, "heard": false, "turns": 1, "forcedTurns": 0, "bridges": 3},
+  "end": {"cause": "bridge", "code": null, "heard": false, "turns": 1, "commits": 1, "bridges": 3},
   "recovered": null
 }

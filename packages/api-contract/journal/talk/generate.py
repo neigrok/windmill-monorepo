@@ -152,6 +152,8 @@ def save_scenes():
               saved(whole, 'spoken', 7, NOON + 60000, None, retired('placeholder', 'privacyLine', 'firstPage', 'scales')), while_page=digest(one)),
         scene('a guarded save changes nothing once the page has changed', whole, 'spoken', None, [page(one + ' And home.', 'spoken', 7, NOON + 30000, 0, ACTOR)], NOON + 60000,
               {'unchanged': {'result': None}}, while_page=digest(one)),
+        scene('the mark is cleared on a page that has changed', None, 'spoken', None, [page(one + ' And home.', 'spoken', 7, NOON + 30000, 0, ACTOR)], NOON + 60000,
+              write(local=[{'key': 'talkTake', 'value': None}])),
         scene('Undo saves the page and its source as they were and clears the mark', before, 'typed', None, [page(whole, 'spoken', 7, NOON + 6800, 0, ACTOR)], NOON + 9000,
               saved(before, 'typed', 7, NOON + 9000, None, retired('placeholder', 'privacyLine', 'firstPage', 'scales')), while_page=digest(whole)),
         scene('Undo on a day that had no page removes it', '', 'typed', None, [page(first, 'spoken', None, NOON + 6800, 0, ACTOR)], NOON + 9000,
@@ -159,7 +161,7 @@ def save_scenes():
     ]
 
 
-TAKE_MAX, END_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, RESULT_POLL, RECOVER_FOR = 600000, 15000, 10000, 2000, 5000, 600000
+TAKE_MAX, OPEN_WAIT, END_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, RESULT_POLL, RECOVER_FOR = 600000, 10000, 15000, 10000, 2000, 5000, 600000
 COMMIT, END = {'type': 'commit'}, {'type': 'end'}
 MIC_OPEN, MIC_CLOSED = {'microphone': 'open'}, {'microphone': 'closed'}
 KEEP = object()
@@ -272,8 +274,12 @@ class Story:
             words += run
         return {'text': words, 'unsettled': ranges}
 
-    def ends(self, cause, code=None, heard=True, turns=0, forced=0, bridges=0):
-        self.end = {'cause': cause, 'code': code, 'heard': heard, 'turns': turns, 'forcedTurns': forced, 'bridges': bridges}
+    # A take begins on the page as stored: the words there become the page's text before it.
+    def begins(self, calls):
+        self.before, self.calls, self.shown, self.parts, self.heard = self.stored or '', list(calls), [], [], []
+
+    def ends(self, cause, code=None, heard=True, turns=0, commits=0, bridges=0):
+        self.end = {'cause': cause, 'code': code, 'heard': heard, 'turns': turns, 'commits': commits, 'bridges': bridges}
 
     def recovers(self, cause='recovered', answered=0):
         self.recovered = {'cause': cause, 'answered': answered}
@@ -284,13 +290,13 @@ class Story:
 
 def pressed(name, body='Up early.\n', calls=(A,), at=NOON, **given):
     story = Story(name, body, calls=calls, **given)
-    story.step(at, {'press': True}, phase='connecting', do=[door(A)], heard=[at], marked=True, wake=at + TAKE_MAX)
+    story.step(at, {'press': True}, phase='connecting', do=[door(A)], heard=[at], marked=True, wake=at + OPEN_WAIT)
     return story
 
 
 def opening(name, body='Up early.\n', calls=(A,), at=NOON, **given):
     story = pressed(name, body, calls, at, **given)
-    story.step(at + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN])
+    story.step(at + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN], wake=at + TAKE_MAX)
     return story
 
 
@@ -322,14 +328,14 @@ def open_stories():
     s.step(T + 5800, heard(A, text(2, 'Cold')), shown=[[FIRST, U('Cold')]])
     s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
     s.step(T + 6800, heard(A, last('completed', FIRST + ' Cold water.')), phase='ended', shown=[[FIRST + ' Cold water.']], saved=[FIRST + ' Cold water.'], marked=False, wake=None)
-    s.ends('person', turns=2); out.append(s)
+    s.ends('person', turns=2, commits=2); out.append(s)
 
     s = pressed('open-refused')
     s.step(T + 300, heard(A, refusal('funding_required')), phase='ended', marked=False, wake=None)
     s.ends('refused', 'funding_required', heard=False); out.append(s)
 
     s = pressed('open-provider-unavailable')
-    s.step(T + 10300, heard(A, last('provider_unavailable', '')), phase='ended', marked=False, wake=None)
+    s.step(T + 9800, heard(A, last('provider_unavailable', '')), phase='ended', marked=False, wake=None)
     s.ends('refused', 'provider_unavailable', heard=False); out.append(s)
 
     s = pressed('open-unopened')
@@ -347,6 +353,23 @@ def open_stories():
     s = pressed('end-while-connecting')
     s.step(T + 200, {'end': True}, phase='ended', do=[shut(A)], marked=False, wake=None)
     s.ends('person', heard=False); out.append(s)
+
+    s = pressed('open-no-started')
+    s.step(T + OPEN_WAIT, {'clock': True}, phase='ended', do=[shut(A)], marked=False, wake=None)
+    s.ends('refused', heard=False); out.append(s)
+
+    s = Story('open-near-day-end-full-page', 'a' * 131070, calls=())
+    s.step(T + 43200000 - END_WAIT, {'press': True}, phase='ended')
+    s.ends('dayEnd', heard=False); out.append(s)
+
+    s = Story.found('press-with-mark-standing', 'Up early.\n', [FIRST], [T + 5800])
+    s.given['callIds'] = [B]
+    s.begins((B,))
+    s.step(T + 60000, {'press': True}, phase='connecting', do=[door(B)], heard=[T + 60000], wake=T + 60000 + OPEN_WAIT)
+    s.step(T + 60400, heard(B, started(B)), phase='listening', do=[MIC_OPEN], wake=T + 60000 + TAKE_MAX)
+    s.step(T + 60500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 63900, heard(B, turn(1, 'Tea first.')), shown=[['Tea first.']], saved=['Tea first.'], heard=[T + 63900])
+    out.append(s)
     return out
 
 
@@ -385,7 +408,7 @@ def word_stories():
     s.step(T + 60600, heard(A, text(2, 'And on')), shown=[[long, U('And on')]])
     s.step(T + 61000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 61000 + END_WAIT)
     s.step(T + 61700, heard(A, last('completed', long + ' And on.')), phase='ended', shown=[[long + ' And on.']], saved=[long + ' And on.'], marked=False, wake=None)
-    s.ends('person', turns=2, forced=1); out.append(s)
+    s.ends('person', turns=2); out.append(s)
 
     s = opening('delta-after-settled'); first_turn(s)
     s.step(T + 4000, heard(A, text(1, ' again')))
@@ -403,7 +426,7 @@ def word_stories():
     s.step(T + 5800, heard(A, text(2, 'Cold')), shown=[[FIRST, U('Cold')]])
     s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
     s.step(T + 6800, heard(A, last('completed', whole)), phase='ended', shown=[[whole]], saved=[whole], marked=False, wake=None)
-    s.ends('person', turns=2); out.append(s)
+    s.ends('person', turns=2, commits=2); out.append(s)
 
     s = opening('multibyte', 'Déjà vu.\n'); two_commits(s)
     s.step(T + 5300, heard(A, text(1, 'Thé 🍵')), shown=[[U('Thé 🍵')]])
@@ -415,11 +438,45 @@ def word_stories():
     s.step(T + 3900, heard(A, turn(1, 'b')), shown=[['b']], saved=['b'], source='spoken', heard=[T + 3900])
     s.step(T + 5600, heard(A, turn(2, 'c')), phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 5600 + END_WAIT)
     s.step(T + 6300, heard(A, last('completed', 'b c')), phase='ended', marked=False, wake=None)
-    s.ends('pageFull', turns=2, forced=1); out.append(s)
+    s.ends('pageFull', turns=2); out.append(s)
 
     s = Story('open-page-full', 'a' * 131070, calls=())
     s.step(T, {'press': True}, phase='ended')
     s.ends('pageFull', heard=False); out.append(s)
+
+    s = opening('passage-empties'); first_turn(s)
+    s.step(T + 4000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4000 + END_WAIT)
+    s.step(T + 4700, heard(A, last('completed', ' ')), phase='ended', shown=[[]], saved=[], source='typed', marked=False, wake=None)
+    s.ends('person', turns=1, commits=1); out.append(s)
+
+    s = opening('page-crlf', 'Up\r\nearly.\r\n')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3900, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('page-astral', '🌅 Up early.\n')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3400, heard(A, text(1, 'Walked to')), shown=[[U('Walked to')]])
+    s.step(T + 3900, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('turn-combining')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3400, heard(A, text(1, 'Cafe')), shown=[[U('Cafe')]])
+    s.step(T + 3500, heard(A, text(1, '\u0301 noir')), shown=[[U('Cafe\u0301 noir')]])
+    s.step(T + 3900, heard(A, turn(1, 'Cafe\u0301 noir.')), shown=[['Cafe\u0301 noir.']], saved=['Cafe\u0301 noir.'], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('page-whitespace-alone', ' \n')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3900, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[T + 3900])
+    out.append(s)
+
+    s = opening('turn-whitespace-alone'); two_commits(s)
+    s.step(T + 5300, heard(A, turn(1, ' ')), heard=[T + 5300])
+    s.step(T + 5400, heard(A, text(2, 'Tea first')), shown=[[U('Tea first')]])
+    s.step(T + 5600, heard(A, turn(2, 'Tea first.')), shown=[['Tea first.']], saved=['Tea first.'], source='spoken', heard=[T + 5600])
+    out.append(s)
 
     laptop = 'Up early.\n\nFrom the laptop.'
     s = opening('other-device-meanwhile'); first_turn(s)
@@ -430,15 +487,22 @@ def word_stories():
     return out
 
 
-# A take the person ends whose `ended` never comes: its last words are saved as they arrived and its mark stays.
-def unsettled_end(name):
+# A take with a settled turn and a second one unsettled, which the person has ended.
+def ending_take(name):
     T = NOON
     s = opening(name); first_turn(s)
     s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
     s.step(T + 5800, heard(A, text(2, 'Cold water')), shown=[[FIRST, U('Cold water')]])
     s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
+    return s
+
+
+# That take when its `ended` never comes: its last words are saved as they arrived and its mark stays.
+def unsettled_end(name):
+    T = NOON
+    s = ending_take(name)
     s.step(T + 21000, {'clock': True}, phase='ended', do=[shut(A)], shown=[[FIRST + ' Cold water']], saved=[FIRST + ' Cold water'], heard=[T + 5800], wake=None)
-    s.ends('person', heard=False, turns=2)
+    s.ends('person', heard=False, turns=2, commits=2)
     return s
 
 
@@ -448,7 +512,7 @@ def ended_take(name):
     s = opening(name); first_turn(s)
     s.step(T + 4000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4000 + END_WAIT)
     s.step(T + 4700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
-    s.ends('person', turns=1)
+    s.ends('person', turns=1, commits=1)
     return s
 
 
@@ -457,19 +521,19 @@ def end_stories():
     s = opening('end-at-take-max'); first_turn(s)
     s.step(T + TAKE_MAX, {'clock': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + TAKE_MAX + END_WAIT)
     s.step(T + TAKE_MAX + 700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
-    s.ends('limit', turns=1); out.append(s)
+    s.ends('limit', turns=1, commits=1); out.append(s)
 
     # 23:50 where the phone is, two hours behind UTC: the day in the mark is the phone's.
     press = T + 49800000
     midnight = press + 600000
     s = Story('end-before-day-end', 'Up early.\n', offset=-7200)
-    s.step(press, {'press': True}, phase='connecting', do=[door(A)], heard=[press], marked=True, wake=midnight - END_WAIT)
-    s.step(press + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN])
+    s.step(press, {'press': True}, phase='connecting', do=[door(A)], heard=[press], marked=True, wake=press + OPEN_WAIT)
+    s.step(press + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN], wake=midnight - END_WAIT)
     s.step(press + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
     s.step(press + 3400, heard(A, text(1, 'Late walk')), shown=[[U('Late walk')]])
     s.step(midnight - END_WAIT, {'clock': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=midnight - 1)
     s.step(midnight - 1, {'clock': True}, phase='ended', do=[shut(A)], shown=[['Late walk']], saved=['Late walk'], source='spoken', heard=[press + 3400], wake=None)
-    s.ends('dayEnd', heard=False, turns=1)
+    s.ends('dayEnd', heard=False, turns=1, commits=1)
     s.step(midnight + 1000, {'recover': True}, phase='recovered', marked=False)
     s.recovers('dropped'); out.append(s)
 
@@ -478,22 +542,49 @@ def end_stories():
     s.step(T + 4500, {'background': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4500 + END_WAIT)
     s.step(T + 4600, {'frames': [[SPEECH, 3]]})
     s.step(T + 5200, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
-    s.ends('background', turns=1); out.append(s)
+    s.ends('background', turns=1, commits=1); out.append(s)
 
     for name, given, cause in [('end-microphone-taken', 'microphoneTaken', 'microphone'), ('end-capture-failed', 'captureFailed', 'capture')]:
         s = opening(name); first_turn(s)
         s.step(T + 4000, {given: True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4000 + END_WAIT)
         s.step(T + 4700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
-        s.ends(cause, turns=1); out.append(s)
+        s.ends(cause, turns=1, commits=1); out.append(s)
 
     out.append(unsettled_end('end-no-ended'))
 
-    s = opening('end-lost'); first_turn(s)
-    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
-    s.step(T + 5800, heard(A, text(2, 'Cold water')), shown=[[FIRST, U('Cold water')]])
-    s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
-    s.step(T + 6500, lost(A), phase='ended', shown=[[FIRST + ' Cold water']], saved=[FIRST + ' Cold water'], heard=[T + 5800], wake=None)
-    s.ends('person', heard=False, turns=2); out.append(s)
+    arrived, water = FIRST + ' Cold water', FIRST + ' Cold water.'
+    s = ending_take('end-lost')
+    s.step(T + 6500, lost(A), phase='ended', shown=[[arrived]], saved=[arrived], heard=[T + 5800], wake=None)
+    s.ends('person', heard=False, turns=2, commits=2); out.append(s)
+
+    s = ending_take('end-ended-at-deadline')
+    s.step(T + 21000, heard(A, last('completed', water)), phase='ended', do=[shut(A)], shown=[[arrived]], saved=[arrived], heard=[T + 5800], wake=None)
+    s.ends('person', heard=False, turns=2, commits=2)
+    s.step(T + 21100, {'recover': True}, phase='recovering', do=[read(A)], wake=T + 5800 + RECOVER_FOR)
+    s.step(T + 21300, result(A, message=last('completed', water)), phase='recovered', saved=[water], marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = ending_take('end-provider-failed')
+    s.step(T + 6800, heard(A, last('provider_failed', arrived)), phase='ended', shown=[[arrived]], saved=[arrived], heard=[T + 6800], wake=None)
+    s.ends('person', heard=False, turns=2, commits=2)
+    s.step(T + 6900, {'recover': True}, phase='recovering', do=[read(A)], wake=T + 6800 + RECOVER_FOR)
+    s.step(T + 7100, result(A, message=last('provider_failed', arrived)), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = opening('end-limit-inside-frames'); first_turn(s)
+    s.step(T + TAKE_MAX - 500, {'frames': [[SPEECH, 10]]}, phase='ending', do=[MIC_CLOSED], send=[audio(30, 34), END], wake=T + TAKE_MAX + END_WAIT)
+    s.step(T + TAKE_MAX + 700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
+    s.ends('limit', turns=1, commits=1); out.append(s)
+
+    together = T + 43200000 - END_WAIT - TAKE_MAX
+    s = opening('end-day-end-and-limit-together', at=together)
+    s.step(together + TAKE_MAX, {'clock': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 43200000 - 1)
+    s.step(together + TAKE_MAX + 600, heard(A, last('completed', '')), phase='ended', marked=False, wake=None)
+    s.ends('dayEnd'); out.append(s)
+
+    s = opening('cut-completed-unasked'); first_turn(s)
+    s.step(T + 9000, heard(A, last('completed', FIRST)), phase='ended', do=[MIC_CLOSED], marked=False, wake=None)
+    s.ends('service', turns=1, commits=1); out.append(s)
 
     s = ended_take('end-undo')
     s.step(T + 9000, {'undo': True}, shown=[[]], saved=[], source='typed')
@@ -515,15 +606,15 @@ def end_stories():
                           ('failed-accounting-unavailable', 'accounting_unavailable', T + 60000), ('failed-invalid-request', 'invalid_request', T + 9000)]:
         s = opening(name); first_turn(s)
         s.step(at, heard(A, last(key, FIRST)), phase='ended', do=[MIC_CLOSED], marked=False, wake=None)
-        s.ends('service', key, turns=1); out.append(s)
+        s.ends('service', key, turns=1, commits=1); out.append(s)
 
     s = opening('cut-subject-exhausted'); first_turn(s); second_words(s)
     s.step(T + 60000, heard(A, last('subject_exhausted', FIRST + ' Cold water.')), phase='ended', do=[MIC_CLOSED], shown=[[FIRST + ' Cold water.']], saved=[FIRST + ' Cold water.'], marked=False, wake=None)
-    s.ends('service', 'subject_exhausted', turns=2); out.append(s)
+    s.ends('service', 'subject_exhausted', turns=2, commits=1); out.append(s)
 
     s = opening('defect-unreadable'); first_turn(s); second_words(s)
     s.step(T + 4500, {'unreadable': {'callId': A}}, phase='ended', do=[MIC_CLOSED, shut(A)], shown=[[FIRST + ' Cold']], saved=[FIRST + ' Cold'], heard=[T + 4450], wake=None)
-    s.ends('defect', heard=False, turns=2); out.append(s)
+    s.ends('defect', heard=False, turns=2, commits=1); out.append(s)
 
     s = opening('defect-started-twice')
     s.step(T + 600, heard(A, started(A)), phase='ended', do=[MIC_CLOSED, shut(A)], heard=[T + 600], wake=None)
@@ -536,6 +627,21 @@ def bridged(name, calls=(A, B)):
     T = NOON
     s = opening(name, calls=calls); first_turn(s); second_words(s)
     s.step(T + 4500, lost(A), phase='bridging', do=[door(B), read(A)], heard=[T + 4450, T + 4500], wake=T + 4500 + BRIDGE_WAIT)
+    return s
+
+
+# A bridged take the person ends before the new session starts: its `ended` comes, the lost session's result does not,
+# and a recovery begins from the mark that stayed.
+def ended_meanwhile(name):
+    T, cold = NOON, FIRST + ' Cold'
+    s = bridged(name)
+    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
+    s.step(T + 4700, {'frames': [[QUIET, 10], [SPEECH, 12]]})
+    s.step(T + 6900, {'end': True}, phase='ending', do=[MIC_CLOSED])
+    s.step(T + 7500, heard(B, started(B)), send=[audio(35, 56), END])
+    s.step(T + 8300, heard(B, last('completed', 'Tea first.')), phase='ended', shown=[[cold], ['Tea first.']], saved=[cold, 'Tea first.'], heard=[T + 4450, T + 8300], wake=None)
+    s.ends('person', turns=2, commits=1, bridges=1)
+    s.step(T + 8400, {'recover': True}, phase='recovering', do=[read(A), read(B)], wake=T + 4450 + RECOVER_FOR)
     return s
 
 
@@ -559,7 +665,7 @@ def bridge_stories():
     s.step(T + 8600, heard(B, turn(1, 'Tea first.')), shown=[[cold], ['Tea first.']], saved=[cold, 'Tea first.'], heard=[T + 4500, T + 8600])
     s.step(T + 9000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 9000 + END_WAIT)
     s.step(T + 9600, heard(B, last('completed', 'Tea first.')), phase='ended', marked=False, wake=None)
-    s.ends('person', turns=3, bridges=1); out.append(s)
+    s.ends('person', turns=3, commits=2, bridges=1); out.append(s)
 
     s = bridged('bridge-pause-in-kept')
     s.step(T + 4550, result(A, code='conflict'), wake=T + 9550)
@@ -580,19 +686,47 @@ def bridge_stories():
     s = bridged('bridge-retry-past-wait')
     s.step(T + 13000, heard(B, refusal('concurrency_exhausted')))
     s.step(T + 14500, {'clock': True}, phase='ended', do=[MIC_CLOSED], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 13000], wake=None)
-    s.ends('bridge', heard=False, turns=2, bridges=1); out.append(s)
+    s.ends('bridge', 'concurrency_exhausted', heard=False, turns=2, commits=1, bridges=1); out.append(s)
 
-    s = bridged('bridge-ended-meanwhile')
-    s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
-    s.step(T + 4700, {'frames': [[QUIET, 10], [SPEECH, 12]]})
-    s.step(T + 6900, {'end': True}, phase='ending', do=[MIC_CLOSED])
-    s.step(T + 7500, heard(B, started(B)), send=[audio(35, 56), END])
-    s.step(T + 8300, heard(B, last('completed', 'Tea first.')), phase='ended', shown=[[cold], ['Tea first.']], saved=[cold, 'Tea first.'], heard=[T + 4450, T + 8300], wake=None)
-    s.ends('person', turns=2, bridges=1)
-    s.step(T + 8400, {'recover': True}, phase='recovering', do=[read(A), read(B)], wake=T + 4450 + RECOVER_FOR)
+    s = ended_meanwhile('bridge-ended-meanwhile')
     s.step(T + 8600, result(B, message=last('completed', 'Tea first.')))
     s.step(T + 8700, result(A, message=last('went_away', water)), phase='recovered', saved=[water, 'Tea first.'], marked=False, wake=None)
     s.recovers(answered=2); out.append(s)
+
+    s = ended_meanwhile('undo-during-recovery')
+    s.step(T + 8700, result(A, message=last('went_away', water)), saved=[water, 'Tea first.'], wake=T + 8300 + RECOVER_FOR)
+    s.step(T + 9500, {'undo': True}, phase='recovered', saved=[], source='typed', marked=False, wake=None)
+    s.recovers('undo', answered=1)
+    s.step(T + 9600, result(B, message=last('completed', 'Tea first.')))
+    out.append(s)
+
+    s = bridged('bridge-ended-then-lost', calls=(A, B, C))
+    s.step(T + 4700, {'frames': [[QUIET, 10]]})
+    s.step(T + 5800, {'end': True}, phase='ending', do=[MIC_CLOSED])
+    s.step(T + 6000, lost(B), do=[door(C), read(B)], heard=[T + 4450, T + 4500, T + 6000])
+    s.step(T + 6500, heard(C, started(C)), send=[audio(35, 44), END], wake=T + 6500 + END_WAIT)
+    s.step(T + 7200, heard(C, last('completed', '')), phase='ended', shown=[[cold], [], []], saved=[cold], heard=[T + 4450, T + 4500, T + 7200], wake=None)
+    s.ends('person', turns=2, commits=1, bridges=2); out.append(s)
+
+    s = bridged('bridge-microphone-taken')
+    s.step(T + 4700, {'frames': [[QUIET, 10]]})
+    s.step(T + 5800, {'microphoneTaken': True}, phase='ending', do=[MIC_CLOSED])
+    s.step(T + 6500, heard(B, started(B)), send=[audio(35, 44), END], wake=T + 6500 + END_WAIT)
+    s.step(T + 7200, heard(B, last('completed', '')), phase='ended', shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 7200], wake=None)
+    s.ends('microphone', turns=2, commits=1, bridges=1); out.append(s)
+
+    s = bridged('bridge-background')
+    s.step(T + 4700, {'frames': [[QUIET, 10]]})
+    s.step(T + 5800, {'background': True}, phase='ending', do=[MIC_CLOSED])
+    s.step(T + 6500, heard(B, started(B)), send=[END], wake=T + 6500 + END_WAIT)
+    s.step(T + 7200, heard(B, last('completed', '')), phase='ended', shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 7200], wake=None)
+    s.ends('background', turns=2, commits=1, bridges=1); out.append(s)
+
+    s = bridged('bridge-retry-unanswered')
+    s.step(T + 4800, heard(B, refusal('concurrency_exhausted')), wake=T + 4800 + BRIDGE_RETRY)
+    s.step(T + 6800, {'clock': True}, do=[door(B)], wake=T + 4500 + BRIDGE_WAIT)
+    s.step(T + 14500, {'clock': True}, phase='ended', do=[MIC_CLOSED, shut(B)], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 4800], wake=None)
+    s.ends('bridge', heard=False, turns=2, commits=1, bridges=1); out.append(s)
 
     s = bridged('bridge-no-started')
     s.step(T + 4600, result(A, code='conflict'), wake=T + 9600)
@@ -600,11 +734,11 @@ def bridge_stories():
     s.step(T + 9600, {'clock': True}, do=[read(A)], wake=T + 14500)
     s.step(T + 9700, result(A, code='conflict'))
     s.step(T + 14500, {'clock': True}, phase='ended', do=[MIC_CLOSED, shut(B)], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 4500], wake=None)
-    s.ends('bridge', heard=False, turns=2, bridges=1); out.append(s)
+    s.ends('bridge', heard=False, turns=2, commits=1, bridges=1); out.append(s)
 
     s = bridged('bridge-refused')
     s.step(T + 4800, heard(B, refusal('accounting_unavailable')), phase='ended', do=[MIC_CLOSED], shown=[[cold], []], saved=[cold], heard=[T + 4450, T + 4800], wake=None)
-    s.ends('bridge', 'accounting_unavailable', heard=False, turns=2, bridges=1); out.append(s)
+    s.ends('bridge', 'accounting_unavailable', heard=False, turns=2, commits=1, bridges=1); out.append(s)
 
     s = bridged('bridge-result-replaces')
     s.step(T + 5000, heard(B, started(B)), phase='listening', wake=T + TAKE_MAX)
@@ -638,7 +772,7 @@ def bridge_stories():
     s.step(T + 5200, lost(C), phase='bridging', do=[door(D), read(C)], heard=[T + 3900, T + 4300, T + 4900, T + 5200], wake=T + 5200 + BRIDGE_WAIT)
     s.step(T + 5500, heard(D, started(D)), phase='listening', wake=T + TAKE_MAX)
     s.step(T + 5800, lost(D), phase='ended', do=[MIC_CLOSED], heard=[T + 3900, T + 4300, T + 4900, T + 5500], wake=None)
-    s.ends('bridge', heard=False, turns=1, bridges=3); out.append(s)
+    s.ends('bridge', heard=False, turns=1, commits=1, bridges=3); out.append(s)
     return out
 
 
@@ -720,6 +854,39 @@ def recovery_stories():
     s = Story.found('recover-no-session', before, [], [], source='typed')
     s.step(R, {'recover': True}, phase='recovered', marked=False)
     s.recovers('dropped'); out.append(s)
+
+    s = Story.found('recover-result-empty', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, message=last('went_away', '')), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story('recover-no-mark', before, calls=())
+    s.step(R, {'recover': True}, phase='recovered')
+    s.recovers('dropped'); out.append(s)
+
+    late = T + 42900000
+    s = Story.found('recover-result-after-midnight', before, [FIRST], [late])
+    s.step(late + 180000, {'recover': True}, phase='recovering', do=[read(A)], wake=late + RECOVER_FOR)
+    s.step(T + 43205000, result(A, message=last('went_away', water)), phase='recovered', marked=False, wake=None)
+    s.recovers('dropped'); out.append(s)
+
+    s = Story.found('press-during-recovery', before, [FIRST], [T + 5800])
+    s.given['callIds'] = [B]
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 100, result(A, code='conflict'), wake=R + 100 + RESULT_POLL)
+    s.begins((B,))
+    s.step(R + 2000, {'press': True}, phase='connecting', do=[door(B)], heard=[R + 2000], wake=R + 2000 + OPEN_WAIT)
+    s.recovers('press')
+    s.step(R + 2400, heard(B, started(B)), phase='listening', do=[MIC_OPEN], wake=R + 2000 + TAKE_MAX)
+    s.step(R + 5200, result(A, message=last('went_away', water)))
+    out.append(s)
+
+    s = unsettled_end('undo-after-recovery')
+    s.step(T + 21100, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(T + 21300, result(A, message=last('went_away', water)), phase='recovered', saved=[water], marked=False, wake=None)
+    s.recovers(answered=1)
+    s.step(T + 25000, {'undo': True}, saved=[], source='typed')
+    out.append(s)
     return out
 
 

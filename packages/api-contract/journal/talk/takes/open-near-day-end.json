@@ -10,6 +10,6 @@
              "mark": null,
              "wakeAt": null}}
   ],
-  "end": {"cause": "dayEnd", "code": null, "heard": false, "turns": 0, "forcedTurns": 0, "bridges": 0},
+  "end": {"cause": "dayEnd", "code": null, "heard": false, "turns": 0, "commits": 0, "bridges": 0},
   "recovered": null
 }
