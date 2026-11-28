@@ -63,12 +63,18 @@ struct CoachComposer: View {
     }.background(Capsule().fill(RoadmapPalette.raised))
   }
 
-  // The field's prompt: what the composer asks about (11.17), or how it asks on a step (11.6c).
+  // The field's prompt: what the composer asks about (11.17), and in the sheet of a conversation about a step, the change it
+  // most often makes there (11.6c).
   var placeholder: String {
-    if let label = coach.about?.stepLabel, coach.focused || entry == .row || entry == .step {
+    let open = String(localized: "Ask or make a change…", comment: "The Coach composer's prompt")
+    guard let label = coach.about?.stepLabel else { return open }
+    if entry == .sheet {
+      return String(localized: "Ask or add a subtask…", comment: "The Coach composer's prompt in a conversation about one step")
+    }
+    if coach.focused || entry == .row || entry == .step {
       return String(localized: "Ask about \(label)…", comment: "The Coach composer's prompt about one step: the step's name")
     }
-    return String(localized: "Ask or make a change…", comment: "The Coach composer's prompt")
+    return open
   }
 
   // Up to three suggestions, which send their words as the question (11.1, 11.17).

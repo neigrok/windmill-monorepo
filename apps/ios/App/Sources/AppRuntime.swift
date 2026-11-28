@@ -19,6 +19,17 @@ nonisolated struct BoardClock: WallClock {
   }
 }
 
+// A Coach board's clock (Roadmap · iOS 11): the board's moment at launch, running on as the phone's own does, so the turns
+// a board asks one after another are said in their order.
+nonisolated struct RunningBoardClock: WallClock {
+  let launched = SystemClock().nowMs()
+  func nowMs() -> Int64 { BoardClock().nowMs() + SystemClock().nowMs() - launched }
+  func reading() -> ClockReading {
+    let live = SystemClock().reading()
+    return ClockReading(wall: nowMs(), mono: live.mono, boot: live.boot)
+  }
+}
+
 nonisolated struct FixedConnectivity: Connectivity {
   let isOnline: Bool
   func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {}
@@ -200,11 +211,13 @@ final class AppRuntime {
     }
     let transport: any SyncTransport
     let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.argument != nil
+    // The phone's clock, which the model server reads too: a board's stands still, a Coach board's runs on from launch.
+    let phoneWall: any WallClock = if !boardClock { SystemClock() } else if settings.roadmapCoach { RunningBoardClock() } else { BoardClock() }
     #if DEBUG
     if settings.modelServer {
       let persistsModel = settings.scenario == "gym-e2e-conflict" || ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
       let snapshotURL = persistsModel ? storageDirectory.appending(path: "model-server.json") : nil
-      let model = JournalModelTransport(boardClock: boardClock, snapshotURL: snapshotURL)
+      let model = JournalModelTransport(wall: phoneWall, snapshotURL: snapshotURL)
       if snapshotURL != nil, settings.restoreBoard { try model.restore() }
       model.state.withLock { state in
         if settings.appleFixture != nil || settings.board?.hasPrefix("23") == true || settings.board?.hasPrefix("24") == true {
@@ -237,7 +250,7 @@ final class AppRuntime {
     self.connectivity = reach
     engine = try SyncEngine(config: settings.engineConfig, bindings: [gymBinding] + (settings.roadmapCoach ? [roadmapBinding] : []), store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: wall ?? (boardClock ? BoardClock() : SystemClock()), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: wall ?? phoneWall, sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     background = BackgroundActivity(time: ApplicationBackgroundTime())

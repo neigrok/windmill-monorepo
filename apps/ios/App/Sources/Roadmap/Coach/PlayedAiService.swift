@@ -8,7 +8,8 @@ import WindmillPlatform
 // packages/api-contract/ai/wire/fixtures.json: a pass, the allowance the launch names (`-coach-allowance spent`, `capacity`
 // or none), and each round's events, by the story the question names: "add a subtask: <words>" adds them to the step the
 // conversation is about, or the roadmap's first, and says nothing; "I finished <step>" marks it done; "take your time"
-// answers slowly enough to Stop; anything else answers in words that name the roadmap's first steps.
+// begins its words six seconds late and answers slowly enough to Stop; anything else answers in words that name the
+// roadmap's first steps.
 @MainActor final class PlayedAiService: AiTransport {
   enum Allowance: String {
     case ok, spent, capacity
@@ -100,10 +101,11 @@ import WindmillPlatform
     let pieces = words.split(separator: " ").map(String.init)
     let deltas = slow ? Array(repeating: "Still reading your roadmap. ", count: 60)
       : pieces.enumerated().map { $0.offset == pieces.count - 1 ? $0.element : $0.element + " " }
-    return events(callId: callId, deltas: deltas, ending: .completed, after: slow ? 250 : 0)
+    return events(callId: callId, deltas: deltas, ending: .completed, after: slow ? 250 : 0, lead: slow ? 6_000 : 0)
   }
 
-  func events(callId: String, deltas: [String], ending: Ending, after pauseMs: Int) -> AiResponse {
+  // A round's events, each `pauseMs` after the one before, and the first words `leadMs` after the round began.
+  func events(callId: String, deltas: [String], ending: Ending, after pauseMs: Int, lead leadMs: Int = 0) -> AiResponse {
     var played: [(String, JSON)] = [("started", ["callId": .string(callId), "served": "medium", "maxTokens": 2_000])]
     played += deltas.map { ("text", ["delta": .string($0)]) }
     let text = deltas.joined()
@@ -124,6 +126,7 @@ import WindmillPlatform
     let bytes = AsyncThrowingStream<[UInt8], Error> { continuation in
       let task = Task {
         for (index, (name, data)) in played.enumerated() {
+          if index == 1 && leadMs > 0 { try? await Task.sleep(for: .milliseconds(leadMs)) }
           if index > 0 { try? await Task.sleep(for: pace) }
           continuation.yield(Array("id: \(index + 1)\nevent: \(name)\ndata: \(data.jcsText)\n\n".utf8))
         }

@@ -128,7 +128,8 @@ struct CoachThreadView: View {
         Label(CoachReceiptLine.words(receipt, undone: undone), systemImage: undone ? "arrow.counterclockwise" : "checkmark")
           .font(.footnote).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-coach-receipt")
       }
-      if let read = Self.readLine(message.calls) {
+      // A direct write's answer is its receipt alone (11.6c); an answer in words says what Coach read for it.
+      if !text.isEmpty, let read = Self.readLine(message.calls) {
         NavigationLink(value: CoachSheet.Page.read(message.id)) {
           Label { Text(read) + Text(" ›") } icon: { Image(systemName: "doc.text") }
         }.font(.footnote).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-coach-read")

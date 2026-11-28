@@ -171,12 +171,12 @@ struct RoadmapViews: View {
           else if !open.upNext.isEmpty { GraphNextBar(roadmap: roadmap, rows: open.upNext) }
         }
         if footed {
-          // 11.1: with Coach, its composer leads the foot and New step stays at its trailing end, leaving while the composer
-          // has the keyboard; without it, New step alone (11.22a).
+          // 11.1, 11.2: with Coach, its composer leads the foot and New step stays at its trailing end, leaving while the
+          // composer has the keyboard or a turn runs; without it, New step alone (11.22a).
           if let coach = roadmap.coach, !coach.sheet {
             HStack(alignment: .bottom, spacing: RoomSpace.related) {
               CoachComposer(coach: coach, entry: .foot)
-              if !coach.focused { newStep }
+              if !coach.focused && coach.running == nil { newStep }
             }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
           } else {
             HStack {

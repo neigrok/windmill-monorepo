@@ -201,8 +201,10 @@ from `packages/api-contract/roadmap/coach/` and the catalog; `CoachReceiptLine` 
 it; `CoachComposer` is the composer, its suggestions, the turn's step line with Stop, and the notice above it;
 `CoachSheet` is the conversation sheet with History and What Coach Read; and `PlayedAiService`, Debug alone, is the AI
 service a launch plays with `-coach-play` (and `-coach-allowance spent` or `capacity`), which the flows
-(`RoadmapCoachFlowTests`) and captures (`RoadmapCoachCaptures`) run their turns on. `RoadmapCoachIntegrationFlowTests` runs
-against `tools/coach-e2e/room_stack.py`.
+(`RoadmapCoachFlowTests`) and captures (`RoadmapCoachCaptures`) run their turns on. A board launched with Coach runs the
+phone's clock, and the model server's with it, on from the board's moment (`RunningBoardClock`), so turns asked one after
+another are said in that order; `-board roadmap-signed-out` is a phone never signed in that holds *Learn to sail* with
+three steps done. `RoadmapCoachIntegrationFlowTests` runs against `tools/coach-e2e/room_stack.py`.
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,

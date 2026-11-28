@@ -250,12 +250,12 @@ enum RoadmapFixture {
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
     // The guide each board's *Learn to sail* holds.
     let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
-    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing", "roadmap-unwritable"]
+    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing", "roadmap-unwritable", "roadmap-signed-out"]
     guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
-      // roadmap-many, roadmap-handbook, roadmap-full, roadmap-undo-finds-nothing and roadmap-unwritable are made on the phone
-      // itself, signed out: the first with *Learn to sail* remembered as the roadmap last open, the others holding their one
-      // roadmap alone.
+      // roadmap-many, roadmap-handbook, roadmap-full, roadmap-undo-finds-nothing, roadmap-unwritable and roadmap-signed-out are
+      // made on the phone itself, signed out: the first with *Learn to sail* remembered as the roadmap last open, the others
+      // holding their one roadmap alone, roadmap-signed-out *Learn to sail* with three steps done (Roadmap · iOS 11.18, 11.19a).
       if local.contains(board) {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
         if board == "roadmap-handbook" {
@@ -269,6 +269,10 @@ enum RoadmapFixture {
         if board == "roadmap-undo-finds-nothing" {
           try plantLearnToSail(runner)
           Task { @MainActor in await undoFindsNothing(in: model) }
+          return true
+        }
+        if board == "roadmap-signed-out" {
+          try plantLearnToSail(runner)
           return true
         }
         if board == "roadmap-unwritable" {

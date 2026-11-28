@@ -31,7 +31,7 @@ import Synchronization
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let file = directory.appending(path: "model-server.json")
-    let transport = JournalModelTransport(boardClock: true, snapshotURL: file)
+    let transport = JournalModelTransport(wall: BoardClock(), snapshotURL: file)
     let identity = transport.identity(email: "snapshot@example.com")
     let id = ID<Session>("snapshot-workout"), at = Instant(ms: BoardClock().nowMs())
     let start = StartSessionCommand(id: id, routineId: nil, startedAt: at)
@@ -43,7 +43,7 @@ import Synchronization
     let expected = transport.state.withLock { ($0.server.state, $0.sessions, $0.emails) }
     let scope = ScopeKey(.product(account: identity.account, name: "gym"))
     #expect(expected.0.rows[scope]?[RecordKey(Session.type, id.record)]?.lattice.fields["startedAt"]?.value == .of(at))
-    let restored = JournalModelTransport(boardClock: true, snapshotURL: file)
+    let restored = JournalModelTransport(wall: BoardClock(), snapshotURL: file)
     try restored.restore()
     let actual = restored.state.withLock { ($0.server.state, $0.sessions, $0.emails) }
     #expect(actual.0 == expected.0 && actual.1 == expected.1 && actual.2 == expected.2)

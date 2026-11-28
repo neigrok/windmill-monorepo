@@ -1758,6 +1758,9 @@
     "Ask about your training" : {
 
     },
+    "Ask or add a subtask…" : {
+      "comment" : "The Coach composer's prompt in a conversation about one step"
+    },
     "Ask or make a change…" : {
       "comment" : "The Coach composer's prompt"
     },
