@@ -44,6 +44,7 @@ struct RoadmapRoom: View {
       .sheet(item: Binding(get: { roadmap.share }, set: { roadmap.share = $0 })) { RoadmapShare(share: $0, app: app) }
       .sheet(isPresented: Binding(get: { roadmap.landed.listOpen }, set: { roadmap.landed.listOpen = $0 })) { SetAsideSheet(roadmap: roadmap) }
       .modifier(RoomSheets(roadmap: roadmap.deepest, app: app))
+      .modifier(CoachSheets(roadmap: roadmap, app: app))
       .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
         RoadmapCoverScreen(cover: cover, app: app)
       }
@@ -170,20 +171,35 @@ struct RoadmapViews: View {
           else if !open.upNext.isEmpty { GraphNextBar(roadmap: roadmap, rows: open.upNext) }
         }
         if footed {
-          HStack {
-            Spacer()
-            // 02.16: a tap is New Step, and a long press offers it above Paste Steps. The tap is a Button's, since a Menu's
-            // primary action opens nothing on iOS 26.3 when the app is built with the iOS 27 SDK.
-            Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
-              .modifier(GlassCircle())
-              .contextMenu {
-                Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
-                Button("Paste Steps", systemImage: "list.clipboard") { Task { await roadmap.pasteSteps() } }.accessibilityIdentifier("roadmap-paste-steps")
-              }
-              .menuOrder(.fixed).accessibilityIdentifier("roadmap-new-step")
-          }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+          // 11.1, 11.2: with Coach, its composer leads the foot and New step stays at its trailing end, leaving while the
+          // composer has the keyboard or a turn runs; without it, New step alone (11.22a).
+          if let coach = roadmap.coach, !coach.sheet {
+            HStack(alignment: .bottom, spacing: RoomSpace.related) {
+              CoachComposer(coach: coach, entry: .foot, room: roadmap)
+              if !coach.focused && coach.running == nil { newStep }
+            }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+          } else {
+            HStack {
+              Spacer()
+              newStep
+            }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+          }
         }
       }
+  }
+}
+
+extension RoadmapViews {
+  // 02.16: a tap is New Step, and a long press offers it above Paste Steps. The tap is a Button's, since a Menu's primary
+  // action opens nothing on iOS 26.3 when the app is built with the iOS 27 SDK.
+  var newStep: some View {
+    Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
+      .modifier(GlassCircle())
+      .contextMenu {
+        Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
+        Button("Paste Steps", systemImage: "list.clipboard") { Task { await roadmap.pasteSteps() } }.accessibilityIdentifier("roadmap-paste-steps")
+      }
+      .menuOrder(.fixed).accessibilityIdentifier("roadmap-new-step")
   }
 }
 

@@ -136,10 +136,21 @@ struct RoadmapStepPage: View {
         }
       }
       .roadmapFoot(roadmap, away: addingSubtask || addingLink) {
-        if row.completes {
-          Button { roadmap.complete(row, by: .page) } label: { Text("Complete").frame(maxWidth: .infinity) }
-            .buttonStyle(RoomPrimaryStyle(room: .roadmap)).padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
-            .accessibilityIdentifier("roadmap-complete")
+        // 11.3: with Coach, an Up next page's Complete has the composer minimised to a Coach circle beside it, which opens it
+        // about the step; any other page of the person's own has the composer itself.
+        let coach = roadmap.owns ? roadmap.root.coach : nil
+        if let coach, !coach.sheet, coach.focused || !row.completes {
+          CoachComposer(coach: coach, entry: .step, room: roadmap, step: (row.id, row.step.label))
+            .padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        } else if row.completes {
+          HStack(spacing: RoomSpace.related) {
+            Button { roadmap.complete(row, by: .page) } label: { Text("Complete").frame(maxWidth: .infinity) }
+              .buttonStyle(RoomPrimaryStyle(room: .roadmap)).accessibilityIdentifier("roadmap-complete")
+            if let coach, !coach.sheet {
+              Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(in: roadmap, about: (row.id, row.step.label), from: .step) }
+                .modifier(GlassCircle()).accessibilityIdentifier("roadmap-coach-circle")
+            }
+          }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         } else if roadmap.owns, row.card.column == .upNext, let opening = row.opening {
           OpenedPrimary(roadmap: roadmap, row: row, opening: opening)
         }

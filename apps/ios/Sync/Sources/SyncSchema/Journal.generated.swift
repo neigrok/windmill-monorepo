@@ -107,6 +107,32 @@ public enum Journal {
             "localOnly": true,
             "value": ["type": "json"],
           ],
+          "talkTake": [
+            "keyPattern": "^talkTake$",
+            "localOnly": true,
+            "value": [
+              "properties": [
+                "bytesBefore": ["integer": true, "max": 131072, "min": 0, "type": "number"],
+                "day": ["pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "type": "string"],
+                "pageDigest": ["pattern": "^[0-9a-f]{16}$", "type": "string"],
+                "sessions": [
+                  "items": [
+                    "properties": [
+                      "bytesSaved": ["integer": true, "max": 131072, "min": 0, "type": "number"],
+                      "callId": ["pattern": "^[A-Za-z0-9_-]{22}$", "type": "string"],
+                      "heardAt": ["integer": true, "max": 9007199254740991, "min": 0, "type": "number"],
+                    ],
+                    "required": ["callId", "bytesSaved", "heardAt"],
+                    "type": "object",
+                  ],
+                  "maxItems": 4,
+                  "type": "array",
+                ],
+              ],
+              "required": ["day", "bytesBefore", "pageDigest", "sessions"],
+              "type": "object",
+            ],
+          ],
         ],
         "surfaces": ["web", "ios"],
       ],

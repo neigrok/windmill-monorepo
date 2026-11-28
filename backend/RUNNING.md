@@ -304,8 +304,8 @@ curl -sS "http://127.0.0.1:$WM_ENGINE_PORT/v1/auth/verify-code" \
 
 The code sign-in creates the account on first use. The response's `session` is the bearer secret and
 `user.id` is the engine account. The app stores the secret in its Keychain and sends
-`Authorization: Bearer <session>` with `Sync-Schema: 6`, its registry's version, on hello, push and
-pull; live uses `/v1/sync/live?schema=6`. Existing web and Android callers omit `sessionTransport` and
+`Authorization: Bearer <session>` with `Sync-Schema: <version>`, its registry's version, on hello, push
+and pull; live uses `/v1/sync/live?schema=<version>`. Existing web and Android callers omit `sessionTransport` and
 receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple configuration and its
 identity-token/nonce exchange.
 

@@ -25,6 +25,7 @@ on:
       - 'packages/api-contract/roadmap/catalog.json'
       - 'packages/api-contract/roadmap/abilities/**'
       - 'packages/api-contract/roadmap/limits.json'
+      - 'packages/api-contract/roadmap/coach/**'
       - 'packages/api-contract/roadmap-addresses.json'
       - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/gym-ladder.json'
@@ -48,6 +49,7 @@ on:
       - 'packages/api-contract/roadmap/catalog.json'
       - 'packages/api-contract/roadmap/abilities/**'
       - 'packages/api-contract/roadmap/limits.json'
+      - 'packages/api-contract/roadmap/coach/**'
       - 'packages/api-contract/roadmap-addresses.json'
       - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/gym-ladder.json'
@@ -328,6 +330,8 @@ jobs:
               -only-testing:WindmillUITests/RoadmapFlowTests
               -only-testing:WindmillUITests/RoadmapLandingFlowTests
               -only-testing:WindmillUITests/RoadmapIntegrationFlowTests
+              -only-testing:WindmillUITests/RoadmapCoachIntegrationFlowTests
+              -only-testing:WindmillUITests/RoadmapCoachFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests

@@ -10,6 +10,9 @@
     " · %@" : {
       "shouldTranslate" : false
     },
+    " ›" : {
+      "shouldTranslate" : false
+    },
     "%@" : {
       "comment" : "Siri's words, already in the app's language",
       "shouldTranslate" : false
@@ -99,7 +102,7 @@
       "comment" : "A step's form: a step that cannot be opened, by its name"
     },
     "%@ deleted" : {
-      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title"
+      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words, a link's title or a Coach conversation's title"
     },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
@@ -411,6 +414,7 @@
       "comment" : "How long before a passage was written, in years: 2 YR"
     },
     "%lld changes" : {
+      "comment" : "A History row: how many changes the conversation's proposal holds",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -918,6 +922,7 @@
       }
     },
     "%lld roadmaps" : {
+      "comment" : "What Coach Read: how many roadmaps",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -1044,7 +1049,7 @@
       "comment" : "A set that many reps short of its plan"
     },
     "%lld steps" : {
-      "comment" : "A gallery row: how many steps its roadmap holds\nHow many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute",
+      "comment" : "A gallery row: how many steps its roadmap holds\nHow many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute\nWhat Coach Read: a roadmap's steps, where the read kept no count of the done ones",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -1088,6 +1093,12 @@
           }
         }
       }
+    },
+    "%lld steps done" : {
+      "comment" : "What Coach Read: how many steps the person has done"
+    },
+    "%lld steps found" : {
+      "comment" : "What Coach Read: how many steps a search found"
     },
     "%lld steps locked again" : {
       "comment" : "The band after a step is reset: how many steps it returned to Locked",
@@ -1154,6 +1165,28 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld steps · %lld done" : {
+      "comment" : "What Coach Read: a roadmap's steps, and how many are done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld steps · %2$lld done"
+          }
+        }
+      }
+    },
+    "%lld subtasks added · %@" : {
+      "comment" : "A Coach receipt: how many subtasks, and their step",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld subtasks added · %2$@"
           }
         }
       }
@@ -1335,6 +1368,9 @@
     "A routine is at least one movement." : {
 
     },
+    "A search of your roadmap" : {
+
+    },
     "A set missed its workout — retry puts it back." : {
 
     },
@@ -1345,6 +1381,9 @@
 
     },
     "A static key" : {
+
+    },
+    "A step read twice counts once." : {
 
     },
     "A weigh-in is not a forecast — today or earlier." : {
@@ -1364,6 +1403,9 @@
     },
     "AUG" : {
       "comment" : "August in an echo's date stamp"
+    },
+    "About %@" : {
+      "comment" : "The scope of a Coach conversation started from a step: the step's name"
     },
     "About Windmill" : {
 
@@ -1396,6 +1438,9 @@
 
     },
     "Add a step whenever you’re ready." : {
+
+    },
+    "Add a subtask" : {
 
     },
     "Add movement" : {
@@ -1456,6 +1501,9 @@
     "Adding %@ to your log." : {
 
     },
+    "Adding a step…" : {
+
+    },
     "Adding it needs a connection." : {
 
     },
@@ -1504,6 +1552,9 @@
 
     },
     "All movements" : {
+
+    },
+    "All roadmaps" : {
 
     },
     "All steps" : {
@@ -1638,6 +1689,9 @@
     "Answering on another device" : {
 
     },
+    "Answering on another device…" : {
+
+    },
     "Any agent you connect can read these too." : {
 
     },
@@ -1698,7 +1752,19 @@
     "Ask Coach" : {
 
     },
+    "Ask about %@…" : {
+      "comment" : "The Coach composer's prompt about one step: the step's name"
+    },
     "Ask about your training" : {
+
+    },
+    "Ask or add a subtask…" : {
+      "comment" : "The Coach composer's prompt in a conversation about one step"
+    },
+    "Ask or make a change…" : {
+      "comment" : "The Coach composer's prompt"
+    },
+    "Asking needs a connection." : {
 
     },
     "Attach a Roadmap" : {
@@ -1813,6 +1879,9 @@
     "Changes you kept will return when you sign in to the same account." : {
 
     },
+    "Changing a step…" : {
+
+    },
     "Check my last workout." : {
 
     },
@@ -1832,6 +1901,9 @@
 
     },
     "Check your message or choose a different photo, then send again." : {
+
+    },
+    "Checking your roadmap…" : {
 
     },
     "Choose Roadmap" : {
@@ -2248,6 +2320,12 @@
     "Deleting…" : {
 
     },
+    "Description" : {
+
+    },
+    "Description changed · %@" : {
+      "comment" : "A Coach receipt: the step whose description changed"
+    },
     "Deselect All" : {
 
     },
@@ -2456,6 +2534,9 @@
 
     },
     "Every device signs out, and connected tools lose access, right away." : {
+
+    },
+    "Every roadmap" : {
 
     },
     "Everything you logged against it is still in the log." : {
@@ -2679,6 +2760,9 @@
     "How I want to be talked to" : {
 
     },
+    "How do I start?" : {
+
+    },
     "How this works" : {
 
     },
@@ -2700,6 +2784,9 @@
     "Interrupted. What arrived is kept." : {
 
     },
+    "Is this realistic?" : {
+
+    },
     "It is deleted from this phone. You can’t undo this." : {
 
     },
@@ -2713,6 +2800,9 @@
 
     },
     "It works once and lasts 15 minutes." : {
+
+    },
+    "Its line on the Board" : {
 
     },
     "Its times don’t line up — fix the times." : {
@@ -2830,14 +2920,31 @@
     "Lines kept as notes" : {
 
     },
+    "Link added · %@ needs %@" : {
+      "comment" : "A Coach receipt: the step that waits, and the step it now follows",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Link added · %1$@ needs %2$@"
+          }
+        }
+      }
+    },
     "Link edited" : {
 
     },
     "Linked to %@" : {
 
     },
+    "Linking two steps…" : {
+
+    },
     "Links" : {
 
+    },
+    "Links changed · %@" : {
+      "comment" : "A Coach receipt: the step whose web links changed"
     },
     "Listed by you" : {
 
@@ -2988,6 +3095,9 @@
     "Loops back" : {
       "comment" : "The roadmap a step opens leads back to the roadmap the step stands in"
     },
+    "Loops, missing links and smells" : {
+
+    },
     "MAR" : {
       "comment" : "March in an echo's date stamp"
     },
@@ -3018,6 +3128,15 @@
 
     },
     "Mark finished" : {
+
+    },
+    "Marked done · %@" : {
+      "comment" : "A Coach receipt: the step marked done"
+    },
+    "Marked not done · %@" : {
+      "comment" : "A Coach receipt: the step marked not done"
+    },
+    "Marking a step…" : {
 
     },
     "Matches" : {
@@ -3142,6 +3261,9 @@
 
     },
     "Needs you" : {
+
+    },
+    "New Chat" : {
 
     },
     "New Link" : {
@@ -3463,6 +3585,9 @@
     "Other" : {
 
     },
+    "Other conversations" : {
+
+    },
     "Out of date" : {
 
     },
@@ -3535,6 +3660,9 @@
     "Preparing photo" : {
 
     },
+    "Problems in your roadmap" : {
+
+    },
     "Proposal" : {
 
     },
@@ -3573,6 +3701,24 @@
 
     },
     "Read your movement history" : {
+
+    },
+    "Read your roadmap · %lld steps" : {
+      "comment" : "Under a Coach answer: how many steps Coach read"
+    },
+    "Read your roadmaps · %lld" : {
+      "comment" : "Under a Coach answer: how many roadmaps Coach read"
+    },
+    "Reading some steps…" : {
+
+    },
+    "Reading your progress…" : {
+
+    },
+    "Reading your roadmaps…" : {
+
+    },
+    "Reading your roadmap…" : {
 
     },
     "Recolor" : {
@@ -3737,7 +3883,13 @@
     "Renamed" : {
       "comment" : "What a proposed change does to a movement or routine"
     },
+    "Renamed · %@" : {
+      "comment" : "A Coach receipt: the step's new name"
+    },
     "Repetitions" : {
+
+    },
+    "Replaced" : {
 
     },
     "Reps" : {
@@ -3785,6 +3937,9 @@
       "comment" : "The rest between sets"
     },
     "Retry" : {
+
+    },
+    "Review links" : {
 
     },
     "Revoke the link" : {
@@ -3915,6 +4070,9 @@
     "Search movements" : {
 
     },
+    "Searching your roadmap…" : {
+
+    },
     "See what’s up next" : {
 
     },
@@ -3929,6 +4087,9 @@
     },
     "Selected" : {
       "comment" : "The state of an echo's Useful answer"
+    },
+    "Send" : {
+
     },
     "Send code" : {
 
@@ -4239,6 +4400,34 @@
     "Step" : {
       "comment" : "A movement's load step"
     },
+    "Step added · %@" : {
+      "comment" : "A Coach receipt: the new step"
+    },
+    "Step added · %@ · needs %@" : {
+      "comment" : "A Coach receipt: the new step, and the step it follows",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step added · %1$@ · needs %2$@"
+          }
+        }
+      }
+    },
+    "Step added · %@ · needs %@ +%lld" : {
+      "comment" : "A Coach receipt: the new step, the first step it follows, and how many more",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step added · %1$@ · needs %2$@ +%3$lld"
+          }
+        }
+      }
+    },
+    "Step changed · %@" : {
+      "comment" : "A Coach receipt: the step changed"
+    },
     "Step edited" : {
 
     },
@@ -4251,6 +4440,9 @@
     "Still syncing" : {
 
     },
+    "Stop" : {
+
+    },
     "Stop response" : {
 
     },
@@ -4259,6 +4451,9 @@
     },
     "Stopped." : {
 
+    },
+    "Subtask added · %@" : {
+      "comment" : "A Coach receipt: the subtask's words"
     },
     "Subtask edited" : {
 
@@ -4444,6 +4639,9 @@
 
     },
     "This Windmill does not have Coach. You can still read your log." : {
+
+    },
+    "This Windmill does not have Coach. You can still read your roadmap." : {
 
     },
     "This change already exists." : {
@@ -4674,6 +4872,9 @@
     "Undo" : {
 
     },
+    "Undone" : {
+      "comment" : "A Coach receipt whose write was undone"
+    },
     "Unlocks %@" : {
       "comment" : "An Up next step's reason: the step that finishing it unlocks"
     },
@@ -4716,6 +4917,9 @@
 
     },
     "Use %lld movements or fewer." : {
+
+    },
+    "Use Your Agent" : {
 
     },
     "Use a sign-in link" : {
@@ -4800,6 +5004,9 @@
     "We’ll send a code to confirm it’s yours." : {
 
     },
+    "What Coach Read" : {
+
+    },
     "What Coach read" : {
 
     },
@@ -4815,7 +5022,19 @@
     "What belongs here?" : {
 
     },
+    "What does it open?" : {
+
+    },
     "What does this step cover?" : {
+
+    },
+    "What it needs" : {
+
+    },
+    "What it opens" : {
+
+    },
+    "What’s next?" : {
 
     },
     "Where to start?" : {
@@ -4949,6 +5168,12 @@
 
     },
     "You have used all of your AI allowance." : {
+
+    },
+    "You have used all of your AI allowance. It renews on %@." : {
+      "comment" : "Coach's notice when the allowance is spent, signed in: the day it renews"
+    },
+    "You have used all of your AI allowance. Sign in to continue." : {
 
     },
     "You logged %@ since this suggestion. Nothing was applied." : {
@@ -5085,7 +5310,13 @@
     "Your pages and log stay in your account and leave this phone." : {
 
     },
+    "Your progress" : {
+
+    },
     "Your roadmap, journal and training, no account needed." : {
+
+    },
+    "Your roadmaps" : {
 
     },
     "Your routines are saved. Check the response to restore their links." : {
