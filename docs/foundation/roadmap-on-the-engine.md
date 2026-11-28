@@ -461,10 +461,19 @@ items it carried, and each record it set aside for §6's one list.
   refuses its id as taken or spent, the roadmap is placed again by the rules above, from its old
   stores whole, once the refusal has settled: no entry it made an orphan still awaits its result,
   so nothing the carry writes is held back behind one and folds into the refusal's notice. One the
-  account's list holds is carried to it as changes. Where the roadmap is placed, the [Roadmap
-  Coach](roadmap-coach.md) records the notice holds are written again about it, and then the notice
-  goes; one made signed out that names nobody and that the account's list does not hold waits, as the
-  first point says, and its notice keeps them.
+  account's list holds is carried to it as changes. Where the roadmap is placed, the act that places
+  it also writes again the [Roadmap Coach](roadmap-coach.md) records the notice holds about it: the
+  conversations and proposals that name it, the messages of those conversations or carrying those
+  proposals, and those messages' write fates. Each is written register by register, only where the
+  notice holds a register later than the device's, so a later write the device drew stands; one the
+  device holds in no way, which the notice made and left alive, is made again; one the device draws
+  and the notice ends later is removed; and each conversation and proposal names the roadmap's new
+  place. One the device holds dead, spent or with its removal held is left so, and none an orphan the
+  server took made is made again. The ledger names the refusal, and its notice goes once that act
+  has written them, on that run or on the next should that one end first, unless the notice also
+  holds Coach records of another roadmap that only it holds: then it stays. One made signed out that
+  names nobody and that the account's list does not hold waits, as the first point says, and its
+  notice keeps the records.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list

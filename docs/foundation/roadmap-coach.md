@@ -715,8 +715,10 @@ Coach goes live, on the web and on the iPhone, only when it works signed out too
   they name, which keep their ids, and a proposal stays as it was, pending among them; Discard takes
   them from the device with roadmap's device rows, a running turn's mark among them. A roadmap
   carried over from the old bundle whose creation the server refuses at sign-in keeps them too: the
-  refusal's notice holds them, and where the carry-over places the roadmap again it writes them again
-  about it before the notice goes ([Roadmap on the sync engine](roadmap-on-the-engine.md) §8.2).
+  refusal's notice holds them, and where the carry-over places the roadmap again it writes again, in
+  the same act, what the device lost of the conversations and proposals about it, with their
+  messages and write fates, and the notice goes once they are written ([Roadmap on the sync
+  engine](roadmap-on-the-engine.md) §8.2).
 - **The sign-in question.** Where the work holds conversations, it counts them beside the roadmaps
   (board 10.4 on the web, 10.7 on the iPhone), as [Roadmap on the sync engine](roadmap-on-the-engine.md)
   §5 says. Work that changes no roadmap of the device's own joins the account without a question, its

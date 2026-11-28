@@ -7,7 +7,7 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { roadmapRegistry } from './vectors.js';
 import { CarriedConversations, CarriedIds, CarriedRoadmap, CarryConversations, CarryLedger, CarryMark, CarryRoadmap, CarryStepNote, DiscardKept, RecordCarry, carriedOrds,
   carryLedgerOf, kept, withinBounds } from '../../../../src/products/roadmap/domain/carry.js';
-import { CoachMessage, CoachProposal, CoachThread, OpenTurn } from '../../../../src/products/roadmap/domain/conversation.js';
+import { CoachMessage, CoachProposal, CoachThread, EndTurn, OpenTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { Complete, StepMark } from '../../../../src/products/roadmap/domain/progress.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
@@ -194,77 +194,96 @@ test('a workspace item stands within the bounds of its type’s fields, and one 
   ], [true, false, false, true, false, false, true, false]);
 });
 
-// The notice of a carried roadmap's creation the server refused, as the engine folds it (engine §7.7): the creation, then
-// each later entry's dependent part. Signed out, the person asked Coach about the roadmap, and Coach answered and proposed
-// a change; in a conversation about every roadmap the device draws, Coach proposed another change to it.
-function refusedCreation(from, everyRoadmap) {
-  const at = (ms) => `${ms}:0:r_aaaaaaaaaaaa`;
-  const made = (t, id, f, ms) => ({ t, id, born: at(ms), life: ['alive', at(ms)], f: Object.fromEntries(Object.entries(f).map(([name, value]) => [name, [value, at(ms)]])) });
-  const changed = (t, id, f, ms) => ({ t, id, f: Object.fromEntries(Object.entries(f).map(([name, value]) => [name, [value, at(ms)]])) });
-  const replica = 'rp_0000000000000000000000000000000a';
-  return {
-    id: 'notice:g1/0', scope: RoadmapScopes.account, code: 'id-taken', at: 6000,
-    content: {
-      d: [made('tree', from, {}, 5000)],
-      dependents: [
-        { scope: RoadmapScopes.tree(from), d: [made('node', 'wind', { label: 'Read the wind', ord: 'a0' }, 5000)] },
-        { d: [made('coachThread', 'thread0001', { treeId: from, stepId: null, title: 'Where do I start?' }, 5001),
-          made('coachMessage', 'message0001', { threadId: 'thread0001', role: 'person', text: 'Where do I start?', at: 5001 }, 5001),
-          made('coachMessage', 'message0002', { threadId: 'thread0001', role: 'coach', replica, at: 5001, text: '', state: 'running', truncated: false, refusal: null }, 5001)] },
-        { d: [changed('coachMessage', 'message0002', { state: 'completed', text: 'Read the wind.' }, 5002)] },
-        { d: [made('coachProposal', 'proposal0001', { treeId: from, threadId: 'thread0001', messageId: 'message0002', changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }],
-          base: [], state: 'pending', undone: false }, 5003), changed('coachMessage', 'message0002', { proposalId: 'proposal0001' }, 5003)] },
-        { d: [made('coachProposal', 'proposal0002', { treeId: from, threadId: everyRoadmap.thread, messageId: everyRoadmap.coach, changes: [{ op: 'add', label: 'Tie a bowline' }], base: [],
-          state: 'pending', undone: false }, 5004),
-          changed('coachMessage', everyRoadmap.coach, { proposalId: 'proposal0002' }, 5004)] },
-      ],
-    },
-  };
-}
+// Notice deltas as the engine folds them (engine §7.7): a record made, a change to some of its fields, and its removal,
+// each at the stamp `at` names, of the harness's actor.
+const at = (ms, counter = 0) => `${ms}:${counter}:r_000000000001`;
+const registers = (f, stamp) => Object.fromEntries(Object.entries(f).map(([name, value]) => [name, [value, stamp]]));
+const made = (t, id, f, stamp) => ({ t, id, born: stamp, life: ['alive', stamp], f: registers(f, stamp) });
+const changed = (t, id, f, stamp) => ({ t, id, f: registers(f, stamp) });
+const removed = (t, id, born, stamp) => ({ t, id, born, life: ['dead', stamp] });
+const REPLICA = 'rp_0000000000000000000000000000000a';
+const refusedOf = (from, dependents) => ({ id: 'notice:g1/0', scope: RoadmapScopes.account, code: 'id-taken', at: 6000, content: { d: [made('tree', from, {}, at(5000))], dependents } });
 
-test('the Coach records a refused creation’s notice holds are read by the last values it holds of each, in the order a write makes them, and nothing of the roadmap’s own', () => {
-  const carried = CarriedConversations.of(refusedCreation(OLD, { thread: 'thread0000', coach: 'message0000' }), roadmapRegistry);
-  assert.deepEqual(carried.records.map(({ type, id, made, values }) => [type.type, id, made, values]), [
-    ['coachThread', 'thread0001', true, { treeId: OLD, stepId: null, title: 'Where do I start?' }],
-    ['coachMessage', 'message0000', false, { proposalId: 'proposal0002' }],
-    ['coachMessage', 'message0001', true, { threadId: 'thread0001', role: 'person', text: 'Where do I start?', at: 5001 }],
-    ['coachMessage', 'message0002', true, { threadId: 'thread0001', role: 'coach', replica: 'rp_0000000000000000000000000000000a', at: 5001, text: 'Read the wind.',
-      state: 'completed', truncated: false, refusal: null, proposalId: 'proposal0001' }],
-    ['coachProposal', 'proposal0001', true, { treeId: OLD, threadId: 'thread0001', messageId: 'message0002', changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }],
-      base: [], state: 'pending', undone: false }],
-    ['coachProposal', 'proposal0002', true, { treeId: OLD, threadId: 'thread0000', messageId: 'message0000', changes: [{ op: 'add', label: 'Tie a bowline' }], base: [], state: 'pending',
-      undone: false }],
-  ]);
-  assert.equal(CarriedConversations.of({ ...refusedCreation(OLD, { thread: 'thread0000', coach: 'message0000' }), content: { d: [] } }, roadmapRegistry).isEmpty, true);
+test('a refused creation’s notice is read for the Coach records about its roadmap, each by its newest life and newest register of each field, from deltas and predictions alike; the rest are its others', () => {
+  const carried = CarriedConversations.of(refusedOf(OLD, [
+    { scope: RoadmapScopes.tree(OLD), d: [made('node', 'wind', { label: 'Read the wind', ord: 'a0' }, at(5000))] },
+    { d: [made('coachThread', 'thread0001', { treeId: OLD, stepId: null, title: 'Where do I start?' }, at(5001)),
+      made('coachMessage', 'message0001', { threadId: 'thread0001', role: 'person', text: 'Where do I start?', at: 5001 }, at(5001)),
+      made('coachMessage', 'message0002', { threadId: 'thread0001', role: 'coach', replica: REPLICA, at: 5001, text: '', state: 'running' }, at(5001))] },
+    { d: [changed('coachMessage', 'message0002', { state: 'completed', text: 'Read the wind.' }, at(5003))] },
+    { d: [changed('coachMessage', 'message0002', { text: 'An older word' }, at(5002))] },
+    { d: [made('coachThread', 'thread0003', { treeId: OLD, stepId: null, title: 'Never mind' }, at(5004)), removed('coachThread', 'thread0003', at(5004), at(5005))] },
+    { cmd: { name: 'roadmap.restore', args: {} }, predictions: [{ scope: RoadmapScopes.account, d: [
+      made('coachProposal', 'proposal0001', { treeId: OLD, threadId: 'thread0000', messageId: 'message0000', changes: [{ op: 'add', label: 'Tie a bowline' }], base: [], state: 'pending' }, at(5006)),
+      changed('coachMessage', 'message0000', { proposalId: 'proposal0001' }, at(5006))] }] },
+    { d: [made('coachThread', 'thread0009', { treeId: 't_00000000000000bb', stepId: null, title: 'Elsewhere' }, at(5007))] },
+  ]), OLD);
+  const read = ({ type, id, made: making, life, registers: held }) => [type.type, id, making, life?.[0] ?? null, Object.fromEntries(Object.entries(held).map(([name, [value]]) => [name, value]))];
+  assert.deepEqual({ records: carried.records.map(read), others: carried.others.map(read), empty: carried.isEmpty }, {
+    records: [
+      ['coachThread', 'thread0001', true, 'alive', { treeId: OLD, stepId: null, title: 'Where do I start?' }],
+      ['coachThread', 'thread0003', true, 'dead', { treeId: OLD, stepId: null, title: 'Never mind' }],
+      ['coachMessage', 'message0000', false, null, { proposalId: 'proposal0001' }],
+      ['coachMessage', 'message0001', true, 'alive', { threadId: 'thread0001', role: 'person', text: 'Where do I start?', at: 5001 }],
+      ['coachMessage', 'message0002', true, 'alive', { threadId: 'thread0001', role: 'coach', replica: REPLICA, at: 5001, text: 'Read the wind.', state: 'completed' }],
+      ['coachProposal', 'proposal0001', true, 'alive', { treeId: OLD, threadId: 'thread0000', messageId: 'message0000', changes: [{ op: 'add', label: 'Tie a bowline' }], base: [],
+        state: 'pending' }],
+    ],
+    others: [['coachThread', 'thread0009', true, 'alive', { treeId: 't_00000000000000bb', stepId: null, title: 'Elsewhere' }]],
+    empty: false,
+  });
+  assert.equal(CarriedConversations.of(refusedOf(OLD, []), OLD).isEmpty, true);
 });
 
-test('a refused creation’s Coach records are written again about the roadmap’s new place: those the notice made under their own ids, what it wrote of a message the device draws, once, and another device of the account reads them', async () => {
+// What a device draws of Coach's records: each record's fields, by id.
+const coachRecords = (device) => Object.fromEntries([CoachThread, CoachMessage, CoachProposal].map((type) => [type.type,
+  Object.fromEntries(records(device, RoadmapScopes.account, type).map(({ id, f }) => [id, f]))]));
+
+test('a refused creation’s Coach records are written again where the roadmap is placed, register by register: a record the device lacks is made, a newer field the notice holds is written, a later write the device drew stands, a removal goes through, once; another device reads the same', async () => {
   const a = await phone();
   try {
     const placed = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail'))).result.tree;
     a.observe(RoadmapScopes.tree(placed));
-    const asked = committed(await a.runner.runAct(new OpenTurn({ about: { treeId: null }, question: 'What should I learn?' }))).result;
-    const carried = CarriedConversations.of(refusedCreation(OLD, { thread: asked.thread, coach: asked.coach }), roadmapRegistry);
-    assert.equal(committed(await a.runner.runAct(new CarryConversations(carried, OLD, placed))).result, 2);
+    const landed = committed(await a.runner.runAct(new OpenTurn({ about: { treeId: OLD }, question: 'Where do I start?' }))).result;
+    const asLanded = a.runner.read(RoadmapScopes.account, (read) => [[CoachThread, landed.thread], [CoachMessage, landed.person], [CoachMessage, landed.coach]]
+      .map(([type, id]) => structuredClone(read.repository(type).record(id, 'drawn'))));
+    await a.advance(1000);
+    committed(await a.runner.runAct(new EndTurn(new Id(landed.coach, CoachMessage), { state: 'completed', text: 'Read the wind.' })));
+    const gone = committed(await a.runner.runAct(new OpenTurn({ about: { treeId: OLD }, question: 'Never mind' }))).result;
+    const goneAsLanded = a.runner.read(RoadmapScopes.account, (read) => [[CoachThread, gone.thread], [CoachMessage, gone.person], [CoachMessage, gone.coach]]
+      .map(([type, id]) => structuredClone(read.repository(type).record(id, 'drawn'))));
+    const later = a.world.now + 1000;
+    const carried = CarriedConversations.of(refusedOf(OLD, [
+      { d: asLanded.map(({ t, id, born, life, f }) => ({ t, id, born, life, f })) },
+      { d: [made('coachProposal', 'proposal0001', { treeId: OLD, threadId: landed.thread, messageId: landed.coach, changes: [{ op: 'add', label: 'Tie a bowline' }], base: [],
+        state: 'pending', undone: false }, at(later)), changed('coachMessage', landed.coach, { proposalId: 'proposal0001' }, at(later))] },
+      { d: [made('coachThread', 'thread0001', { treeId: OLD, stepId: null, title: 'Which knot first?' }, at(later)),
+        made('coachMessage', 'message0001', { threadId: 'thread0001', role: 'person', text: 'Which knot first?', at: later }, at(later))] },
+      { d: goneAsLanded.map(({ t, id, born, life, f }) => ({ t, id, born, life, f })) },
+      { d: goneAsLanded.map(({ t, id, born }) => removed(t, id, born, at(later + 1))) },
+    ]), OLD);
+    const written = committed(await a.runner.runAct(new CarryConversations(carried, OLD, placed)));
+    assert.deepEqual({ result: written.result, held: written.receipt.releaseAt !== null }, { result: 3, held: true }, 'a removal of Coach’s holds the act, as the carry-over’s does until it lets it go');
+    for (const segment of written.receipt.segments) for (const localId of segment.localIds) await a.engine.release(localId);
     assert.deepEqual(await a.runner.runAct(new CarryConversations(carried, OLD, placed)), { kind: 'unchanged', result: 0 });
     await a.sync();
     const b = await a.device();
     await b.sync();
-    const coach = (device) => ({
-      threads: records(device, RoadmapScopes.account, CoachThread).sort((x, y) => x.id.localeCompare(y.id)),
-      messages: records(device, RoadmapScopes.account, CoachMessage).map(({ id, f }) => [id, f.threadId, f.role, f.text, f.state ?? null, f.proposalId ?? null])
-        .sort(([x], [y]) => x.localeCompare(y)),
-      proposals: records(device, RoadmapScopes.account, CoachProposal).map(({ id, f }) => [id, f.treeId, f.threadId, f.messageId, f.state]).sort(([x], [y]) => x.localeCompare(y)),
-    });
     const expected = {
-      threads: [{ id: asked.thread, f: { treeId: null, stepId: null, title: 'What should I learn?' } }, { id: 'thread0001', f: { treeId: placed, stepId: null, title: 'Where do I start?' } }]
-        .sort((x, y) => x.id.localeCompare(y.id)),
-      messages: [[asked.person, asked.thread, 'person', 'What should I learn?', null, null], [asked.coach, asked.thread, 'coach', '', 'running', 'proposal0002'],
-        ['message0001', 'thread0001', 'person', 'Where do I start?', null, null], ['message0002', 'thread0001', 'coach', 'Read the wind.', 'completed', 'proposal0001']]
-        .sort(([x], [y]) => x.localeCompare(y)),
-      proposals: [['proposal0001', placed, 'thread0001', 'message0002', 'pending'], ['proposal0002', placed, asked.thread, asked.coach, 'pending']],
+      coachThread: {
+        [landed.thread]: { treeId: placed, stepId: null, title: 'Where do I start?' },
+        thread0001: { treeId: placed, stepId: null, title: 'Which knot first?' },
+      },
+      coachMessage: {
+        [landed.person]: { threadId: landed.thread, role: 'person', at: a.world.now - 1000, text: 'Where do I start?' },
+        [landed.coach]: { threadId: landed.thread, role: 'coach', at: a.world.now - 1000, text: 'Read the wind.', replica: asLanded[2].f.replica[0], state: 'completed',
+          truncated: false, refusal: null, proposalId: 'proposal0001' },
+        message0001: { threadId: 'thread0001', role: 'person', at: later, text: 'Which knot first?' },
+      },
+      coachProposal: { proposal0001: { treeId: placed, threadId: landed.thread, messageId: landed.coach, changes: [{ op: 'add', label: 'Tie a bowline' }], base: [],
+        state: 'pending', undone: false } },
     };
-    assert.deepEqual({ here: coach(a), there: coach(b) }, { here: expected, there: expected });
+    assert.deepEqual({ here: coachRecords(a), there: coachRecords(b) }, { here: expected, there: expected });
   } finally {
     a.close();
   }
