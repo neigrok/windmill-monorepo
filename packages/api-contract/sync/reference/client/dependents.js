@@ -62,7 +62,22 @@ export class Dependents {
   // One later entry's dependent part: the dependent deltas, whether its command is dependent, whether
   // nothing of the entry is independent, and, when the sources are being replaced, its guards on what
   // they created: a replacement is numbered after the entry, so the record it read is not there yet.
+  // Dependency is transitive inside the entry too: the rest of the entry that names a record its
+  // dependent part creates, or carries a life it wrote, is part of it.
   of(entry, { replaced = false } = {}) {
+    let part = this.reached(entry, replaced);
+    if (!part.any) return part;
+    const within = this.copy();
+    for (;;) {
+      within.absorbPart(entry, part);
+      const grown = within.reached(entry, replaced);
+      if (grown.removed.length === part.removed.length && grown.cmdGone === part.cmdGone && grown.guards.length === part.guards.length) return part;
+      part = grown;
+    }
+  }
+
+  // The part of `entry` these sources reach as they stand, before its own dependent records join them.
+  reached(entry, replaced) {
     const deltas = entry.intent.d ?? [];
     const { references } = this.registry;
     const removed = deltas.filter((delta) => this.governed.has(entry.scope)
@@ -87,6 +102,14 @@ export class Dependents {
   absorbPart(entry, { removed, cmdGone }) {
     this.absorb(entry.scope, removed, entry.stamp);
     if (cmdGone) for (const { scope, d } of predictionsOf(entry)) this.absorb(scope, d, entry.stamp);
+  }
+
+  copy() {
+    const copy = new Dependents(this.registry);
+    copy.created = new Set(this.created);
+    copy.governed = new Set(this.governed);
+    copy.lives = new Set(this.lives);
+    return copy;
   }
 }
 

@@ -2424,20 +2424,20 @@ notice of its own, as step 3 states):
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
-   ordinary references (D-10) name, a record created in `e` (by a delta or by `predict`), that
-   carries unchanged a life register `e` wrote (a keyed put or a command's prediction, §7.1 step 4),
-   or that targets a scope whose governing record `e` creates. A reference names `(scope, t, id)` in
-   the scope it declares (§2.4 References): a step `treeFrom` its tree argument names a record of that
-   tree, and the same id in another tree is another record. A proposed creation names none. Folding is
-   transitive: a record a dependent creates, and a life register it writes, make their own
-   dependents. A guard makes nothing dependent, so a fold keeps a guard on a record `e` creates in
-   an entry with no dependent delta on that record. After this refusal the server refuses that entry
-   `stale` (§6.1 step 7), the register it names never having been written. A guard on a register of
-   a record a held entry creates names no stamp, unless a held-back entry wrote that register first:
-   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo
-   or a retire (§7.3) the guard holds in the first case, and in the second the fold empties that
-   writer and the server refuses the guarding entry `stale`. A supersede removes such a guard (§7.1
-   step 4).
+   ordinary references (D-10) name, a record created in `e` (by a delta or by `predict`), that carries
+   unchanged a life register `e` wrote (a keyed put or a command's prediction, §7.1 step 4), or that
+   targets a scope whose governing record `e` creates. A reference names `(scope, t, id)` in the scope
+   it declares (§2.4 References): a step `treeFrom` its tree argument names a record of that tree, and
+   the same id in another tree is another record. A proposed creation names none. Folding is
+   transitive: a record a dependent creates, and a life register it writes, make their own dependents,
+   the rest of the dependent's own entry among them. A guard makes nothing dependent, so a fold keeps a
+   guard on a record `e` creates in an entry with no dependent delta on that record. After this refusal
+   the server refuses that entry `stale` (§6.1 step 7), the register it names never having been
+   written. A guard on a register of a record a held entry creates names no stamp, unless a held-back
+   entry wrote that register first: guards read `stored` (§7.1 step 6), which holds held-back entries
+   and no held ones. After an undo or a retire (§7.3) the guard holds in the first case, and in the
+   second the fold empties that writer and the server refuses the guarding entry `stale`. A supersede
+   removes such a guard (§7.1 step 4).
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
      notice.

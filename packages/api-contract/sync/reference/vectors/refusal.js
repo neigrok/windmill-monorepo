@@ -140,6 +140,16 @@ function inStep() {
   return new ServerScript({ device: device({ 'self/probe': rows }), server: serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': rows } }) });
 }
 
+// One atomic gesture: a lap about the run a `probe.start` in the same entry predicts, beside an independent card edit and its
+// guard. The start also predicts a put of the day, which carries the life the day's death wrote, so a fold of that death takes
+// the command, and with it the lap that names the run the command predicts.
+const lapOfAStart = (deviceNow) => ({ op: 'commit', scope: 'self/probe', deviceNow, changes: [
+  { op: 'create', t: 'lap', id: 'lap0000c1', f: { runId: 'run0000c1', weight: 10 } },
+  { op: 'update', t: 'card', id: 'card0001', f: { title: 'Kept' } }],
+opts: { atomic: true, cmd: { name: 'probe.start', args: { id: 'run0000c1', startedAt: deviceNow, join: true } },
+  predict: [{ op: 'create', t: 'run', id: 'run0000c1', f: { startedAt: deviceNow } }, { op: 'put', t: 'day', id: '2026-09-01', f: { score: 2 } }],
+  guard: [{ t: 'card', id: 'card0001', field: 'title' }] } });
+
 function folds() {
   const script = () => new ServerScript({ device: device(CLIENT_BEHIND), server: server() });
   return [
@@ -307,6 +317,29 @@ function folds() {
       .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Edited' } }], undefined, 5004))
       .pushRound({ deviceNow: 5005 })
       .vector('content folding into a dismissed notice shows it again: an orphan\'s refusal folds its held-back dependent there'),
+    stepsVector('a refused death folds the command that inherits its life with its predictions, and the lap its own entry writes about the run that command predicts; the card update and its guard stay', {
+      device: device({ 'self/probe': [row({ t: 'day', id: '2026-09-01', life: ['alive', st(1000)], f: { score: [1, st(1000)] }, seq: 1 }), CARDS[0]] }),
+      steps: [
+        commitStep('self/probe', [{ op: 'delete', t: 'day', id: '2026-09-01' }], undefined, 5000),
+        lapOfAStart(5001),
+        { op: 'view', scope: 'self/probe', withHeld: true },
+        { op: 'push', deviceNow: 5002, limit: 1 },
+        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 5003, lastN: 1, results: [{ n: 1, s: 'refused', code: 'invalid' }] } } },
+        { op: 'view', scope: 'self/probe', withHeld: true },
+        { op: 'push', deviceNow: 5004 },
+      ],
+    }),
+    stepsVector('an undo of a held death folds silently the command that inherits its life and the lap its own entry writes about the run it predicts; the card update and its guard stay and are sent', {
+      device: device({ 'self/probe': [row({ t: 'day', id: '2026-09-01', life: ['alive', st(1000)], f: { score: [1, st(1000)] }, seq: 1 }), CARDS[0]] }),
+      steps: [
+        commitStep('self/probe', [{ op: 'delete', t: 'day', id: '2026-09-01' }], { hold: true, gestureId: 'held' }, 5000),
+        lapOfAStart(5001),
+        { op: 'push', deviceNow: 5002 },
+        { op: 'undo', gestureId: 'held' },
+        { op: 'view', scope: 'self/probe', withHeld: true },
+        { op: 'push', deviceNow: 5003 },
+      ],
+    }),
   ];
 }
 
