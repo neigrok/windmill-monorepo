@@ -208,3 +208,11 @@ for (const [id, expected] of Object.entries(PAGES)) {
     assert.deepEqual(told(), [{ name: 'front_control', props: { page: id, control: 'feedback' } }]);
   });
 }
+
+test('every picture a landing draws carries a name web/OBSERVABILITY.md lists for front_picture, and every listed name is drawn', async () => {
+  const { readFileSync } = await import('node:fs');
+  const doc = readFileSync(new URL('../../../OBSERVABILITY.md', import.meta.url), 'utf8');
+  const listed = /\| `front_picture` \|[^\n]*`picture: ([\w/]+)`/.exec(doc)[1].split('/');
+  const drawn = Object.values(PAGES).flatMap((expected) => expected.frames.map(([name]) => name));
+  assert.deepEqual([...new Set(drawn)].sort(), [...listed].sort());
+});
