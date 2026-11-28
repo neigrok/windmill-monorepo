@@ -224,7 +224,6 @@ const CSS = `
 
   /* The crown's one resting breath. hue.glow carries α .5, so opacity .56 reads as an α .28 peak. */
   .quest-thumb-halo { opacity:.56; animation:quest-halo-breathe var(--duration-glow) var(--ease-glow) infinite; }
-  @keyframes quest-halo-breathe { 0%,100% { opacity:.28; } 50% { opacity:.56; } }
 
   /* The shelf yields, the picked card sheds its chrome, the thumb is the seed. */
   .quest-shelf--planting .quest-card { pointer-events:none; }

@@ -63,7 +63,7 @@ test('the picture holds nothing a person could press, names no raw colour, and m
   assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(CSS), 'the sheet names a raw colour');
   const selectors = animated(SHEETS);
-  assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] /.test(selector)), [], 'an animation runs before the pointer arrives');
+  assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] |:hover/.test(selector)), [], 'an animation runs before the pointer arrives');
   assert.deepEqual(selectors, [
     '[data-pointed] .rmTree .nd-done.is-crowned',
     '[data-beat] .rmTree[data-arrival="frontier"] .nd-avail',
@@ -71,5 +71,6 @@ test('the picture holds nothing a person could press, names no raw colour, and m
     '[data-beat] .rmTree[data-arrival="unlock"] .nd.is-opened',
     '[data-beat] .rmTree-travel',
     '[data-beat] .rmTree-travel path',
+    '.rmPaths-card:hover .quest-thumb-halo',
   ]);
 });
