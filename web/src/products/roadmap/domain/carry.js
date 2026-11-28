@@ -3,11 +3,13 @@
 import { ActDecision, ActPlan, ScopedPlan } from '../../../platform/domain-kit/acts.js';
 import { Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
+import { DomainNotice } from '../../../platform/domain-kit/refusals.js';
 import { Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { hashText } from '../../../platform/sync/core/encoding.js';
 import { between, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { CoachMessage, CoachProposal, CoachThread, CoachWriteFate } from './conversation.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { StepMark, StepMarkValue } from './progress.js';
 import { HUES, HeldRecord, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
@@ -446,4 +448,102 @@ export function carryLedgerOf(read, old) {
 export function carriedKept(rows) {
   return Object.entries(rows).filter(([key]) => CarryLedger.isLedger(key)).sort(([a], [b]) => compareText(a, b))
     .flatMap(([key, row]) => CarryLedger.of(row).kept.map((each) => ({ old: key.slice('carry:'.length), ...each })));
+}
+
+/** @typedef {import('../../../platform/domain-kit/entities.js').EntityType<any, string>} CoachType */
+/** @typedef {{ type: CoachType, id: string, made: boolean, values: Record<string, Json> }} CarriedCoachRecord */
+
+// Coach's record types, in the order a write makes them: a conversation before its messages, a message before the
+// proposal and the write fates that name it.
+const COACH_TYPES = Object.freeze([CoachThread, CoachMessage, CoachProposal, CoachWriteFate]);
+
+// The Coach records (roadmap-coach.md §9) a refused creation's notice holds: each conversation, message, proposal and
+// write fate the refused work wrote, by the last values the notice holds of it, and whether the notice made it. The
+// server took none of that work, so a record the notice made is nowhere else.
+export class CarriedConversations {
+  /** @param {readonly CarriedCoachRecord[]} records */
+  constructor(records) {
+    this.records = Object.freeze([...records]);
+    Object.freeze(this);
+  }
+
+  get isEmpty() { return this.records.length === 0; }
+
+  /**
+   * @param {import('../../../platform/domain-kit/refusals.js').Notice} notice
+   * @param {Registry} registry
+   */
+  static of(notice, registry) {
+    const read = new DomainNotice(notice, registry, RoadmapRefusals);
+    /** @type {Map<string, { type: CoachType, id: string, made: boolean }>} */
+    const found = new Map();
+    /** @param {import('../../../platform/domain-kit/refusals.js').NoticeContent} content */
+    const walk = (content) => {
+      for (const delta of content.d ?? []) {
+        const type = COACH_TYPES.find((each) => each.type === delta.t);
+        if (type === undefined) continue;
+        const key = jcs([delta.t, delta.id]);
+        const made = delta.life?.[0] === 'alive' && delta.born === delta.life[1];
+        found.set(key, { type, id: String(delta.id), made: (found.get(key)?.made ?? false) || made });
+      }
+      for (const dependent of content.dependents ?? []) walk(dependent);
+    };
+    walk(notice.content);
+    const rank = (/** @type {CoachType} */ type) => COACH_TYPES.indexOf(type);
+    return new CarriedConversations([...found.values()].sort((a, b) => rank(a.type) - rank(b.type) || compareText(a.id, b.id))
+      .map(({ type, id, made }) => ({ type, id, made, values: read.values({ t: type.type, id }) })));
+  }
+}
+
+// §8.2 A refused creation's Coach records written again where the carry-over placed its roadmap again, `to`, in one write
+// of the person's records: one the notice made that the replica neither draws nor ever held is made again under its own
+// id, one the replica draws takes what the notice wrote of it, and each conversation and proposal about `from` comes to
+// name `to`. It answers how many conversations it wrote to.
+export class CarryConversations {
+  /** @param {CarriedConversations} carried @param {string} from @param {string} to */
+  constructor(carried, from, to) {
+    this.carried = carried;
+    this.from = from;
+    this.to = to;
+    this.refusals = RoadmapRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {ActReader} read */
+  load(read) {
+    return read.inScope(RoadmapScopes.account, (account) => ({
+      held: this.carried.records.map((record) => {
+        const repository = account.repository(record.type);
+        const id = new Id(record.id, record.type);
+        return { record, drawn: repository.find(id, 'drawn'), taken: repository.record(record.id, 'stored') !== undefined || repository.spentBorn(id) !== null };
+      }),
+      moment: account.moment,
+    }));
+  }
+
+  /** @param {ReturnType<CarryConversations['load']>} loaded */
+  decide({ held, moment }) {
+    const plan = new Plan();
+    /** @type {Set<string>} */
+    const conversations = new Set();
+    let written = 0;
+    for (const { record: { type, id, made, values }, drawn, taken } of held) {
+      if (drawn === null && (!made || taken)) continue;
+      const aimed = values.treeId === this.from ? { ...values, treeId: this.to } : values;
+      const value = type.decoding(new Id(id, type), drawn === null ? aimed : { ...drawn.fields(), ...aimed });
+      if (drawn === null) plan.create(new Valid(value, moment));
+      else {
+        const before = drawn.fields();
+        const after = value.fields();
+        const changed = Object.keys(after).filter((name) => jcs(after[name] ?? null) !== jcs(before[name] ?? null));
+        if (changed.length === 0) continue;
+        plan.update(new Valid(value, moment, changed), { fields: changed });
+      }
+      written += 1;
+      const thread = type === CoachThread ? id : value.threadId?.record;
+      if (thread !== undefined) conversations.add(String(thread));
+    }
+    if (written === 0) return ActDecision.unchanged(0);
+    return writeIn(RoadmapScopes.account, plan, conversations.size);
+  }
 }

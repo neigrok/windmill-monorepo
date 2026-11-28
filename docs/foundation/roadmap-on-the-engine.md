@@ -458,9 +458,11 @@ items it carried, and each record it set aside for §6's one list.
 - **A creation keeps its old stores until the server takes it.** The `anon` replica sends nothing,
   so a roadmap carried there keeps them until a sign-in adds it to an account and the server takes
   it, or a sign-in's Discard takes them with the work they were carried into (§5). Where the server
-  refuses its id as taken or spent, the roadmap is placed again as that account's from its old
-  stores whole, carried as changes to the roadmap the account's list holds, and the refusal's notice
-  goes.
+  refuses its id as taken or spent, the roadmap is placed again by the rules above, from its old
+  stores whole. One the account's list holds is carried to it as changes. Where the roadmap is placed, the [Roadmap
+  Coach](roadmap-coach.md) records the notice holds are written again about it, and then the notice
+  goes; one made signed out that names nobody and that the account's list does not hold waits, as the
+  first point says, and its notice keeps them.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list

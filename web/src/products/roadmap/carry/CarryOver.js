@@ -21,7 +21,8 @@
 // A creation keeps its old stores until the server takes it: the anon replica sends nothing, so a roadmap carried into
 // it keeps them until a sign-in adds it to an account and the server takes it there, or a sign-in's Discard takes them
 // with the work they were carried into (accountChange.js). Where the server refuses its id as taken or spent, the
-// roadmap is placed again as the account's, from its old stores whole, and the notice goes.
+// roadmap is placed again as its fate says, from its old stores whole. Where it is placed, the Coach records the
+// refusal's notice holds are written again about it, and only then does the notice go.
 //
 // What cannot land. Each roadmap's acts are written as one composed act with the ledger last; a part the domain refuses
 // is set aside, in the ledger's one list where it is past a bound, past a cap, of a roadmap deleted or of one no longer
@@ -36,7 +37,7 @@ import { ReplicaChanged } from '../../../platform/sync/engine.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { countBucket } from '../../../telemetry/countBucket.js';
-import { CarriedIds, CarryLedger, RecordCarry, carryLedgerOf, kept, listedAs } from '../domain/carry.js';
+import { CarriedConversations, CarriedIds, CarryConversations, CarryLedger, RecordCarry, carryLedgerOf, kept, listedAs } from '../domain/carry.js';
 import { RoadmapKind } from '../domain/kinds.js';
 import { HeldRecord, RoadmapScopes } from '../domain/roadmapRules.js';
 import { Roadmap } from '../domain/roadmaps.js';
@@ -137,7 +138,7 @@ export class CarryOver {
     const binding = engine.activeBinding();
     const { roadmaps, unread } = await this.stores.read();
     for (const { store, error } of this.notes.unreported(unread)) this.report('roadmap-carry-read', error, { store, ...failureTags(error) });
-    const tally = { roadmap: 0, moved: 0, change: 0, mark: 0, item: 0, kept: 0, gone: 0 };
+    const tally = { roadmap: 0, moved: 0, change: 0, mark: 0, item: 0, kept: 0, conversation: 0, gone: 0 };
     const waiting = [];
     try {
       if (roadmaps.length > 0 && !await this.pulled(engine, [RoadmapScopes.account])) waiting.push(...roadmaps.map((roadmap) => roadmap.id));
@@ -188,7 +189,7 @@ export class CarryOver {
       for (const counted of carried.counted) tally[counted] += 1;
       if (fate.kind === 'create' && fate.to !== roadmap.id) tally.moved += 1;
       tally.kept += carried.kept;
-      if (fate.refused) await engine.dismissNotice(fate.refused).catch((error) => this.report('roadmap-carry-write', error, { stage: 'notice', ...failureTags(error) }));
+      if (fate.refused) tally.conversation += await this.keepConversations(engine, runner, binding, fate.refused, fate.to);
       if (carried.awaiting) {
         waiting.push(roadmap.id);
         continue;
@@ -202,14 +203,14 @@ export class CarryOver {
   // a run its replica's change ended, which leaves the waiting to the next run.
   tell(roadmaps, tally, waiting) {
     const changed = waiting !== null && this.notes.waitingChanged(waiting);
-    const wrote = tally.roadmap + tally.change + tally.mark + tally.item + tally.kept > 0;
+    const wrote = tally.roadmap + tally.change + tally.mark + tally.item + tally.kept + tally.conversation > 0;
     if (roadmaps.length === 0 || (!changed && !wrote && tally.gone === 0)) return;
     this.track('roadmap_carry', { stage: 'found', roadmaps: countBucket(roadmaps.filter((each) => each.madeSignedOut).length),
       changed: countBucket(roadmaps.filter((each) => !each.madeSignedOut && each.changed).length),
       workspaces: countBucket(roadmaps.filter((each) => each.workspace !== null).length), marks: countBucket(roadmaps.filter((each) => each.marks !== null).length) });
     if (wrote) {
       this.track('roadmap_carry', { stage: 'carried', roadmaps: countBucket(tally.roadmap), moved: countBucket(tally.moved), changes: countBucket(tally.change),
-        marks: countBucket(tally.mark), items: countBucket(tally.item), kept: countBucket(tally.kept) });
+        marks: countBucket(tally.mark), items: countBucket(tally.item), kept: countBucket(tally.kept), conversations: countBucket(tally.conversation) });
     }
     if (changed && waiting.length > 0) this.track('roadmap_carry', { stage: 'waiting', roadmaps: countBucket(waiting.length) });
     if (tally.gone > 0) this.track('roadmap_carry', { stage: 'cleared', stores: countBucket(tally.gone) });
@@ -233,13 +234,14 @@ export class CarryOver {
   // taken that creation; `{ kind: 'lost', reason }`
   // for a roadmap of the server's the account no longer holds; `{ kind: 'empty' }` for a row made signed out that has had
   // no record since an earlier load; or `{ kind: 'wait' }` for one that belongs to another replica or cannot be placed
-  // yet. A fate carries `refused`, the notice of a creation the server refused, where the roadmap is placed again.
+  // yet. A fate carries `refused`, the notice of a creation the server refused and the roadmap it would have created, where
+  // the roadmap is placed again.
   async fateOf(engine, runner, roadmap, account) {
     const ledger = runner.read(RoadmapScopes.account, (read) => carryLedgerOf(read, roadmap.id));
     if (ledger.to === null) return this.placing(engine, runner, roadmap, account);
     if (!ledger.created) return { kind: 'changes', to: ledger.to, created: false };
     const answer = await this.creationAnswer(engine, ledger.to);
-    if (answer.kind === 'refused') return { ...await this.placing(engine, runner, roadmap, account), refused: answer.notice };
+    if (answer.kind === 'refused') return { ...await this.placing(engine, runner, roadmap, account), refused: { notice: answer.notice, tree: ledger.to } };
     return { kind: 'changes', to: ledger.to, created: true, awaiting: answer.kind === 'pending' };
   }
 
@@ -408,6 +410,28 @@ export class CarryOver {
       if (outcome.kind === 'committed' && engine.activeBinding() === binding) await this.settle(engine, runner, outcome.receipt);
       return { counted: standing.map((each) => each.counted), kept: setAside.length };
     }
+  }
+
+  // A roadmap placed again at `to` after its creation, of `refused.tree`, was refused: the Coach records the refusal's
+  // notice holds are written again about where it now is, and only then does the notice go. A notice whose records cannot
+  // be written stays, reported, so nothing it holds is lost. Answers how many conversations it wrote to.
+  async keepConversations(engine, runner, binding, refused, to) {
+    const notice = engine.device.activeReplica.notices.find((each) => each.id === refused.notice);
+    const carried = notice === undefined ? new CarriedConversations([]) : CarriedConversations.of(notice, engine.registry);
+    let conversations = 0;
+    if (!carried.isEmpty) {
+      const outcome = await runner.runAct(new CarryConversations(carried, refused.tree, to), { binding });
+      if (outcome.kind === 'refused') {
+        this.report('roadmap-carry-write', new Error('the carry-over’s Coach records were refused'), { stage: 'coach', refusal: outcome.refusal.kind });
+        return 0;
+      }
+      if (outcome.kind === 'committed') {
+        if (engine.activeBinding() === binding) await this.settle(engine, runner, outcome.receipt);
+        conversations = outcome.result;
+      }
+    }
+    await engine.dismissNotice(refused.notice).catch((error) => this.report('roadmap-carry-write', error, { stage: 'notice', ...failureTags(error) }));
+    return conversations;
   }
 
   async settle(engine, runner, receipt) {
