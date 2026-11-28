@@ -473,7 +473,23 @@ function clientVectors() {
   const folded = stepsVector('a refused subtree folds the conversation about it with the messages its own entry holds and a later update of one, and the next push sends only the conversation about every roadmap', {
     device, steps: [...refusing, { op: 'pushResponse', deviceNow: 6000, response: spent.response }, { op: 'push', deviceNow: 6001 }],
   });
-  return [settled, redirected, following, folded];
+
+  const chain = [planted('basics', R, Z, 5000),
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5001, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachThread', id: 'thread0019', f: { treeId: Z, stepId: null, title: 'Chain' } },
+      { op: 'create', t: 'coachMessage', id: 'message0019', f: { threadId: 'thread0019', role: 'coach', replica: REPLICA, at: 5001 } },
+      { op: 'create', t: 'coachWriteFate', id: 'fate00000019', f: { messageId: 'message0019', receipt: 1, fate: 'undone' } },
+      { op: 'create', t: 'coachThread', id: 'thread0020', f: { treeId: null, stepId: null, title: 'Free' } },
+      { op: 'create', t: 'coachMessage', id: 'message0020', f: { threadId: 'thread0020', role: 'person', text: 'Hi', at: 5001 } }] },
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5002, opts: { atomic: true }, changes: [
+      { op: 'update', t: 'coachWriteFate', id: 'fate00000019', f: { code: 'x' } },
+      { op: 'update', t: 'coachMessage', id: 'message0020', f: { text: 'Hello' } }] },
+    { op: 'push', deviceNow: 5003 }];
+  const chainAnswer = served(server, runSteps({ device, steps: chain }, roadmapRegistry).returns.at(-1), 6000);
+  const chained = stepsVector('a chain of three Coach records in one entry folds whole with a later update of its last; the independent conversation and its message stay and are sent', {
+    device, steps: [...chain, { op: 'pushResponse', deviceNow: 6000, response: chainAnswer.response }, { op: 'push', deviceNow: 6001 }],
+  });
+  return [settled, redirected, following, folded, chained];
 }
 
 // A turn about `tree` as roadmap's domain writes it: the conversation with the person's question and Coach's message in
