@@ -1,5 +1,5 @@
 // Roadmap's pictures under a real pointer, on the brand root and on Roadmap's landing: a step and a branch answer it
-// with the room's feedback, a path card lifts and its crown breathes, a subtask washes, the pictures rest still until
+// with the room's feedback, a path card's crown breathes while the card stays put, a subtask washes, the pictures rest still until
 // the pointer arrives, and each beat ends with the picture as drawn. The room's own shelf still breathes.
 
 import test, { after } from 'node:test';
@@ -243,7 +243,7 @@ test('the unlock plays blossom, travels, wakes and the pulse, and ends with the 
   assert.ok(after.shot.equals(before.shot), 'the unlock picture is not drawn as it was before the beat');
 });
 
-test('a path card under the pointer lifts 2px and its crown breathes from its resting crest, and both end as the pointer leaves', { timeout: 120000 }, async () => {
+test('a path card under the pointer stays where it is while its crown breathes from its resting crest, and the breath ends as the pointer leaves', { timeout: 120000 }, async () => {
   const { page, errors } = await open('/roadmap');
   const frame = await frameOf(page, '.rmPaths');
   const card = frame.locator('.rmPaths-card').nth(1);
@@ -254,8 +254,18 @@ test('a path card under the pointer lifts 2px and its crown breathes from its re
   });
   const rest = await looked();
   await page.mouse.move(...await centreOf(card.locator('.rmPaths-title')));
-  await settled(card);
+  await drawnTwice(page);
   const hovered = await looked();
+  // A quarter of a breath on from its start, read with the breath held there.
+  const dipped = await card.evaluate((element) => {
+    const crown = element.querySelector('.quest-thumb-halo');
+    const [breath] = crown.getAnimations();
+    breath.pause();
+    breath.currentTime = 600;
+    const opacity = Number(getComputedStyle(crown).opacity).toFixed(2);
+    breath.play();
+    return opacity;
+  });
   await page.mouse.move(2, 2);
   await settled(card);
   const left = await looked();
@@ -264,8 +274,8 @@ test('a path card under the pointer lifts 2px and its crown breathes from its re
   assert.deepEqual(errors, []);
   assert.deepEqual(rest, { translate: 'none', opacity: '0.56', breath: [] });
   // Half a breath back, its first frame is the crest, .56, where the crown rests.
-  assert.deepEqual([hovered.translate, hovered.breath], ['0px -2px', [['quest-halo-breathe', Infinity, -1200]]]);
-  assert.ok(Number(hovered.opacity) < 0.56, `the crown did not breathe in the 280ms the card took to lift: ${hovered.opacity}`);
+  assert.deepEqual([hovered.translate, hovered.breath], ['none', [['quest-halo-breathe', Infinity, -1200]]]);
+  assert.ok(Number(dipped) < 0.56 && Number(dipped) > 0.28, `a quarter of a breath on, the crown stands at ${dipped}`);
   assert.deepEqual(left, rest);
 });
 
@@ -299,7 +309,7 @@ test('a subtask under the pointer takes the room\'s wash, by day and at night', 
   ]);
 });
 
-test('under reduced motion a path card neither lifts nor breathes, and a subtask still washes over 150ms', { timeout: 120000 }, async () => {
+test('under reduced motion a path card\'s crown does not breathe, and a subtask still washes over 150ms', { timeout: 120000 }, async () => {
   const { page, errors } = await open('/roadmap', { reducedMotion: 'reduce' });
   const paths = await frameOf(page, '.rmPaths');
   const card = paths.locator('.rmPaths-card').first();
@@ -371,7 +381,7 @@ test('the crown\'s glyph takes no pointer: the step under it does, or nothing', 
   assert.deepEqual(hit, { crown: false, events: 'none' });
 });
 
-test('a finger tapping a path card on a hover device leaves it unlifted, its crown still and the picture unpointed', { timeout: 120000 }, async () => {
+test('a finger tapping a path card on a hover device leaves the card where it is, its crown still and the picture unpointed', { timeout: 120000 }, async () => {
   const { page, errors } = await open('/roadmap');
   const frame = await frameOf(page, '.rmPaths');
   const card = frame.locator('.rmPaths-card').nth(1);

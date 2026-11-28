@@ -67,7 +67,7 @@ test('the picture holds nothing a person could press, names no raw colour, and m
   assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(CSS), 'the sheet names a raw colour');
   assert.deepEqual(hovered(SHEETS).filter((selector) => !selector.startsWith('[data-pointed] ')), [], 'a part answers a pointer the frame does not count, a finger');
-  assert.deepEqual(hovered(SHEETS), ['[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmTree-branch:hover .rmTree-edge:not(.is-lit)', '[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmPaths-card:hover', '[data-pointed] .rmPaths-card:hover .quest-thumb-halo', '[data-pointed] .rmStep-subtasks li:hover::before']);
+  assert.deepEqual(hovered(SHEETS), ['[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmTree-branch:hover .rmTree-edge:not(.is-lit)', '[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmPaths-card:hover .quest-thumb-halo', '[data-pointed] .rmStep-subtasks li:hover::before']);
   const selectors = animated(SHEETS);
   assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] /.test(selector)), [], 'an animation runs before the pointer arrives');
   assert.deepEqual(selectors, [

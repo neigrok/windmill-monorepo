@@ -30,8 +30,7 @@
 /* ---- the ready paths, as cards of the room's shelf ---- */
 .rmPaths { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 48px 20px; }
 .rmPaths-card { position: relative; display: flex; flex-direction: column; flex: none; width: 273px; height: 201px; overflow: hidden;
-                border: 1px solid var(--border-subtle); border-radius: var(--look-radius-inner); background: var(--surface-card);
-                transition: translate var(--duration-base) var(--ease-soft); }
+                border: 1px solid var(--border-subtle); border-radius: var(--look-radius-inner); background: var(--surface-card); }
 .rmPaths-rule { flex: none; height: 3px; }
 .rmPaths-thumb { display: block; flex: 1; min-height: 0; padding: 8px 14px 0; background: var(--surface-canvas); border-bottom: 1px solid var(--border-subtle); }
 .rmPaths-thumb .quest-thumb { display: block; width: 100%; height: 100%; }
@@ -44,9 +43,9 @@
 .rmPaths-dots i { width: 7px; height: 7px; border-radius: 50%; }
 .rmPaths[data-stage="narrow"] { flex-direction: column; gap: 16px; padding: 16px; }
 .rmPaths[data-stage="narrow"] .rmPaths-card { width: 326px; }
-/* The shelf's card under a counted pointer: it lifts 2px and its crown breathes from its resting crest until the pointer leaves. */
+/* The shelf's card under a counted pointer: its crown breathes from its resting crest until the pointer leaves. The card
+   stays where it is, because a card that lifts asks for a press the picture does not take. */
 @media (prefers-reduced-motion: no-preference) {
-  [data-pointed] .rmPaths-card:hover { translate: 0 -2px; }
   [data-pointed] .rmPaths-card:hover .quest-thumb-halo { animation: quest-halo-breathe var(--duration-glow) var(--ease-glow) calc(var(--duration-glow) / -2) infinite; }
 }
 
@@ -100,7 +99,7 @@
 .rmFork[data-stage="narrow"] .rmFork-tree { width: 326px; height: 200px; }
 .rmFork[data-stage="narrow"] .rmFork-tree .rmTree { transform: none; }
 
-/* Reduced motion keeps the subtask's wash at its own time, and plays no lift and no breath. */
+/* Reduced motion keeps the subtask's wash at its own time, and plays no breath. */
 @media (prefers-reduced-motion: reduce) {
   .rmStep-subtasks li::before { transition-duration: var(--duration-fast) !important; }
 }
