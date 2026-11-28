@@ -247,6 +247,7 @@ enum RoadmapFixture {
                      "roadmap-first-read": ["choose", "parts", "rig"], "roadmap-guide": ["choose", "parts", "rig"],
                      "roadmap-guide-long": ["choose", "parts", "rig"], "roadmap-guide-above": ["choose", "parts", "rig"],
                      "roadmap-sign-in": ["choose", "parts", "rig"], "roadmap-unconfirmed": ["choose", "parts", "rig"],
+                     "roadmap-coach-history": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
     // The guide each board's *Learn to sail* holds.
     let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
@@ -337,6 +338,10 @@ enum RoadmapFixture {
         }
         if let last = completed.last {
           try complete(last, of: sail, by: remote.roadmapRunner)
+          try await sent()
+        }
+        if board == "roadmap-coach-history" {
+          try converse(about: sail, clock: clock, by: remote.roadmapRunner)
           try await sent()
         }
       } else {
@@ -1027,6 +1032,27 @@ enum RoadmapFixture {
   }
 
   // One planted step marked done, by the key it was planted under.
+  // roadmap-coach-history's conversations, each asked and answered at its moment by the board's clock, for History (Roadmap
+  // · iOS 11.7): two about *Learn to sail*'s *Read the wind*, today and yesterday, one about every roadmap today, and two
+  // about *Spanish B1* and *Become a day skipper*, planted beside it, days before.
+  static func converse(about sail: CreateRoadmap.Result, clock: SteppingBoardClock, by runner: ActionRunner) throws {
+    let spanish = try plant(others[0], opening: sail.tree, by: runner).tree, skipper = try plant(others[1], opening: sail.tree, by: runner).tree
+    let wind = sail.steps.first { $0.key == "read" }?.id.description
+    let hour: Int64 = 3_600_000, day = 24 * hour
+    let asked: [(question: String, tree: ID<RoadmapEntry>?, step: String?, at: Int64)] = [
+      ("Tidy this roadmap", skipper, nil, -5 * day), ("Is five a week too much?", spanish, nil, -3 * day),
+      ("How do I start?", sail.tree, wind, -day), ("Which roadmap first?", nil, nil, -3 * hour), ("Add a subtask: check the tide", sail.tree, wind, -hour),
+    ]
+    for each in asked {
+      clock.step(to: each.at)
+      guard case .committed(let turn, _) = try runner.runAct(RoadmapDomain.OpenTurn(about: .init(treeId: each.tree?.description, stepId: each.step),
+                                                                                    question: each.question)),
+            case .committed = try runner.runAct(RoadmapDomain.EndTurn(turn.coach, state: .completed, text: "Start with the first open step.")) else {
+        throw AppFailure(message: "A conversation was not planted.")
+      }
+    }
+  }
+
   static func complete(_ key: String, of planted: CreateRoadmap.Result, by runner: ActionRunner) throws {
     guard let step = planted.steps.first(where: { $0.key == key })?.id,
           case .committed = try runner.runAct(MarkStep.complete(tree: planted.tree, step: step)) else {
@@ -1035,7 +1061,8 @@ enum RoadmapFixture {
   }
 
   // The board's clock for the fixture's other phone, stepped forward as the fixture makes each sending, so writes it makes
-  // one after another stand in that order by the device's time, as they do by the server's.
+  // one after another stand in that order by the device's time, as they do by the server's, or back to the day a planted
+  // conversation was had.
   nonisolated final class SteppingBoardClock: WallClock {
     private let later = Mutex<Int64>(0)
 

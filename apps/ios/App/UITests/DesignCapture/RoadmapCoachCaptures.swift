@@ -113,15 +113,15 @@ final class RoadmapCoachCaptures: DesignCapture {
       XCTAssertTrue(app.navigationBars["What Coach Read"].waitForExistence(timeout: 10))
       return app
     }
+    // 11.7: the board's account has had five conversations, two about Read the wind, today and yesterday, one about every
+    // roadmap and two about other roadmaps days before; What's next? is asked now.
     captureBoard("11.7-roadmap-coach-history") { look in
-      let app = coach(look)
+      let app = coach(look, board: "roadmap-coach-history")
       ask("What’s next?", app)
-      answered(app)
-      app.buttons["roadmap-coach-new-chat"].tap()
-      ask("How do I start?", app)
       answered(app)
       app.buttons["roadmap-coach-history"].tap()
       XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 10) && app.staticTexts["Other conversations"].exists)
       return app
     }
   }

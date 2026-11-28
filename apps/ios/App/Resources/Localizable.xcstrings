@@ -102,7 +102,7 @@
       "comment" : "A step's form: a step that cannot be opened, by its name"
     },
     "%@ deleted" : {
-      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title"
+      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words, a link's title or a Coach conversation's title"
     },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
@@ -1049,7 +1049,7 @@
       "comment" : "A set that many reps short of its plan"
     },
     "%lld steps" : {
-      "comment" : "A gallery row: how many steps its roadmap holds\nHow many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute",
+      "comment" : "A gallery row: how many steps its roadmap holds\nHow many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute\nWhat Coach Read: a roadmap's steps, where the read kept no count of the done ones",
       "localizations" : {
         "en" : {
           "variations" : {
