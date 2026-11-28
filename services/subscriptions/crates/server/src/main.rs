@@ -1,12 +1,14 @@
 use std::panic::AssertUnwindSafe;
 use std::process::ExitCode;
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs, io};
 
-use app_store::server_api::{Hosts, ServerApi};
+use app_store::server_api::{AppStoreApi, Hosts, ServerApi};
 use app_store::verification::SignedDataVerifier;
+use domain::Environment;
 use futures_util::FutureExt;
-use server::config::{AppStoreApiKey, Config};
+use server::config::{AppStoreApiConfig, AppStoreApiKey, Config};
 use server::internal;
 use server::listeners::Listener;
 use server::store_doors::{self, AppStoreDoor};
@@ -18,19 +20,107 @@ use tokio::runtime::Runtime;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::prelude::*;
 
 // Docker kills 10 s after SIGTERM: 6 s for open connections, the deliveries being applied and the ledger's
 // connections, then at most 3 s for Sentry.
 const DRAIN_BOUND: Duration = Duration::from_secs(6);
 
+// How many times `subscriptions test-notification` checks Apple for the test notification's delivery status, spaced
+// one second apart.
+const TEST_NOTIFICATION_POLLS: usize = 10;
+const TEST_NOTIFICATION_POLL_EVERY: Duration = Duration::from_secs(1);
+
 fn main() -> ExitCode {
+    let args: Vec<String> = env::args().skip(1).collect();
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [] => run_server(),
+        ["test-notification", environment] => {
+            let environment = match *environment {
+                "sandbox" => Environment::Sandbox,
+                "production" => Environment::Production,
+                _ => return usage_error(),
+            };
+            run_test_notification(environment)
+        }
+        _ => usage_error(),
+    }
+}
+
+fn init_cli_logging() {
+    let own_lines = Targets::new()
+        .with_targets(telemetry::SERVICE_CRATES.map(|name| (name, LevelFilter::INFO)));
+    tracing_subscriber::registry()
+        .with(telemetry::json_lines(io::stdout).with_filter(own_lines))
+        .init();
+}
+
+fn usage_error() -> ExitCode {
+    init_cli_logging();
+    tracing::error!("usage: subscriptions [test-notification <sandbox|production>]");
+    ExitCode::FAILURE
+}
+
+fn hosts_for(test_url: Option<&reqwest::Url>) -> Hosts {
+    match test_url {
+        None => Hosts::apple(),
+        Some(url) => Hosts {
+            production: url.clone(),
+            sandbox: url.clone(),
+        },
+    }
+}
+
+fn run_test_notification(environment: Environment) -> ExitCode {
+    init_cli_logging();
+    let config = match AppStoreApiConfig::from_environment(|variable| env::var(variable).ok()) {
+        Ok(config) => config,
+        Err(refusal) => {
+            tracing::error!(variable = refusal.variable, "{refusal}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let api = ServerApi::new(
+        config.key,
+        hosts_for(config.test_url.as_ref()),
+        SystemTime::now,
+    );
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            tracing::error!(error = ?error.kind(), "runtime refused");
+            return ExitCode::FAILURE;
+        }
+    };
+    let started = Instant::now();
+    let outcome = runtime.block_on(store_doors::run_test_notification(
+        &api,
+        environment,
+        TEST_NOTIFICATION_POLLS,
+        TEST_NOTIFICATION_POLL_EVERY,
+    ));
+    outcome.log(environment, started.elapsed());
+    if outcome.succeeded() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn run_server() -> ExitCode {
     let config = match Config::from_environment(|variable| env::var(variable).ok()) {
         Ok(config) => config,
         Err(refusal) => {
-            tracing_subscriber::registry()
-                .with(telemetry::json_lines(io::stdout))
-                .init();
+            init_cli_logging();
             tracing::error!(variable = refusal.variable, "{refusal}");
             return ExitCode::FAILURE;
         }
@@ -111,15 +201,9 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
     };
 
     // Apple's hosts, or in a test deployment an Apple of the test's own answering for both environments.
-    let api = config.app_store_api.key().map(|key| {
-        let hosts = match &config.app_store_api_test_url {
-            None => Hosts::apple(),
-            Some(url) => Hosts {
-                production: url.clone(),
-                sandbox: url.clone(),
-            },
-        };
-        ServerApi::new(key.clone(), hosts, SystemTime::now)
+    let api: Option<Arc<dyn AppStoreApi>> = config.app_store_api.key().map(|key| {
+        let hosts = hosts_for(config.app_store_api_test_url.as_ref());
+        Arc::new(ServerApi::new(key.clone(), hosts, SystemTime::now)) as Arc<dyn AppStoreApi>
     });
     let app_store = AppStoreDoor::new(ledger.clone(), verifier, api, SystemTime::now);
     let stop = CancellationToken::new();
