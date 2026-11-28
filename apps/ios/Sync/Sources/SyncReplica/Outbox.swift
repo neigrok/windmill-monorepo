@@ -78,7 +78,22 @@ public struct Dependents: Sendable {
     created.isEmpty && governed.isEmpty && lives.allSatisfy { replica.holdsEntries(touching: $0.record.key, in: $0.record.scope) }
   }
 
+  // Dependency is transitive inside the entry too: the rest of the entry that names a record its dependent part creates,
+  // or carries a life it wrote, is part of it.
   public func part(of entry: OutboxEntry) -> Part {
+    var part = reached(entry)
+    guard part.any else { return part }
+    var within = self
+    while true {
+      within.absorb(part, of: entry)
+      let grown = within.reached(entry)
+      if grown.removed.count == part.removed.count && grown.commandGone == part.commandGone && grown.guards.count == part.guards.count { return part }
+      part = grown
+    }
+  }
+
+  // The part of `entry` these sources reach as they stand, before its own dependent records join them.
+  func reached(_ entry: OutboxEntry) -> Part {
     let wholeScope = governed.contains(entry.scope)
     let removed = entry.intent.deltas.filter { wholeScope || depends($0, in: entry.scope) }
     let commandGone = entry.intent.command.map { command in

@@ -8,6 +8,8 @@ import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { hashText } from '../../../platform/sync/core/encoding.js';
 import { between, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
+import { CoachMessage, CoachProposal, CoachThread, CoachWriteFate } from './conversation.js';
 import { RoadmapKind, RoadmapKindValue } from './kinds.js';
 import { StepMark, StepMarkValue } from './progress.js';
 import { HUES, HeldRecord, RoadmapRefusals, RoadmapScopes, RoadmapSpecs, gone, writeIn } from './roadmapRules.js';
@@ -25,6 +27,7 @@ import { StepNote, StepNoteValue } from './workspace.js';
 /** @typedef {{ title: string, guide: string, kinds: OldKind[], steps: OldStep[], links: string[][] }} OldRoadmap */
 /** @typedef {'pastBound' | 'capFilled' | 'roadmapDeleted' | 'accessEnded'} KeptReason */
 /** @typedef {{ id: string, reason: KeptReason, subject: Subject, values: Record<string, Json>, named: string }} Kept */
+/** @typedef {{ notice: string, settles: boolean }} CarryRefusal */
 
 // §8.2 What a browser holds: the rules the carry-over follows as it moves what roadmap's old bundle kept into the
 // replica. Only a browser that ran the old bundle holds its stores, so these rules are the web's alone.
@@ -301,15 +304,19 @@ function newer(a, b) {
 // aside for §6's one list, with its reason and its words. The row never leaves the device.
 export class CarryLedger {
   /**
-   * @param {{ to?: string | null, created?: boolean, frontier?: Record<string, string>, items?: Record<string, string>, marks?: string | null, kept?: Kept[] }} ledger
+   * @param {{ to?: string | null, created?: boolean, frontier?: Record<string, string>, items?: Record<string, string>, marks?: string | null, kept?: Kept[],
+   *   refusal?: CarryRefusal | null }} ledger
    */
-  constructor({ to = null, created = false, frontier = {}, items = {}, marks = null, kept = [] } = {}) {
+  constructor({ to = null, created = false, frontier = {}, items = {}, marks = null, kept = [], refusal = null } = {}) {
     this.to = to;
     this.created = created;
     this.frontier = Object.freeze({ ...frontier });
     this.items = Object.freeze({ ...items });
     this.marks = marks;
     this.kept = Object.freeze([...kept]);
+    // The refusal of a creation the carry-over made, after which it placed the roadmap again: its notice, and whether the
+    // notice may go, every Coach record it holds written again.
+    this.refusal = refusal === null ? null : Object.freeze({ ...refusal });
     Object.freeze(this);
   }
 
@@ -325,12 +332,16 @@ export class CarryLedger {
     const row = /** @type {Record<string, any>} */ (json);
     const strings = (/** @type {unknown} */ value) => (value !== null && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).filter(([, each]) => typeof each === 'string')) : {});
+    const refusal = row.refusal !== null && typeof row.refusal === 'object' && typeof row.refusal.notice === 'string'
+      ? { notice: row.refusal.notice, settles: row.refusal.settles === true } : null;
     return new CarryLedger({ to: typeof row.to === 'string' ? row.to : null, created: row.created === true, frontier: strings(row.frontier), items: strings(row.items),
-      marks: typeof row.marks === 'string' ? row.marks : null, kept: Array.isArray(row.kept) ? row.kept.map((each) => ({ ...each, named: typeof each?.named === 'string' ? each.named : '' })) : [] });
+      marks: typeof row.marks === 'string' ? row.marks : null, kept: Array.isArray(row.kept) ? row.kept.map((each) => ({ ...each, named: typeof each?.named === 'string' ? each.named : '' })) : [],
+      refusal });
   }
 
   // The ledger with another carry's entry added: its roadmap where it names one, and whether the carry-over made it, each
-  // writer's newer stamp, its items and marks, and each record it kept that this one does not hold.
+  // writer's newer stamp, its items and marks, each record it kept that this one does not hold, and the refusal it placed
+  // the roadmap after where it names one.
   /** @param {CarryLedger} entry */
   merging(entry) {
     const frontier = { ...this.frontier };
@@ -338,14 +349,14 @@ export class CarryLedger {
     const known = new Set(this.kept.map((each) => each.id));
     return new CarryLedger({ to: entry.to ?? this.to, created: entry.to === null ? this.created : entry.created, frontier, items: { ...this.items, ...entry.items },
       marks: entry.marks ?? this.marks,
-      kept: [...this.kept, ...entry.kept.filter((each) => !known.has(each.id))] });
+      kept: [...this.kept, ...entry.kept.filter((each) => !known.has(each.id))], refusal: entry.refusal ?? this.refusal });
   }
 
   // The ledger less one record it set aside.
   /** @param {string} id */
   without(id) {
     return new CarryLedger({ to: this.to, created: this.created, frontier: this.frontier, items: this.items, marks: this.marks,
-      kept: this.kept.filter((each) => each.id !== id) });
+      kept: this.kept.filter((each) => each.id !== id), refusal: this.refusal });
   }
 
   // Whether the old bundle's change under `stamp` was carried.
@@ -359,7 +370,8 @@ export class CarryLedger {
   get json() {
     /** @type {Json} */
     const json = { to: this.to, created: this.created, frontier: { ...this.frontier }, items: { ...this.items }, marks: this.marks,
-      kept: this.kept.map((each) => ({ id: each.id, reason: each.reason, subject: { ...each.subject }, values: each.values, named: each.named })) };
+      kept: this.kept.map((each) => ({ id: each.id, reason: each.reason, subject: { ...each.subject }, values: each.values, named: each.named })),
+      ...(this.refusal === null ? {} : { refusal: { ...this.refusal } }) };
     return json;
   }
 }
@@ -446,4 +458,179 @@ export function carryLedgerOf(read, old) {
 export function carriedKept(rows) {
   return Object.entries(rows).filter(([key]) => CarryLedger.isLedger(key)).sort(([a], [b]) => compareText(a, b))
     .flatMap(([key, row]) => CarryLedger.of(row).kept.map((each) => ({ old: key.slice('carry:'.length), ...each })));
+}
+
+/** @typedef {import('../../../platform/domain-kit/entities.js').EntityType<any, string>} CoachType */
+/** @typedef {[Json, string]} Register */
+/** @typedef {import('../../../platform/domain-kit/refusals.js').NoticeContent} NoticeContent */
+/**
+ * A Coach record as a notice holds it: its newest life and the newest register of each field it wrote, and whether it
+ * made the record.
+ * @typedef {{ type: CoachType, id: string, made: boolean, life: [string, string] | null, registers: Record<string, Register> }} CarriedCoachRecord
+ */
+
+// Coach's record types, in the order a write makes them: a conversation before its messages, a message before the
+// proposal and the write fates that name it.
+const COACH_TYPES = Object.freeze([CoachThread, CoachMessage, CoachProposal, CoachWriteFate]);
+
+// The Coach records (roadmap-coach.md §9) a refused creation's notice holds about the roadmap `tree` it would have
+// created: each conversation and proposal that names it, each message of those conversations or carrying one of those
+// proposals, and the write fates of those messages, read from the notice's deltas and predictions alike. `others` are the
+// Coach records it holds about anything else. A record the notice made is nowhere else, but for one in `landed`, made by
+// an entry the refusal made an orphan and the server then took, which the device reads from the server as it stands.
+export class CarriedConversations {
+  /** @param {readonly CarriedCoachRecord[]} records @param {readonly CarriedCoachRecord[]} others */
+  constructor(records, others) {
+    this.records = Object.freeze([...records]);
+    this.others = Object.freeze([...others]);
+    Object.freeze(this);
+  }
+
+  // How many of `others` a reader of the person's scope does not draw: the records only the notice holds.
+  /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
+  unheld(read) { return this.others.filter(({ type, id }) => read.repository(type).find(new Id(id, type), 'drawn') === null).length; }
+
+  /**
+   * @param {import('../../../platform/domain-kit/refusals.js').Notice} notice
+   * @param {string} tree
+   * @param {readonly Subject[]} [landed]
+   */
+  static of(notice, tree, landed = []) {
+    const took = new Set(landed.map(({ t, id }) => jcs([t, id])));
+    /** @type {Map<string, CarriedCoachRecord>} */
+    const found = new Map();
+    const newest = (/** @type {string | undefined} */ a, /** @type {string} */ b) => a === undefined || Stamp.compare(b, a) >= 0;
+    /** @param {import('../../../platform/domain-kit/refusals.js').NoticeDelta} delta */
+    const take = (delta) => {
+      const type = COACH_TYPES.find((each) => each.type === delta.t);
+      if (type === undefined) return;
+      const key = jcs([delta.t, delta.id]);
+      const held = found.get(key) ?? { type, id: String(delta.id), made: false, life: null, registers: {} };
+      const registers = { ...held.registers };
+      for (const [name, register] of Object.entries(delta.f ?? {})) if (newest(registers[name]?.[1], register[1])) registers[name] = register;
+      const life = delta.life !== undefined && newest(held.life?.[1], delta.life[1]) ? delta.life : held.life;
+      const making = delta.life?.[0] === 'alive' && delta.born === delta.life[1] && !took.has(key);
+      found.set(key, { type, id: held.id, made: held.made || making, life, registers });
+    };
+    /** @param {NoticeContent & { predictions?: { scope: string, d: import('../../../platform/domain-kit/refusals.js').NoticeDelta[] }[] }} content */
+    const walk = (content) => {
+      for (const delta of content.d ?? []) take(delta);
+      for (const prediction of content.predictions ?? []) for (const delta of prediction.d ?? []) take(delta);
+      for (const dependent of content.dependents ?? []) walk(dependent);
+    };
+    walk(notice.content);
+    const all = [...found.values()];
+    const value = (/** @type {CarriedCoachRecord} */ record, /** @type {string} */ name) => record.registers[name]?.[0];
+    const about = (/** @type {CoachType} */ type) => new Set(all.filter((record) => record.type === type && value(record, 'treeId') === tree).map((record) => record.id));
+    const threads = about(CoachThread);
+    const proposals = about(CoachProposal);
+    const messages = new Set(all.filter((record) => record.type === CoachMessage
+      && (threads.has(String(value(record, 'threadId'))) || proposals.has(String(value(record, 'proposalId'))))).map((record) => record.id));
+    /** @type {Map<CoachType, Set<string>>} */
+    const carriedOf = new Map(/** @type {[CoachType, Set<string>][]} */ ([[CoachThread, threads], [CoachProposal, proposals], [CoachMessage, messages]]));
+    const ours = (/** @type {CarriedCoachRecord} */ record) => carriedOf.get(record.type)?.has(record.id) ?? messages.has(String(value(record, 'messageId')));
+    const rank = (/** @type {CoachType} */ type) => COACH_TYPES.indexOf(type);
+    const ordered = all.sort((a, b) => rank(a.type) - rank(b.type) || compareText(a.id, b.id));
+    return new CarriedConversations(ordered.filter(ours), ordered.filter((record) => !ours(record)));
+  }
+}
+
+// §8.2 A refused creation's Coach records written again where the carry-over placed its roadmap again, `to`, in one write
+// of the person's records, register by register: a record the device holds in no way, which the notice made and left
+// alive, is made again under its own id; of one the device draws, each field the notice wrote later than the device's
+// register takes the notice's value, and a death the notice holds later than its life removes it. Every conversation and
+// proposal about `from` comes to name `to`. A record the device holds dead, spent or with its removal held is left as
+// the device holds it. It answers how many conversations it wrote to.
+export class CarryConversations {
+  /** @param {CarriedConversations} carried @param {string} from @param {string} to */
+  constructor(carried, from, to) {
+    this.carried = carried;
+    this.from = from;
+    this.to = to;
+    this.refusals = RoadmapRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {ActReader} read */
+  load(read) {
+    return read.inScope(RoadmapScopes.account, (account) => {
+      const holding = (/** @type {CarriedCoachRecord} */ record) => {
+        const repository = account.repository(record.type);
+        const drawn = repository.record(record.id, 'drawn');
+        const held = repository.record(record.id, 'stored') !== undefined || repository.spentBorn(new Id(record.id, record.type)) !== null;
+        return { record, drawn: drawn?.life?.[0] === 'alive' ? drawn : undefined, held };
+      };
+      return { held: this.carried.records.map(holding), moment: account.moment };
+    });
+  }
+
+  /** @param {ReturnType<CarryConversations['load']>} loaded */
+  decide({ held, moment }) {
+    const plan = new Plan();
+    // A removal of Coach's is held (§9), and a held plan holds removals alone.
+    const removals = new Plan();
+    /** @type {Set<string>} */
+    const conversations = new Set();
+    let written = 0;
+    const aimed = (/** @type {Record<string, Json>} */ values) => (values.treeId === this.from ? { ...values, treeId: this.to } : values);
+    for (const { record: { type, id, made, life, registers }, drawn, held: holding } of held) {
+      const record = new Id(id, type);
+      /** @type {Record<string, Json>} */
+      let value;
+      if (drawn === undefined) {
+        if (holding || !made || life?.[0] !== 'alive') continue;
+        value = aimed(Object.fromEntries(Object.entries(registers).map(([name, [each]]) => [name, each])));
+        plan.create(new Valid(type.decoding(record, value), moment));
+      } else if (life?.[0] === 'dead' && Stamp.compare(life[1], drawn.life?.[1] ?? Stamp.UNSET) > 0) {
+        value = Object.fromEntries(Object.entries(drawn.f ?? {}).map(([name, [each]]) => [name, each]));
+        removals.remove(record);
+      } else {
+        const now = Object.fromEntries(Object.entries(drawn.f ?? {}).map(([name, [each]]) => [name, each]));
+        const later = Object.entries(registers).filter(([name, [, stamp]]) => Stamp.compare(stamp, drawn.f?.[name]?.[1] ?? Stamp.UNSET) > 0);
+        value = aimed({ ...now, ...Object.fromEntries(later.map(([name, [each]]) => [name, each])) });
+        const changed = Object.keys(value).filter((name) => jcs(value[name] ?? null) !== jcs(now[name] ?? null));
+        if (changed.length === 0) continue;
+        plan.update(new Valid(type.decoding(record, value), moment, changed), { fields: changed });
+      }
+      written += 1;
+      const thread = type === CoachThread ? id : value.threadId;
+      if (thread !== undefined && thread !== null) conversations.add(String(thread));
+    }
+    if (written === 0) return ActDecision.unchanged(0);
+    const segments = [plan, removals].filter((each) => each.writing.length > 0).map((each) => new ScopedPlan(RoadmapScopes.account, each));
+    return ActDecision.write(new ActPlan(segments), conversations.size);
+  }
+}
+
+// §8.2 The refusals the carry-over settles: of each creation it made, the server's refusal of that roadmap as taken or
+// spent, which it places again; and each refusal a ledger names, which it placed the roadmap after. No list shows one of
+// them and none is a failure: the carry-over reports what it cannot write again. `rows` are roadmap's device rows.
+export class CarriedRefusals {
+  static CODES = Object.freeze(['id-taken', 'id-spent']);
+
+  /** @param {readonly string[]} created @param {readonly string[]} notices */
+  constructor(created, notices) {
+    this.created = new Set(created);
+    this.notices = new Set(notices);
+    Object.freeze(this);
+  }
+
+  /** @param {Record<string, Json>} rows */
+  static of(rows) {
+    const ledgers = Object.entries(rows).filter(([key]) => CarryLedger.isLedger(key)).map(([, row]) => CarryLedger.of(row));
+    return new CarriedRefusals(ledgers.flatMap((ledger) => (ledger.created && ledger.to !== null ? [ledger.to] : [])),
+      ledgers.flatMap((ledger) => (ledger.refusal === null ? [] : [ledger.refusal.notice])));
+  }
+
+  // Whether `notice` refuses the creation of the roadmap `tree` as taken or spent.
+  /** @param {import('../../../platform/domain-kit/refusals.js').Notice} notice @param {string} tree */
+  static refuses(notice, tree) {
+    return notice.scope === RoadmapScopes.account && CarriedRefusals.CODES.includes(notice.code)
+      && (notice.content?.d ?? []).some((delta) => delta.t === Roadmap.type && String(delta.id) === tree);
+  }
+
+  /** @param {import('../../../platform/domain-kit/refusals.js').Notice} notice */
+  settles(notice) {
+    return this.notices.has(notice.id) || [...this.created].some((tree) => CarriedRefusals.refuses(notice, tree));
+  }
 }

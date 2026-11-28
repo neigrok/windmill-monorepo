@@ -1,5 +1,6 @@
 // Kept here beside every room: roadmap's notices in every scope offered as the account menu's row while the list shows a
-// change, the row's count the list's count, withdrawn once the last change is discarded, and each notice told once.
+// change, the row's count the list's count, withdrawn once the last change is discarded, and each notice told once; a
+// refusal the carry-over settles is none of them.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,4 +67,31 @@ test('the records the carry-over set aside in the replica’s ledger join the li
   });
   await settle();
   assert.deepEqual(menu.tree, [], 'with nothing the boards give words to, the list offers no row');
+});
+
+test('a refusal the carry-over settles is its own: not in the list, not told and not reported, while every other notice is', async (t) => {
+  browserWith();
+  Object.assign(globalThis.window, { setTimeout: () => 0, clearTimeout: () => {} });
+  const { engine } = await gymAccount(t);
+  const created = 't_0000000000000001';
+  const ledger = { frontier: {}, items: {}, marks: null, kept: [] };
+  await engine.write(null, (device) => {
+    const rows = device.activeReplica.deviceRows('roadmap');
+    rows[`carry:${created}`] = { ...ledger, to: created, created: true };
+    rows['carry:t_00000000000000aa'] = { ...ledger, to: 't_0000000000000002', created: false, refusal: { notice: 'notice:g2/0', settles: false } };
+    device.activeReplica.notices.push(
+      notice(1, 'self/roadmap', [{ t: 'tree', id: created, born: stamp, life: ['alive', stamp] }], 'id-taken'),
+      notice(2, 'self/roadmap', [{ t: 'tree', id: 't_00000000000000aa', born: stamp, life: ['alive', stamp] }], 'id-spent'),
+      notice(3, 'tree/t_0000000000000003', [{ t: 'node', id: 'a', f: { label: ['Read the wind', stamp] } }]),
+    );
+  });
+  const { useOfferedAccountRows } = await loadScreen('shell/ProductSessions.jsx');
+  const { KeptHere } = await loadScreen('products/roadmap/kept/KeptHere.jsx');
+  const menu = renderHook(t, () => useOfferedAccountRows(), { live: true });
+  const kept = renderHook(t, () => KeptHere(), { live: true });
+  await settle();
+  assert.deepEqual(JSON.parse(globalThis.window.localStorage.getItem('windmill:roadmap:kept-told')), ['notice:g3/0']);
+  assert.deepEqual(menu.tree.map(({ label, count }) => ({ label, count })), [{ label: 'Kept here', count: 1 }]);
+  menu.tree[0].onSelect();
+  assert.deepEqual(kept.tree.props.children.props.notices.map(({ id }) => id), ['notice:g3/0']);
 });

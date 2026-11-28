@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../../src/platform/sync/engine.js';
 import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { FixedZone } from '../../../../src/platform/domain-kit/time.js';
@@ -15,7 +15,8 @@ import { push } from '../../../../../packages/api-contract/sync/reference/server
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
 import { FakeChannels, FakeLocks } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
-import { CarriedIds, CarriedRoadmap, CarryLedger, CarryRoadmap, carryLedgerOf } from '../../../../src/products/roadmap/domain/carry.js';
+import { CarriedIds, CarriedRoadmap, CarryConversations, CarryLedger, CarryRoadmap, carryLedgerOf } from '../../../../src/products/roadmap/domain/carry.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { StepMark, StepPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
@@ -89,8 +90,9 @@ function browser(t) {
   return { storage, engines: new IDBFactory(), locks: new FakeLocks(), channels: new FakeChannels() };
 }
 
-// A tab of the new bundle on `disk`: its engine live over `server`, signed in as `account` or signed out.
-async function tab(t, disk, server, account = null) {
+// A tab of the new bundle on `disk`: its engine live over `server`, signed in as `account` or signed out, under the
+// engine's `limits`.
+async function tab(t, disk, server, account = null, limits = {}) {
   const transport = {
     account,
     request: async (endpoint, request) => server.answer(endpoint, request, transport.account, () => engine.reading()),
@@ -99,7 +101,7 @@ async function tab(t, disk, server, account = null) {
   const engine = await BrowserSyncEngine.open({ indexedDB: disk.engines, keyRange: IDBKeyRange, registry: roadmapRegistry, transport, timers: globalThis,
     now: Date.now, monotonic: () => Math.floor(performance.now()), navigator: { onLine: true, locks: disk.locks, storage: { persist: async () => true } },
     document: null, window: null, leadership: { locks: disk.locks, channel: disk.channels.open },
-    telemetry: { event() {}, failure() {} } });
+    telemetry: { event() {}, failure() {} }, limits });
   t.after(() => engine.close());
   if (account) assert.equal((await engine.signIn(account)).complete, true);
   await engine.start();
@@ -221,7 +223,7 @@ test('a roadmap made signed out is carried into the anon replica under its id, w
   assert.deepEqual(reported, []);
   assert.deepEqual(tracked, [
     { name: 'roadmap_carry', stage: 'found', roadmaps: '1', changed: '0', workspaces: '1', marks: '1' },
-    { name: 'roadmap_carry', stage: 'carried', roadmaps: '1', moved: '0', changes: '0', marks: '2-5', items: '2-5', kept: '1' },
+    { name: 'roadmap_carry', stage: 'carried', roadmaps: '1', moved: '0', changes: '0', marks: '2-5', items: '2-5', kept: '1', conversations: '0' },
     { name: 'roadmap_carry', stage: 'waiting', roadmaps: '1' },
   ]);
 });
@@ -467,7 +469,7 @@ test('a tab that never reloaded keeps writing the old store after the carry: the
   assert.deepEqual(holding(engine, id).steps, [['dock', 'Leave the dock'], ['solo', 'Sail alone'], ['wind', 'Read the wind well']]);
   assert.deepEqual(tracked, [
     { name: 'roadmap_carry', stage: 'found', roadmaps: '1', changed: '0', workspaces: '1', marks: '0' },
-    { name: 'roadmap_carry', stage: 'carried', roadmaps: '0', moved: '0', changes: '1', marks: '1', items: '0', kept: '0' },
+    { name: 'roadmap_carry', stage: 'carried', roadmaps: '0', moved: '0', changes: '1', marks: '1', items: '0', kept: '0', conversations: '0' },
   ]);
   assert.deepEqual((await oldStores()).sync, [id]);
 });
@@ -693,6 +695,211 @@ test('signed in, a claim whose create landed but whose answer never came back is
   assert.deepEqual({ held: holding(engine, id), old: await oldStores(), reported, stages: tracked.map(({ stage }) => stage) },
     { held: SAILED, old: NOTHING_OLD, reported: [], stages: ['found', 'carried', 'cleared'] });
   await onAnotherDevice(t, server, 'A', id, SAILED);
+});
+
+// Signed out, Coach asked about `tree`: a turn it answered, with a pending proposal on its answer, and a turn about every
+// roadmap still running.
+async function askedAbout(engine, tree) {
+  const opened = committedOf(await runner(engine).runAct(new OpenTurn({ about: { treeId: tree }, question: 'Where do I start?' }))).result;
+  const coach = new Id(opened.coach, CoachMessage);
+  committedOf(await runner(engine).runAct(new EndTurn(coach, { state: 'completed', text: 'Read the wind.' })));
+  committedOf(await runner(engine).runAct(new MintProposal({ proposal: runner(engine).mint(CoachProposal), treeId: tree, thread: new Id(opened.thread, CoachThread), message: coach,
+    changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }], base: [] })));
+  committedOf(await runner(engine).runAct(new OpenTurn({ about: { treeId: null }, question: 'And after that?' })));
+}
+
+function committedOf(outcome) {
+  assert.equal(outcome.kind, 'committed', JSON.stringify(outcome));
+  return outcome;
+}
+
+// What a device draws of Coach: each conversation by what it is about, with who said what and the state Coach's turn
+// stands in, and each proposal with its roadmap and state.
+function coachOf(engine) {
+  return runner(engine).read(RoadmapScopes.account, (read) => ({
+    conversations: read.repository(CoachThread).all('drawn').map((thread) => ({ about: thread.treeId,
+      said: Conversation.read(read, thread.id).messages.map((message) => [message.role, message.text, message.isCoach ? message.state : null, message.proposalId !== null]) }))
+      .sort((a, b) => String(a.about).localeCompare(String(b.about))),
+    proposals: read.repository(CoachProposal).all('drawn').map((proposal) => ({ about: proposal.treeId, state: proposal.state })),
+  }));
+}
+
+// `askedAbout`'s records about `tree`, as each device of the account draws them.
+const ASKED = (tree) => ({
+  conversations: [
+    { about: null, said: [['person', 'And after that?', null, false], ['coach', '', 'running', false]] },
+    { about: tree, said: [['person', 'Where do I start?', null, false], ['coach', 'Read the wind.', 'completed', true]] },
+  ],
+  proposals: [{ about: tree, state: 'pending' }],
+});
+
+// A browser that carried a roadmap made signed out under an id account A already holds (a claim cut short), signed out,
+// with its carry-over started: `limits` are its engine's, and `before` writes its signed-out work once the carry is in.
+async function refusedAtSignIn(t, { limits = {}, before = async () => {}, plant = plantedSignedOut } = {}) {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plant();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server, null, limits);
+  const carrying = started(t, disk, engine);
+  await settled(carrying.carry, engine);
+  await before(engine, id);
+  return { server, engine, id, ...carrying };
+}
+
+// A sign-in as A, answered Add, and the carry-over's runs it starts.
+async function signedInAdding(engine, carry) {
+  engine.transport.account = 'A';
+  const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
+  assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
+  await settled(carry, engine);
+}
+
+for (const limits of [{ PUSH_MAX_INTENTS: 1 }, {}]) {
+  test(`signed out, Coach asked about a roadmap the account already holds: a sign-in ${limits.PUSH_MAX_INTENTS ? 'that sends one entry a push' : 'whose push sends all of it'}, refused as taken, keeps the conversation, Coach's answer and the proposal on both browsers, and leaves no notice`, async (t) => {
+    const { server, engine, id, carry, reported, tracked } = await refusedAtSignIn(t, { limits, before: askedAbout });
+    assert.deepEqual(coachOf(engine), ASKED(id), 'signed out');
+    await signedInAdding(engine, carry);
+    await sent(engine);
+    assert.deepEqual({ held: holding(engine, id), coach: coachOf(engine), notices: noticeCodes(engine), old: await oldStores(), reported,
+      carried: tracked.filter(({ stage }) => stage === 'carried').map(({ conversations }) => conversations) },
+    { held: SAILED, coach: ASKED(id), notices: [], old: NOTHING_OLD, reported: [], carried: ['0', '1'] });
+    const phone = await onAnotherDevice(t, server, 'A', id, SAILED);
+    await until(phone, () => coachOf(phone).proposals.length === 1, 'the proposal on another device');
+    assert.deepEqual(coachOf(phone), ASKED(id));
+  });
+}
+
+test('signed out, Coach answered about a roadmap the account already holds: in a sign-in whose push sends all of it, the conversation lands before the roadmap is placed again, and Coach’s answer, written after it, stands; no notice is left', async (t) => {
+  const answered = async (engine, id) => {
+    const opened = committedOf(await runner(engine).runAct(new OpenTurn({ about: { treeId: id }, question: 'Where do I start?' }))).result;
+    const coach = new Id(opened.coach, CoachMessage);
+    committedOf(await runner(engine).runAct(new EndTurn(coach, { state: 'completed', text: 'Read the wind.' })));
+    committedOf(await runner(engine).runAct(new MintProposal({ proposal: runner(engine).mint(CoachProposal), treeId: id, thread: new Id(opened.thread, CoachThread), message: coach,
+      changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }], base: [] })));
+  };
+  // A roadmap with no marks and no workspace, so its carry holds no command the push stops after.
+  const bare = () => {
+    globalThis.window.wmDeviceConfirmation = { owner: null };
+    return bearImportedTree({ title: 'Learn to sail', kinds: DEFAULT_KINDS, nodes: [
+      { id: 'wind', label: 'Read the wind', color: 'olive', prerequisites: [] },
+      { id: 'dock', label: 'Leave the dock', color: 'terracotta', prerequisites: ['wind'] },
+    ] });
+  };
+  const { server, engine, id, carry, reported, tracked } = await refusedAtSignIn(t, { before: answered, plant: bare });
+  await signedInAdding(engine, carry);
+  await sent(engine);
+  const placed = { ...SAILED, steps: [['dock', 'Leave the dock'], ['wind', 'Read the wind']], links: [['wind', 'dock']], marks: [], workspace: {} };
+  const expected = { conversations: [ASKED(id).conversations[1]], proposals: ASKED(id).proposals };
+  assert.deepEqual({ held: holding(engine, id), coach: coachOf(engine), notices: noticeCodes(engine), reported,
+    carried: tracked.filter(({ stage }) => stage === 'carried').map(({ conversations }) => conversations) },
+  { held: placed, coach: expected, notices: [], reported: [], carried: ['0', '0'] });
+  const phone = await onAnotherDevice(t, server, 'A', id, placed);
+  await until(phone, () => coachOf(phone).proposals.length === 1, 'the proposal on another device');
+  assert.deepEqual(coachOf(phone), expected);
+});
+
+for (const limits of [{ PUSH_MAX_INTENTS: 1 }, {}]) {
+  test(`signed out, a turn about a roadmap the account already holds withdrawn before it began: a sign-in ${limits.PUSH_MAX_INTENTS ? 'that sends one entry a push' : 'whose push sends all of it'}, refused as taken, leaves it withdrawn on both browsers, and no notice`, async (t) => {
+    const withdrawn = async (engine, id) => {
+      const opened = committedOf(await runner(engine).runAct(new OpenTurn({ about: { treeId: id }, question: 'Never mind this' }))).result;
+      committedOf(await runner(engine).runAct(new WithdrawTurn({ thread: new Id(opened.thread, CoachThread), person: new Id(opened.person, CoachMessage), coach: new Id(opened.coach, CoachMessage) })));
+    };
+    const { server, engine, id, carry, reported } = await refusedAtSignIn(t, { limits, before: withdrawn });
+    await signedInAdding(engine, carry);
+    await sent(engine);
+    const none = { conversations: [], proposals: [] };
+    assert.deepEqual({ held: holding(engine, id), coach: coachOf(engine), notices: noticeCodes(engine), reported }, { held: SAILED, coach: none, notices: [], reported: [] });
+    const phone = await onAnotherDevice(t, server, 'A', id, SAILED);
+    assert.deepEqual(coachOf(phone), none);
+  });
+}
+
+test('signed out, a step changed and Coach asked about a roadmap the account already holds: a sign-in whose push the change splits keeps the roadmap’s steps and the Coach records on both browsers, for the carry-over waits for the refusal to settle before it places the roadmap again', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server);
+  const { carry, reported } = started(t, disk, engine);
+  await settled(carry, engine);
+  committedOf(await runner(engine).runAct(new ChangeStep(id, 'dock', { label: 'Leave the dock at slack water' })));
+  await askedAbout(engine, id);
+  engine.transport.account = 'A';
+  const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
+  assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
+  await settled(carry, engine);
+  await sent(engine);
+  // The steps are read by id: keeping the change made signed out is node m3-a-refused-carry-keeps-the-edits-made-signed-out's.
+  const byId = (held) => ({ ...held, steps: held.steps.map(([step]) => step) });
+  const expected = { ...SAILED, steps: ['dock', 'solo', 'wind'] };
+  assert.deepEqual({ held: byId(holding(engine, id)), coach: coachOf(engine), notices: noticeCodes(engine), old: await oldStores(), reported },
+    { held: expected, coach: ASKED(id), notices: [], old: NOTHING_OLD, reported: [] });
+  const phone = await device(t, server, 'A');
+  for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) await phone.subscribe(scope).catch(() => {});
+  await until(phone, () => JSON.stringify(byId(holding(phone, id))) === JSON.stringify(expected) && coachOf(phone).proposals.length === 1, 'the roadmap and the proposal on another device');
+  assert.deepEqual(coachOf(phone), ASKED(id));
+});
+
+test('a refusal’s notice that also holds a Coach record about another roadmap, which only it holds, stays: the records about the placed roadmap are written again, and the carry-over reports it once', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server, 'A');
+  const at = `${Date.now()}:0:r_aaaaaaaaaaaa`;
+  const made = (t, record, f) => ({ t, id: record, born: at, life: ['alive', at], f: Object.fromEntries(Object.entries(f).map(([name, value]) => [name, [value, at]])) });
+  await engine.write(null, (device) => {
+    device.activeReplica.deviceRows('roadmap')[CarryLedger.key(id)] = new CarryLedger({ to: id, created: true }).json;
+    device.activeReplica.notices.push({ id: 'notice:g9/0', scope: RoadmapScopes.account, code: 'id-taken', at: Date.now(), content: { d: [made('tree', id, {})], dependents: [
+      { d: [made('coachThread', 'thread0001', { treeId: id, stepId: null, title: 'Where do I start?' }),
+        made('coachMessage', 'message0001', { threadId: 'thread0001', role: 'person', text: 'Where do I start?', at: Date.now() })] },
+      { d: [made('coachThread', 'thread0002', { treeId: 't_00000000000000bb', stepId: null, title: 'Elsewhere' })] },
+    ] } });
+  });
+  const { carry, reported } = started(t, disk, engine);
+  await settled(carry, engine);
+  await carry.run(engine);
+  await sent(engine);
+  const notice = engine.device.activeReplica.notices.find((each) => each.id === 'notice:g9/0');
+  assert.deepEqual({ held: holding(engine, id), coach: coachOf(engine), dismissed: notice.dismissed === true, ledger: CarryLedger.of(engine.readMetadata(RoadmapScopes.account).devices[CarryLedger.key(id)]).refusal,
+    old: await oldStores(), reported }, {
+    held: SAILED, coach: { conversations: [{ about: id, said: [['person', 'Where do I start?', null, false]] }], proposals: [] }, dismissed: false,
+    ledger: { notice: 'notice:g9/0', settles: false }, old: NOTHING_OLD, reported: [{ operation: 'roadmap-carry-write', tags: { stage: 'coach', refusal: 'otherRoadmap' } }],
+  });
+});
+
+test('a run that ends once the roadmap and its Coach records are written, before the refusal’s notice goes, is finished by the next: the notice goes then, and the old stores with it', async (t) => {
+  const { engine, id, carry, reported } = await refusedAtSignIn(t, { limits: { PUSH_MAX_INTENTS: 1 }, before: askedAbout });
+  const dismiss = engine.dismissNotice.bind(engine);
+  const asked = [];
+  engine.dismissNotice = (notice) => {
+    asked.push(notice);
+    if (asked.length > 1) return dismiss(notice);
+    throw new ReplicaChanged();
+  };
+  await signedInAdding(engine, carry);
+  await carry.run(engine);
+  await sent(engine);
+  assert.deepEqual({ coach: coachOf(engine), notices: noticeCodes(engine), old: await oldStores(), asked: asked.length, reported },
+    { coach: ASKED(id), notices: [], old: NOTHING_OLD, asked: 2, reported: [] });
+});
+
+test('a Coach act that throws never blocks the roadmap: it is placed again without it, the refusal’s notice keeps the records, and the throw is reported as the Coach write’s', async (t) => {
+  const decide = CarryConversations.prototype.decide;
+  let thrown = false;
+  CarryConversations.prototype.decide = function (...args) {
+    if (thrown) return decide.apply(this, args);
+    thrown = true;
+    throw new Error('a fault');
+  };
+  t.after(() => { CarryConversations.prototype.decide = decide; });
+  const { engine, id, carry, reported } = await refusedAtSignIn(t, { limits: { PUSH_MAX_INTENTS: 1 }, before: askedAbout });
+  await signedInAdding(engine, carry);
+  await sent(engine);
+  assert.deepEqual({ held: holding(engine, id), coach: coachOf(engine), notices: noticeCodes(engine), reported },
+    { held: SAILED, coach: { conversations: [ASKED(id).conversations[0]], proposals: [] }, notices: ['id-taken'],
+      reported: [{ operation: 'roadmap-carry-write', tags: { stage: 'coach', name: 'other' } }] });
 });
 
 // A carry the account's change interrupts: `change` runs as the carry-over asks the server of `tree`, its first await.
