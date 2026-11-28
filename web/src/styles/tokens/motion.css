@@ -55,6 +55,25 @@
   88%      { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
 
+/* Pulse ×2, decaying, on a step with no resting halo: wm-pulse-echo's crests, from and back to nothing. */
+@keyframes wm-pulse-frontier {
+  0%, 46%, 88%, 100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+  20% { box-shadow: 0 0 0 6px var(--nd-glow), 0 0 40px var(--nd-glow); }
+  66% { box-shadow: 0 0 0 4.5px var(--nd-glow), 0 0 28px var(--nd-glow); }
+}
+
+/* Blossom from the resting halo: wm-bloom's 55% and 100%, for a step already complete. */
+@keyframes wm-blossom {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
+  55% { transform: scale(1.045); box-shadow: 0 0 0 5px var(--nd-glow), 0 0 40px var(--nd-glow); }
+}
+
+/* Wake: a step already lit settles 1 → 1.02 → 1. */
+@keyframes wm-wake {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
 /* Reduced motion keeps each event visible without movement. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes wm-fade-in-up {

@@ -97,8 +97,8 @@ const PAGES = {
     ],
     questions: ['What is a skill tree?', 'How do I make a skill tree for a real-life goal?', 'How do I break a big goal into steps?', 'What should I learn first?',
       'Can I create a skill tree from text, or have an AI write it?', 'Is it free, and do I need an account?', 'Can other people use my tree?'],
-    frames: [['Composed tree', ['narrow', 'wide']], ['Composed tree', ['narrow', 'column', 'row']], ['Composed tree', ['narrow', 'wide']],
-      ['Composed paths', ['narrow', 'wide']], ['Composed step', ['panel']], ['Composed tree', ['narrow', 'wide']]],
+    frames: [['hero', 'Composed tree', ['narrow', 'wide']], ['root', 'Composed tree', ['narrow', 'column', 'row']], ['unlock', 'Composed tree', ['narrow', 'wide']],
+      ['paths', 'Composed paths', ['narrow', 'wide']], ['step', 'Composed step', ['panel']], ['fork', 'Composed tree', ['narrow', 'wide']]],
   },
   gym: {
     title: 'Workout Log for Lifters on a Program | Windmill Gym',
@@ -126,8 +126,8 @@ const PAGES = {
     questions: ['How do I track progressive overload?', 'Can I see what I lifted last time while I train?', 'When should I increase the weight?',
       'Will the AI coach change my program by itself?', 'Can Claude or another assistant read my workout log?', 'Is an estimated 1RM accurate?',
       'Can I log a workout in the browser?', 'Is it free?'],
-    frames: [['Composed session', ['narrow', 'wide']], ['Composed session', ['narrow', 'wide']], ['Composed connection', ['narrow', 'wide']],
-      ['Composed session', ['narrow', 'wide']], ['Composed progress', ['narrow', 'wide']], ['Composed routine', ['narrow', 'wide']]],
+    frames: [['logger', 'Composed session', ['narrow', 'wide']], ['root', 'Composed session', ['narrow', 'wide']], ['connect', 'Composed connection', ['narrow', 'wide']],
+      ['remembered', 'Composed session', ['narrow', 'wide']], ['strength', 'Composed progress', ['narrow', 'wide']], ['routine', 'Composed routine', ['narrow', 'wide']]],
   },
   journal: {
     title: 'Journal App With Search by Meaning | Windmill Journal',
@@ -152,8 +152,8 @@ const PAGES = {
     ],
     questions: ['How do I find something I wrote if I don’t remember the words?', 'Should I reread my old journal?', 'What happens if I miss a day?',
       'Does the journal write back or ask me questions?', 'Is my journal private?', 'Can I journal online for free without signing up?', 'Does it use AI?'],
-    frames: [['Composed page', ['narrow', 'wide']], ['Composed page', ['narrow', 'column', 'wide']], ['Composed page', ['narrow', 'wide']],
-      ['Composed page', ['narrow', 'wide']], ['Composed year', ['narrow', 'wide']]],
+    frames: [['night', 'Composed page', ['narrow', 'wide']], ['root', 'Composed page', ['narrow', 'column', 'wide']], ['search', 'Composed page', ['narrow', 'wide']],
+      ['write', 'Composed page', ['narrow', 'wide']], ['look_back', 'Composed year', ['narrow', 'wide']]],
   },
 };
 
@@ -182,11 +182,11 @@ for (const [id, expected] of Object.entries(PAGES)) {
     assert.deepEqual([head.ogDescription, head.twitterDescription], [head.description, head.description]);
   });
 
-  test(`${id}: every picture sits in a frame labelled as composed, with the stages it is drawn at`, async (t) => {
+  test(`${id}: every picture sits in a frame labelled as composed, under the name its event tells, with the stages it is drawn at`, async (t) => {
     const page = await landing(t, id);
     told();
-    assert.deepEqual(page.frames.map(({ props }) => [props.id, props.route, props.theme, props.picture.label, props.picture.stages.map((stage) => stage.name)]),
-      expected.frames.map(([label, stages]) => [id, `/${id}`, 'light', label, stages]));
+    assert.deepEqual(page.frames.map(({ props }) => [props.id, props.page, props.route, props.theme, props.picture.name, props.picture.label, props.picture.stages.map((stage) => stage.name)]),
+      expected.frames.map(([name, label, stages]) => [id, id, `/${id}`, 'light', name, label, stages]));
   });
 
   test(`${id}: no line promises what the product does not do, names a price or links an About page`, async (t) => {
@@ -208,3 +208,11 @@ for (const [id, expected] of Object.entries(PAGES)) {
     assert.deepEqual(told(), [{ name: 'front_control', props: { page: id, control: 'feedback' } }]);
   });
 }
+
+test('every picture a landing draws carries a name web/OBSERVABILITY.md lists for front_picture, and every listed name is drawn', async () => {
+  const { readFileSync } = await import('node:fs');
+  const doc = readFileSync(new URL('../../../OBSERVABILITY.md', import.meta.url), 'utf8');
+  const listed = /\| `front_picture` \|[^\n]*`picture: ([\w/]+)`/.exec(doc)[1].split('/');
+  const drawn = Object.values(PAGES).flatMap((expected) => expected.frames.map(([name]) => name));
+  assert.deepEqual([...new Set(drawn)].sort(), [...listed].sort());
+});

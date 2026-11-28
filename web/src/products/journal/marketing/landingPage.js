@@ -19,6 +19,7 @@ export const journalLandingPage = {
     links: [write, { href: '#echoes', label: t('journal.landing.howLink'), to: 'section' }],
     trust: t('journal.landing.trust'),
     picture: {
+      name: 'night',
       label: t('journal.root.composed'),
       stages: [{ name: 'narrow', width: 356, height: 411 }, { name: 'wide', width: 916, height: 336 }],
       Picture: picture('NightWindow'),
@@ -43,6 +44,7 @@ export const journalLandingPage = {
       title: t('journal.landing.search.title', { break: '\n' }),
       paragraph: t('journal.landing.search.paragraph'),
       picture: {
+        name: 'search',
         label: t('journal.root.composed'),
         stages: [{ name: 'narrow', width: 356, height: 348 }, { name: 'wide', width: 752, height: 362 }],
         Picture: picture('SearchSheet'),
@@ -57,7 +59,7 @@ export const journalLandingPage = {
       key: 'page',
       title: t('journal.landing.page.title', { break: '\n' }),
       paragraph: t('journal.landing.page.paragraph'),
-      picture: { label: t('journal.root.composed'), stages: SCENE_STAGES, Picture: picture('WriteBeat') },
+      picture: { name: 'write', label: t('journal.root.composed'), stages: SCENE_STAGES, Picture: picture('WriteBeat') },
       features: [
         { title: t('journal.landing.page.savesTitle'), text: t('journal.landing.page.savesText') },
         { title: t('journal.landing.page.offlineTitle'), text: t('journal.landing.page.offlineText') },
@@ -68,7 +70,7 @@ export const journalLandingPage = {
       key: 'back',
       title: t('journal.landing.back.title', { break: '\n' }),
       paragraph: t('journal.landing.back.paragraph'),
-      picture: { label: t('journal.landing.back.picture'), stages: SCENE_STAGES, Picture: picture('LookBackBeat') },
+      picture: { name: 'look_back', label: t('journal.landing.back.picture'), stages: SCENE_STAGES, Picture: picture('LookBackBeat') },
       features: [
         { title: t('journal.landing.back.weekTitle'), text: t('journal.landing.back.weekText') },
         { title: t('journal.landing.back.scalesTitle'), text: t('journal.landing.back.scalesText') },

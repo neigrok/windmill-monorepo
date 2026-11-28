@@ -2,7 +2,7 @@
 // section per open product composed off the registry's `landing.root`, the two ways to bring an AI and
 // where it runs, in the site's header and footer. A product still holding itself shut brings no row and
 // no section but keeps its place in the header and the footer. Every link and control tells one event
-// under the page `front`, and nothing inside a picture frame is live.
+// under the page `front`, and a picture tells one when the pointer stays on it.
 
 import React, { useEffect } from 'react';
 import { PRODUCTS } from '../products.js';
@@ -52,7 +52,7 @@ export function BrandLanding() {
                 <ArrowLink href={link.href} onFollow={followed('front', 'room', link.to, id)}>{link.label}</ArrowLink>
               </div>
             </div>
-            <PictureFrame id={id} picture={picture} theme={theme} route="/" />
+            <PictureFrame id={id} picture={picture} theme={theme} page="front" route="/" />
             <ul className="front-features">
               {features.map((feature) => (
                 <li key={feature.title}>

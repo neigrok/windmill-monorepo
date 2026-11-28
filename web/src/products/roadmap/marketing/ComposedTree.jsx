@@ -1,10 +1,12 @@
-// A still tree for the site's pictures, drawn in the room's node vocabulary and by the room's rule: a step not done
-// is available once every step it needs is done and locked before, and every edge out of a done step is lit. A world
-// places the steps it shows; the steps and what each needs come from the step book it is drawn with.
+// A tree for the site's pictures, drawn in the room's node vocabulary and by the room's rule: a step not done is
+// available once every step it needs is done and locked before, and every edge out of a done step is lit. A world
+// places the steps it shows; the steps and what each needs come from the step book it is drawn with. It rests still and
+// answers the pointer with the room's own motion (composedTree.css).
 
 import React from 'react';
 import { Icon } from '../../../design-system';
 import { KIND_CSS } from '../theme.js';
+import { HANDOFF, IGNITE } from '../ceremony/beats.js';
 import { t } from '../i18n/entry/index.js';
 import './composedTree.css';
 
@@ -74,19 +76,63 @@ function statesOf(steps, needs) {
     : needs.filter(([, to]) => to === id).every(([from]) => steps[from].done) ? 'avail' : 'dim']));
 }
 
-export function ComposedTree({ steps = SAIL, needs = SAIL_NEEDS, world, className }) {
+// A branch leaves its step level, bends halfway across and enters the next step level.
+function branchPath([x1, y1], [x2, y2]) {
+  const bend = (x1 + x2) / 2;
+  return `M${x1},${y1} C${bend},${y1} ${bend},${y2} ${x2},${y2}`;
+}
+
+// How far a branch runs, summed over 64 straight pieces of its curve.
+function branchLength([x1, y1], [x2, y2]) {
+  const bend = (x1 + x2) / 2;
+  const at = (t) => {
+    const u = 1 - t;
+    return [u * u * u * x1 + 3 * u * u * t * bend + 3 * u * t * t * bend + t * t * t * x2, u * u * u * y1 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y2];
+  };
+  const points = Array.from({ length: 65 }, (_, piece) => at(piece / 64));
+  return points.slice(1).reduce((sum, [x, y], index) => sum + Math.hypot(x - points[index][0], y - points[index][1]), 0);
+}
+
+// The room's unlock (motion language §2, ceremony #4) on a world whose finished steps open others. Each finished step
+// blossoms at once; when its ignite ends a head travels every lit branch into an open step, at 540px a second within
+// 180–420ms; the open step wakes at 85% of the way, and when the last wake settles every opened step pulses.
+const WAKE_MS = 480;
+const travelMs = (length) => Math.round(Math.min(420, Math.max(180, (length / 540) * 1000)));
+
+function unlockOf(world, state) {
+  const travels = world.edges.filter(([from, to]) => state[from] === 'done' && state[to] === 'avail').map(([from, to]) => {
+    const length = Math.round(branchLength(world.seats[from], world.seats[to]) * 10) / 10;
+    return { from, to, length, duration: travelMs(length) };
+  });
+  const wakeAt = {};
+  for (const { to, duration } of travels) wakeAt[to] = Math.min(wakeAt[to] ?? Infinity, Math.round(IGNITE + HANDOFF * duration));
+  const pulseAt = Math.max(...Object.values(wakeAt)) + WAKE_MS;
+  const opened = Object.fromEntries(Object.entries(wakeAt).map(([id, at]) => [id, { '--wake-at': `${at}ms`, '--pulse-at': `${pulseAt}ms` }]));
+  return { travels, opened };
+}
+
+// `arrival` names the beat the tree plays when the pointer arrives on its picture: `frontier`, its open steps pulsing,
+// `unlock`, the room's unlock, or null, none.
+export function ComposedTree({ steps = SAIL, needs = SAIL_NEEDS, world, arrival = 'frontier', className }) {
   const { width, height, seats, edges, plaque, size } = world;
   const state = statesOf(steps, needs);
   const done = Object.values(steps).filter((step) => step.done).length;
+  const unlock = arrival === 'unlock' ? unlockOf(world, state) : null;
   return (
-    <div className={className ? `rmTree ${className}` : 'rmTree'} style={{ width, height }}>
+    <div className={className ? `rmTree ${className}` : 'rmTree'} data-arrival={arrival ?? undefined} style={{ width, height }}>
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        {edges.map(([from, to]) => {
-          const [x1, y1] = seats[from];
-          const [x2, y2] = seats[to];
-          const bend = (x1 + x2) / 2;
-          return <path key={`${from}-${to}`} className={state[from] === 'done' ? 'rmTree-edge is-lit' : 'rmTree-edge'} d={`M${x1},${y1} C${bend},${y1} ${bend},${y2} ${x2},${y2}`} />;
-        })}
+        {edges.map(([from, to]) => (
+          <g key={`${from}-${to}`} className="rmTree-branch">
+            <path className="rmTree-reach" d={branchPath(seats[from], seats[to])} />
+            <path className={state[from] === 'done' ? 'rmTree-edge is-lit' : 'rmTree-edge'} d={branchPath(seats[from], seats[to])} />
+          </g>
+        ))}
+        {unlock?.travels.map(({ from, to, length, duration }) => (
+          <g key={`${from}-${to}`} className="rmTree-travel" style={{ '--length': `${length}px`, '--travel-at': `${IGNITE}ms`, '--travel': `${duration}ms` }}>
+            <path className="rmTree-tail" d={branchPath(seats[from], seats[to])} />
+            <path className="rmTree-head" d={branchPath(seats[from], seats[to])} />
+          </g>
+        ))}
       </svg>
       {plaque && (
         <div className="plq">
@@ -99,12 +145,15 @@ export function ComposedTree({ steps = SAIL, needs = SAIL_NEEDS, world, classNam
       )}
       {Object.entries(seats).map(([id, [x, y]]) => {
         const { name, kind, crown } = steps[id];
+        const crowned = crown ?? id === 'root';
+        const opened = unlock?.opened[id];
         const hue = KIND_CSS[kind];
         const at = size[state[id]];
         return (
           <React.Fragment key={id}>
-            {(crown ?? id === 'root') && <span className="rmTree-crown" style={{ left: x, top: y - size.done / 2 - 9 }}><Icon name="crown" size={12} strokeWidth={2.4} /></span>}
-            <div className={`nd nd-${state[id]}`} style={{ left: x, top: y, width: at, height: at, '--g': hue.base, '--ring': hue.ring, '--fill': hue.base }} />
+            {crowned && <span className="rmTree-crown" style={{ left: x, top: y - size.done / 2 - 9 }}><Icon name="crown" size={12} strokeWidth={2.4} /></span>}
+            <div className={`nd nd-${state[id]}${crowned ? ' is-crowned' : ''}${opened ? ' is-opened' : ''}`}
+              style={{ left: x, top: y, width: at, height: at, '--g': hue.base, '--ring': hue.ring, '--fill': hue.base, ...opened }} />
             {name && <div className={state[id] === 'dim' ? 'ndlabel ndlabel--dim' : 'ndlabel'} style={{ left: x, top: y + at / 2 + 5 }}>{name}</div>}
           </React.Fragment>
         );

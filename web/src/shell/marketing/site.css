@@ -73,7 +73,9 @@
                  border-radius: var(--look-radius-frame); background: var(--look-panel); }
 .front-picture-bar { display: flex; align-items: center; height: 40px; padding: 0 20px; border-bottom: .5px solid var(--look-line);
                      font-size: 13px; line-height: 18px; color: var(--look-ink-3); }
-.front-picture-body { position: relative; overflow: hidden; pointer-events: none; user-select: none; }
+/* A picture takes the pointer: pictureMotion.js marks it pointed for a mouse or pen, and the picture's own sheet answers
+   under that mark. It takes no selection, press or cursor of its own. */
+.front-picture-body { position: relative; overflow: hidden; cursor: default; user-select: none; }
 .front-picture-stage { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
 .front-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; margin-top: 48px; }

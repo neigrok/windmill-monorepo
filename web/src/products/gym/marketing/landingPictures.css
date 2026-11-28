@@ -2,7 +2,8 @@
 
 /* Gym's pictures on its landing (LandingPictures.jsx), in the room's own tokens (.gym-skin). The three scenes and the
    connect card keep the room's night stage, its raised step, by day too; the routine stands on the room's ground at
-   the page's hour. */
+   the page's hour. A part the room answers under the pointer answers here with the room's own feedback, under a
+   counted pointer (the frame's data-pointed). */
 :where(.gyScene, .gyConnect, .gyRoutine) { box-sizing: border-box; height: 100%; font-family: var(--font-body); color: var(--gym-ink); }
 :where(.gyScene, .gyConnect, .gyRoutine) :where(p, ul) { margin: 0; padding: 0; list-style: none; }
 .gyCaption { color: var(--gym-ink-dim); }
@@ -28,7 +29,10 @@
 .gyRemembered-head { display: flex; align-items: baseline; justify-content: space-between; }
 .gyRemembered-head b { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
 .gyRemembered-head .gyCaption { font-family: var(--font-mono); font-size: 10px; }
-.gyRemembered-weight { margin-top: 8px; font-family: var(--font-mono); font-size: 34px; color: var(--weight-ink); }
+.gyRemembered-weight { margin-top: 8px; font-family: var(--font-mono); font-size: 34px; color: var(--weight-ink); --lift-rest: var(--weight-ink); }
+/* A carried number lifts to the accent and settles, once, when the pointer arrives; under reduced motion too, being colour. */
+@keyframes gy-ink-lift { 0%, 100% { color: var(--lift-rest); } 40% { color: var(--text-link); } }
+[data-beat] .gyRemembered-weight { animation: gy-ink-lift var(--duration-base) var(--ease-standard); }
 .gyRemembered-note { margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--target-ink); }
 
 .gyLine { display: flex; flex-direction: column; justify-content: center; gap: 10px; height: 100%; }
@@ -38,6 +42,15 @@
 .gyLine svg { display: block; }
 .gyLine path { fill: none; stroke: var(--color-brand); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .gyLine circle { fill: var(--color-brand); }
+/* The room's focus ring on the vertex nearest the pointer by x: one at a time while the pointer is over the plot, and
+   the last held 1500ms after it leaves (progress.js SCRUB_HOLD_MS), then faded. */
+.gyLine-plot { opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard) 1500ms; }
+.gyLine-slot rect { fill: transparent; }
+.gyLine .gyLine-ring { fill: none; stroke: var(--color-brand); stroke-width: 1.5; opacity: 0; pointer-events: none;
+                       transition: opacity 0s calc(1500ms + var(--duration-fast)); }
+[data-pointed] .gyLine-plot:hover { opacity: 1; transition: opacity var(--duration-fast) var(--ease-standard); }
+[data-pointed] .gyLine-plot:hover .gyLine-ring { transition: none; }
+[data-pointed] .gyLine-slot:hover .gyLine-ring { opacity: 1; }
 .gyLine-note { font-family: var(--font-mono); font-size: 10.5px; }
 
 /* ---- the connect card an assistant is granted on ---- */
@@ -66,8 +79,15 @@
 .gyRoutine ul { display: flex; flex-direction: column; gap: 20px; margin-top: 16px; }
 .gyRoutine li { display: flex; flex-direction: column; }
 .gyRoutine-movement { font-weight: 600; font-size: 15px; line-height: 22px; }
-.gyRoutine-scheme { font-family: var(--font-mono); font-size: 13px; line-height: 18px; }
+.gyRoutine-scheme { font-family: var(--font-mono); font-size: 13px; line-height: 18px; transition: color var(--duration-fast) var(--ease-standard); }
+[data-pointed] .gyRoutine li:hover .gyRoutine-scheme { color: var(--text-link); }
 .gyRoutine-add { display: flex; align-items: center; gap: 10px; height: 56px; box-sizing: border-box; margin-top: 20px; padding: 0 16px;
                  border: 1px dashed var(--gym-line-strong); border-radius: 12px; font-weight: 700; font-size: 14px; color: var(--gym-ink-dim); }
 .gyRoutine[data-stage="narrow"] { padding: 24px 16px; }
 .gyRoutine[data-stage="narrow"] .gyRoutine-column { width: 324px; }
+
+/* Reduced motion keeps the ring's fade and the scheme's colour at their own times. */
+@media (prefers-reduced-motion: reduce) {
+  .gyLine-plot { transition-duration: var(--duration-fast) !important; }
+  .gyRoutine-scheme { transition-duration: var(--duration-fast) !important; }
+}
