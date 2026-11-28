@@ -949,7 +949,8 @@ suffix exercises the journal's Reduce Motion scroll.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
 `journal` screen, without page content. When the local day changes at
 midnight or after a timezone change, the whole open draft, including its saved prefix, carries into
-today and is combined with today's existing page. Yesterday's saved page stays intact. The draft is
+today and is combined with today's existing page. Yesterday's saved page stays intact. The carried words are typed on
+today's page, which is `spoken` only when Talk has written into it. The draft is
 persisted on each edit in the active replica before autosave, and is restored across backgrounding,
 termination and relaunch. An over-limit combined page stays as a durable draft until shortened.
 

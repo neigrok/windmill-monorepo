@@ -339,6 +339,27 @@ import Synchronization
     }
   }
 
+  // Another surface puts the page back to typed, as Talk's Undo does, while the editor still holds it spoken; typing saves it typed.
+  @Test func typingAfterThePageIsTypedBackElsewhereSavesItTyped() throws {
+    let (harness, model) = try fixture(account: "account-a")
+    model.account = "account-a"
+    let talk = harness.device()
+    harness.sync(); model.refresh()
+    let day = model.journal.editorDay
+    _ = try talk.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.\n\nSpoken words.", source: "spoken")))
+    harness.sync(); model.refresh()
+    #expect(model.journal.document.source == "spoken", "The editor opens the page as Talk left it")
+    model.journal.editing = true
+    _ = try talk.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.", source: "typed")))
+    harness.sync(); model.refresh()
+    model.journal.type("Morning. Typed."); #expect(model.journal.save())
+    harness.sync()
+    for runner in [harness.runner, talk.runner] {
+      let page = try runner.read(Journal.scope, JournalRoom.init).days.first { $0.day == day }?.document
+      #expect(page == PageDocument(body: "Morning. Typed.", source: "typed"))
+    }
+  }
+
   // Erasing every word removes the page whole, so ratings another surface set go with it; the domain keeps that rule.
   @Test func erasingTheWordsRemovesThePageWithItsRatings() throws {
     let (harness, model) = try fixture(account: "account-a")
