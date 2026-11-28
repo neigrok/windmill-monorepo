@@ -36,26 +36,30 @@ import SyncCore
 
   @Test func everyFirstFailureEndsTheOpeningWithItsCode() async throws {
     let wire = try Self.wire()
-    let fixtures = try wire.field("liveFirstFailures").asObject().members.map { ($0.key, $0.value) }
-    let admissions = try ["invalid_request", "conflict", "rate_limited", "busy", "concurrency_exhausted", "subject_exhausted", "paused"].map {
-      ($0, try wire.field("liveFirstFailures").field("funding_required").changed(["code"], to: .string($0)))
+    let free: Set<String> = ["concurrency_exhausted", "subject_exhausted", "funding_required", "paused"]
+    let codes = ["invalid_request", "conflict", "rate_limited", "busy", "accounting_unavailable", "funding_required", "concurrency_exhausted",
+                 "subject_exhausted", "paused", "provider_unavailable"]
+    let shaped = try codes.flatMap { code -> [(String, JSON)] in
+      let first = wire.field("liveFirstFailures").field(code).isNull
+        ? try wire.field("liveFirstFailures").field("funding_required").changed(["code"], to: .string(code))
+        : wire.field("liveFirstFailures").field(code)
+      return [("\(code) uncharged", first), ("\(code) charged 0", try first.changed(["charged"], to: "0"))]
     }
-    let admitted = try [("provider_unavailable after admission", wire.field("liveTerminals").field("provider_unavailable")),
-                        ("busy at dispatch", wire.field("liveFirstFailures").field("accounting_unavailable").changed(["code"], to: "busy").changed(["charged"], to: "0"))]
-    for (name, failure) in fixtures + admissions + admitted {
+    let played = [("provider_unavailable from the terminals", wire.field("liveTerminals").field("provider_unavailable"))]
+    for (name, failure) in shaped + played {
       let socket = PlayedSocket([.success(.text(failure.jcsText))])
       let diagnostics = PolicyDiagnostics()
       let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
                                    diagnostics: diagnostics, credentials: { _ in AiCredentials() })
       let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
                                               seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
-      guard case .failed(let end, let spent) = opening else { Issue.record("\(name): \(opening)"); continue }
+      guard case .failed(let end, let callIdFree) = opening else { Issue.record("\(name): \(opening)"); continue }
       #expect(end == (try Self.end(failure)), "\(name)")
-      #expect(spent == !failure.field("charged").isNull, "\(name)")
+      #expect(callIdFree == free.contains(try failure.field("code").string), "\(name)")
       #expect(socket.closed)
       #expect(socket.sent == [])
       #expect(socket.pings.isEmpty)
-      #expect(diagnostics.reports == (["conflict", "invalid_request"].contains(name) ? ["ai-live/refusal"] : []), "\(name)")
+      #expect(diagnostics.reports == (["conflict", "invalid_request"].contains(try failure.field("code").string) ? ["ai-live/refusal"] : []), "\(name)")
     }
   }
 
@@ -142,7 +146,7 @@ import SyncCore
                                  diagnostics: diagnostics, credentials: { _ in AiCredentials() })
     let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
                                             seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
-    guard case .failed(let end, admitted: false) = opening else { Issue.record("\(opening)"); return }
+    guard case .failed(let end, callIdFree: false) = opening else { Issue.record("\(opening)"); return }
     #expect(end == (try Self.end(first)))
     #expect(diagnostics.reports == ["ai-live/code"])
   }
@@ -699,7 +703,7 @@ import SyncCore
     let end = AiLiveEnd(stop: .cut, code: "idle", text: "MARKER-WORD", seconds: 1, charged: "0.123456789", allowance: ["remaining": "MARKER-AMOUNT"])
     let failure = AiFailure(source: .text, code: "subject_exhausted", allowance: ["remaining": "MARKER-AMOUNT"])
     let values: [Any] = [AiLiveMessage.text(turn: 1, delta: "MARKER-WORD"), AiLiveMessage.turn(turn: 1, text: "MARKER-WORD"), AiLiveMessage.end(end),
-                         end, AiLiveOpening.failed(end, admitted: true), AiLiveOpening.refused(failure), AiLiveResult.answered(end), failure,
+                         end, AiLiveOpening.failed(end, callIdFree: true), AiLiveOpening.refused(failure), AiLiveResult.answered(end), failure,
                          AiSocketFrame.text("MARKER-WORD"), AiSocketFrame.binary([0xAB, 0xAB])]
     for value in values {
       var dumped = ""

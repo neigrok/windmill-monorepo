@@ -5,14 +5,14 @@ import SyncCore
 nonisolated public enum AiLiveOpening: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case started(AiLiveConnection)
   case refused(AiFailure)
-  case failed(AiLiveEnd, admitted: Bool)
+  case failed(AiLiveEnd, callIdFree: Bool)
   case lost(AiLiveLoss)
 
   public var description: String {
     switch self {
     case .started: "started"
     case .refused(let failure): "refused(\(failure))"
-    case .failed(let end, let admitted): "failed(\(end), admitted: \(admitted))"
+    case .failed(let end, let callIdFree): "failed(\(end), callIdFree: \(callIdFree))"
     case .lost(let loss): "lost(\(loss))"
     }
   }
@@ -121,6 +121,7 @@ extension AiLiveEnd {
     "subject_exhausted", "paused", "provider_unavailable",
   ]
   static let defects: Set<String> = ["invalid_request", "conflict"]
+  static let freeing: Set<String> = ["concurrency_exhausted", "subject_exhausted", "funding_required", "paused"]
 }
 
 extension AiLiveMessage {
@@ -217,7 +218,7 @@ extension AiLiveMessage {
         let end = try AiLiveEnd(value, opening: true)
         report(end, failures: AiLiveEnd.refusals)
         finish(.end(end))
-        return .failed(end, admitted: end.charged != nil)
+        return .failed(end, callIdFree: AiLiveEnd.freeing.contains(end.code ?? ""))
       }
       let started = try AiWire.fields(value, "type callId remainingSeconds")
       guard try started.member("type").asString() == "started", try started.member("callId").asString() == callId
