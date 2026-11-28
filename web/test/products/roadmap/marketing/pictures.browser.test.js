@@ -93,7 +93,11 @@ const centreOf = (locator) => locator.evaluate((element) => {
 });
 // A step is drawn just before its name.
 const stepNamed = (frame, name) => frame.locator('.ndlabel').filter({ hasText: new RegExp(`^${name}$`) }).locator('xpath=preceding-sibling::div[1]');
-const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Waits until every finite animation and transition on an element and inside it has run its course; a loop is left running.
+const settled = (locator) => locator.evaluate((element) => Promise.all(element.getAnimations({ subtree: true })
+  .filter((animation) => animation.effect.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => {}))));
+// Waits for the page to draw twice, so what a scroll or a press changed has reached the style.
+const drawnTwice = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const running = (body) => body.evaluate((element) => element.getAnimations({ subtree: true })
   .filter((animation) => animation instanceof CSSAnimation).map((animation) => animation.animationName));
 
@@ -105,7 +109,7 @@ test('at rest nothing moves in any picture on the brand root or Roadmap\'s landi
     for (let index = 0; index < await bodies.count(); index += 1) {
       const body = bodies.nth(index);
       await body.evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
-      await settle(150);
+      await drawnTwice(page);
       seen.push(await body.evaluate((element) => ({ animations: element.getAnimations({ subtree: true }).length,
         attributes: ['data-pointed', 'data-beat'].filter((name) => element.hasAttribute(name)) })));
     }
@@ -121,7 +125,7 @@ test('a step under the pointer grows 1.06 and brightens 1.12 about its own centr
   const docking = stepNamed(frame, 'Docking');
   const [x, y] = await centreOf(docking);
   await page.mouse.move(x, y + 21);
-  await settle(450);
+  await settled(docking);
   const hovered = await docking.evaluate((step) => ({ hover: step.matches(':hover'), scale: getComputedStyle(step).scale, filter: getComputedStyle(step).filter }));
   const centre = await centreOf(docking);
 
@@ -145,10 +149,10 @@ test('a step under the pointer grows 1.06 and brightens 1.12 about its own centr
   });
   const litAtRest = await stroke(lit);
   await page.mouse.move(...await midpoint(branch));
-  await settle(300);
+  await settled(branch);
   const dormantHovered = await stroke(branch);
   await page.mouse.move(...await midpoint(lit));
-  await settle(300);
+  await settled(frame.locator('.rmTree'));
   const litHovered = await stroke(lit);
   await page.close();
 
@@ -164,7 +168,7 @@ test('under reduced motion a step under the pointer brightens over 280ms and doe
   const frame = await frameOf(page, '.rmPicture');
   const docking = stepNamed(frame, 'Docking');
   await page.mouse.move(...await centreOf(docking));
-  await settle(450);
+  await settled(docking);
   const seen = await docking.evaluate((step) => {
     const style = getComputedStyle(step);
     return { scale: style.scale, filter: style.filter, transition: [style.transitionProperty, style.transitionDuration] };
@@ -179,10 +183,14 @@ test('arrival pulses the seven open steps on one phase while the crown breathes,
   const frame = await frameOf(page, '.rmPicture');
   await page.mouse.move(...await centreOf(frame.locator('.rmPicture-arrow')));
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.rmPicture)').hasAttribute('data-beat'), null, { timeout: 5000 });
-  const beat = await frame.evaluate((body) => body.getAnimations({ subtree: true }).map((animation) => ({
-    name: animation.animationName, open: animation.effect.target.classList.contains('nd-avail'),
-    crowned: animation.effect.target.classList.contains('is-crowned'), iterations: animation.effect.getTiming().iterations, start: animation.startTime,
-  })));
+  const beat = await frame.evaluate(async (body) => {
+    const animations = body.getAnimations({ subtree: true });
+    await Promise.all(animations.map((animation) => animation.ready));
+    return animations.map((animation) => ({
+      name: animation.animationName, open: animation.effect.target.classList.contains('nd-avail'),
+      crowned: animation.effect.target.classList.contains('is-crowned'), iterations: animation.effect.getTiming().iterations, start: animation.startTime,
+    }));
+  });
   await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.rmPicture)').hasAttribute('data-beat'), null, { timeout: 6000 });
   const afterBeat = await running(frame);
   await page.mouse.move(2, 2);
@@ -209,12 +217,18 @@ test('the unlock plays blossom, travels, wakes and the pulse, and ends with the 
   await page.mouse.move(...await centreOf(frame.locator('.rmUnlock-arrow')));
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.rmUnlock)').hasAttribute('data-beat'), null, { timeout: 5000 });
   const started = (await running(frame)).sort();
-  await settle(400);
-  const travelling = await frame.evaluate((body) => [...body.querySelectorAll('.rmTree-travel')].map((travel) => Number(getComputedStyle(travel).opacity)));
+  // Every animation of the beat held at 450ms in, between the travels' leaving and their arrival, then let go.
+  const travelling = await frame.evaluate((body) => {
+    const beat = body.getAnimations({ subtree: true }).filter((animation) => animation instanceof CSSAnimation);
+    beat.forEach((animation) => { animation.pause(); animation.currentTime = 450; });
+    const opacities = [...body.querySelectorAll('.rmTree-travel')].map((travel) => Number(getComputedStyle(travel).opacity));
+    beat.forEach((animation) => animation.play());
+    return opacities;
+  });
   await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.rmUnlock)').hasAttribute('data-beat'), null, { timeout: 8000 });
   await page.mouse.move(2, 2);
   await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.rmUnlock)').hasAttribute('data-pointed'), null, { timeout: 5000 });
-  await settle(400);
+  await settled(frame);
   const style = await drawn();
   // Chrome keeps a step it scaled on a layer of its own and rasterises its edge a few levels apart; drawn afresh, it is the picture.
   await frame.evaluate((body) => { body.style.display = 'none'; void body.offsetHeight; body.style.display = ''; });
@@ -240,10 +254,10 @@ test('a path card under the pointer lifts 2px and its crown breathes from its re
   });
   const rest = await looked();
   await page.mouse.move(...await centreOf(card.locator('.rmPaths-title')));
-  await settle(400);
+  await settled(card);
   const hovered = await looked();
   await page.mouse.move(2, 2);
-  await settle(400);
+  await settled(card);
   const left = await looked();
   await page.close();
 
@@ -251,7 +265,7 @@ test('a path card under the pointer lifts 2px and its crown breathes from its re
   assert.deepEqual(rest, { translate: 'none', opacity: '0.56', breath: [] });
   // Half a breath back, its first frame is the crest, .56, where the crown rests.
   assert.deepEqual([hovered.translate, hovered.breath], ['0px -2px', [['quest-halo-breathe', Infinity, -1200]]]);
-  assert.ok(Number(hovered.opacity) < 0.56, `the crown did not breathe: ${hovered.opacity}`);
+  assert.ok(Number(hovered.opacity) < 0.56, `the crown did not breathe in the 280ms the card took to lift: ${hovered.opacity}`);
   assert.deepEqual(left, rest);
 });
 
@@ -274,7 +288,7 @@ test('a subtask under the pointer takes the room\'s wash, by day and at night', 
     });
     const rest = await wash();
     await page.mouse.move(...await centreOf(row));
-    await settle(300);
+    await settled(row);
     washes.push({ colorScheme, surfaceHover, rest, hovered: await wash() });
     await page.close();
     assert.deepEqual(errors, []);
@@ -290,13 +304,13 @@ test('under reduced motion a path card neither lifts nor breathes, and a subtask
   const paths = await frameOf(page, '.rmPaths');
   const card = paths.locator('.rmPaths-card').first();
   await page.mouse.move(...await centreOf(card));
-  await settle(400);
+  await settled(card);
   const cardSeen = await card.evaluate((element) => ({ translate: getComputedStyle(element).translate,
     crown: Number(getComputedStyle(element.querySelector('.quest-thumb-halo')).opacity).toFixed(2), animations: element.getAnimations({ subtree: true }).length }));
   const step = await frameOf(page, '.rmStep');
   const row = step.locator('.rmStep-subtasks li').first();
   await page.mouse.move(...await centreOf(row));
-  await settle(300);
+  await settled(row);
   const washSeen = await row.evaluate((element) => [getComputedStyle(element, '::before').opacity, getComputedStyle(element, '::before').transitionDuration]);
   await page.close();
   assert.deepEqual(errors, []);
@@ -317,4 +331,60 @@ test('the room\'s shelf still breathes its crowns from the shared waveform', { t
   await page.close();
   assert.deepEqual(errors, []);
   assert.deepEqual(breath, [{ name: 'quest-halo-breathe', iterations: Infinity, state: 'running', keyframes: [[0, '0.28'], [0.5, '0.56'], [1, '0.28']] }]);
+});
+
+test('under reduced motion a pointed tree breathes no crown and plays no pulse, blossom, wake or travel', { timeout: 120000 }, async () => {
+  const seen = [];
+  for (const [path, selector] of [['/', '.rmPicture'], ['/roadmap', '.rmUnlock']]) {
+    const { page, errors } = await open(path, { reducedMotion: 'reduce' });
+    const frame = await frameOf(page, selector);
+    // What runs as the beat begins: the crown's breath and every beat animation would be there.
+    await frame.evaluate((body) => {
+      window.beats = [];
+      new MutationObserver(() => {
+        const on = body.hasAttribute('data-beat');
+        window.beats.push(on);
+        if (on) window.atBeat = body.getAnimations({ subtree: true }).filter((animation) => animation instanceof CSSAnimation).map((animation) => animation.animationName);
+      }).observe(body, { attributes: true, attributeFilter: ['data-beat'] });
+    });
+    await page.mouse.move(...await centreOf(frame.locator(`${selector}-arrow`)));
+    await page.waitForFunction(() => window.beats.length === 2, null, { timeout: 10000 });
+    seen.push({ path, pointed: await frame.evaluate((body) => body.hasAttribute('data-pointed')), beats: await page.evaluate(() => window.beats),
+      atBeat: await page.evaluate(() => window.atBeat), running: await running(frame) });
+    await page.close();
+    assert.deepEqual(errors, []);
+  }
+  assert.deepEqual(seen, [
+    { path: '/', pointed: true, beats: [true, false], atBeat: [], running: [] },
+    { path: '/roadmap', pointed: true, beats: [true, false], atBeat: [], running: [] },
+  ]);
+});
+
+test('the crown\'s glyph takes no pointer: the step under it does, or nothing', { timeout: 120000 }, async () => {
+  const { page, errors } = await open('/');
+  const frame = await frameOf(page, '.rmPicture');
+  const crown = frame.locator('.rmTree-crown');
+  const [x, y] = await centreOf(crown);
+  const hit = await page.evaluate(([px, py]) => ({ crown: Boolean(document.elementFromPoint(px, py)?.closest('.rmTree-crown')), events: getComputedStyle(document.querySelector('.rmTree-crown')).pointerEvents }), [x, y]);
+  await page.close();
+  assert.deepEqual(errors, []);
+  assert.deepEqual(hit, { crown: false, events: 'none' });
+});
+
+test('a finger tapping a path card on a hover device leaves it unlifted, its crown still and the picture unpointed', { timeout: 120000 }, async () => {
+  const { page, errors } = await open('/roadmap');
+  const frame = await frameOf(page, '.rmPaths');
+  const card = frame.locator('.rmPaths-card').nth(1);
+  const [x, y] = await centreOf(card);
+  await page.evaluate(() => { window.lifted = false; addEventListener('pointerup', () => { window.lifted = true; }, true); });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForFunction(() => window.lifted, null, { timeout: 10000 });
+  await drawnTwice(page);
+  const seen = await card.evaluate((element) => ({ hovered: element.matches(':hover'), translate: getComputedStyle(element).translate,
+    animations: element.getAnimations({ subtree: true }).length, pointed: element.closest('.front-picture-body').hasAttribute('data-pointed') }));
+  await page.close();
+  assert.deepEqual(errors, []);
+  assert.deepEqual({ translate: seen.translate, animations: seen.animations, pointed: seen.pointed }, { translate: 'none', animations: 0, pointed: false });
 });

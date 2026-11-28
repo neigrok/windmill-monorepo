@@ -85,7 +85,20 @@ const centreOf = (locator) => locator.evaluate((element) => {
   const box = element.getBoundingClientRect();
   return [box.left + box.width / 2, box.top + box.height / 2];
 });
-const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Waits until every finite animation and transition on an element and inside it has run its course.
+const settled = (locator) => locator.evaluate((element) => Promise.all(element.getAnimations({ subtree: true })
+  .filter((animation) => animation.effect.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => {}))));
+// Waits for the page to draw twice, so what a scroll changed has reached the style.
+const drawnTwice = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+// Records, in the page, the animations a body runs the moment its beat begins.
+const beatWatched = (frame) => frame.evaluate((body) => {
+  window.atBeat = null;
+  new MutationObserver(() => {
+    if (!body.hasAttribute('data-beat') || window.atBeat) return;
+    window.atBeat = body.getAnimations({ subtree: true }).filter((animation) => animation instanceof CSSAnimation)
+      .map((animation) => [animation.animationName, animation.effect.getTiming().duration, animation.effect.getTiming().iterations]);
+  }).observe(body, { attributes: true, attributeFilter: ['data-beat'] });
+});
 // What a colour computes to inside a picture, read off a probe that wears it.
 const colourOf = (frame, value) => frame.evaluate((body, colour) => {
   const probe = body.querySelector('.front-picture-stage > *').appendChild(document.createElement('i'));
@@ -102,7 +115,7 @@ test('at rest nothing moves in any picture on Gym\'s landing', { timeout: 120000
   const seen = [];
   for (let index = 0; index < await bodies.count(); index += 1) {
     await bodies.nth(index).evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
-    await settle(150);
+    await drawnTwice(page);
     seen.push(await bodies.nth(index).evaluate((element) => ({ animations: element.getAnimations({ subtree: true }).length,
       attributes: ['data-pointed', 'data-beat'].filter((name) => element.hasAttribute(name)) })));
   }
@@ -119,7 +132,7 @@ test('the unchanged lines\' run warms to the room\'s dim ink under the pointer, 
   const [faint, dim] = [await colourOf(coach, 'var(--gym-ink-faint)'), await colourOf(coach, 'var(--gym-ink-dim)')];
   const unfoldRest = await inkOf(unfold);
   await page.mouse.move(...await centreOf(unfold));
-  await settle(300);
+  await settled(unfold);
   const unfoldHovered = await inkOf(unfold);
   const kept = await coach.locator('.gyPicture-kept:not(.gyPicture-unfold)').evaluate((element) => getComputedStyle(element).color);
 
@@ -128,7 +141,7 @@ test('the unchanged lines\' run warms to the room\'s dim ink under the pointer, 
   const [ink, link] = [await colourOf(routine, 'var(--gym-ink)'), await colourOf(routine, 'var(--text-link)')];
   const schemeRest = await inkOf(row.locator('.gyRoutine-scheme'));
   await page.mouse.move(...await centreOf(row.locator('.gyRoutine-movement')));
-  await settle(300);
+  await settled(row);
   const schemeHovered = await inkOf(row.locator('.gyRoutine-scheme'));
   const others = await routine.locator('.gyRoutine li:not(:nth-child(2)) .gyRoutine-scheme').evaluateAll((elements) => elements.map((element) => getComputedStyle(element).color));
   await page.close();
@@ -143,10 +156,10 @@ test('the remembered weight lifts to the link\'s ink once as the pointer arrives
   const frame = await frameOf(page, '.gyRemembered');
   const weight = frame.locator('.gyRemembered-weight');
   const rest = await weight.evaluate((element) => getComputedStyle(element).color);
+  await beatWatched(frame);
   await page.mouse.move(...await centreOf(frame.locator('.gyRemembered-head')));
-  await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.gyRemembered)').hasAttribute('data-beat'), null, { timeout: 5000 });
-  const lift = await weight.evaluate((element) => element.getAnimations().map((animation) => [animation.animationName, animation.effect.getTiming().duration, animation.effect.getTiming().iterations]));
-  await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.gyRemembered)').hasAttribute('data-beat'), null, { timeout: 5000 });
+  await page.waitForFunction(() => window.atBeat && !document.querySelector('.front-picture-body:has(.gyRemembered)').hasAttribute('data-beat'), null, { timeout: 10000 });
+  const lift = await page.evaluate(() => window.atBeat);
   const after = await weight.evaluate((element) => ({ color: getComputedStyle(element).color, animations: element.getAnimations().length }));
   await page.close();
   assert.deepEqual(errors, []);
@@ -168,28 +181,35 @@ test('the strength line rings the vertex nearest the pointer by x, one at a time
   const rest = await shown();
   // The slot of the vertex at 28 (index 1) ends at 38, halfway to 48 (index 2); 101 is nearer 108 (index 5) than 88.
   await page.mouse.move(...await onPlot(37, 20));
-  await settle(250);
+  await settled(frame.locator('.gyLine-plot'));
   const first = await shown();
+  // A ring that loses the pointer goes at once, and the next shows at once: read with no wait.
   await page.mouse.move(...await onPlot(39, 20));
-  await settle(30);
   const across = await shown();
   await page.mouse.move(...await onPlot(101, 85));
-  await settle(30);
   const stepped = await shown();
   await page.mouse.move(...await onPlot(239, 60));
-  await settle(250);
   const last = await shown();
   await page.mouse.move(2, 2);
-  await settle(1200);
-  const held = await shown();
-  await settle(700);
+  // The plot's fade and the last ring's going, each held at moments of its own timeline, then let go.
+  const leaving = await frame.evaluate((body) => {
+    const transitionOf = (element) => element.getAnimations().find((animation) => animation instanceof CSSTransition);
+    const plot = transitionOf(body.querySelector('.gyLine-plot'));
+    const ring = transitionOf(body.querySelectorAll('.gyLine-ring')[11]);
+    const at = (transition, time, element) => { transition.pause(); transition.currentTime = time; const opacity = Number(getComputedStyle(element).opacity); transition.play(); return opacity; };
+    return {
+      plot: [plot.effect.getTiming().delay, plot.effect.getTiming().duration, at(plot, 1499, body.querySelector('.gyLine-plot')), at(plot, 1650, body.querySelector('.gyLine-plot'))],
+      ring: [ring.effect.getTiming().delay, ring.effect.getTiming().duration, at(ring, 1649, body.querySelectorAll('.gyLine-ring')[11])],
+    };
+  });
+  await settled(frame);
   const gone = await shown();
   await page.close();
 
   assert.deepEqual(errors, []);
-  assert.deepEqual({ rest, first, across, stepped, last, held, gone }, {
+  assert.deepEqual({ rest, first, across, stepped, last, leaving, gone }, {
     rest: { plot: 0, rings: [] }, first: { plot: 1, rings: [1] }, across: { plot: 1, rings: [2] }, stepped: { plot: 1, rings: [5] }, last: { plot: 1, rings: [11] },
-    held: { plot: 1, rings: [11] }, gone: { plot: 0, rings: [] },
+    leaving: { plot: [1500, 150, 1, 0], ring: [1650, 0, 1] }, gone: { plot: 0, rings: [] },
   });
 });
 
@@ -202,9 +222,10 @@ test('under reduced motion the colours, the ring\'s fade and the ink lift keep t
   const routine = await frameOf(page, '.gyRoutine');
   const scheme = await routine.locator('.gyRoutine-scheme').first().evaluate((element) => getComputedStyle(element).transitionDuration);
   const remembered = await frameOf(page, '.gyRemembered');
+  await beatWatched(remembered);
   await page.mouse.move(...await centreOf(remembered.locator('.gyRemembered-head')));
-  await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.gyRemembered)').hasAttribute('data-beat'), null, { timeout: 5000 });
-  const lift = await remembered.locator('.gyRemembered-weight').evaluate((element) => element.getAnimations().map((animation) => animation.animationName));
+  await page.waitForFunction(() => window.atBeat, null, { timeout: 10000 });
+  const lift = (await page.evaluate(() => window.atBeat)).map(([name]) => name);
   await page.close();
   assert.deepEqual(errors, []);
   assert.deepEqual({ unfold, plot, scheme, lift }, { unfold: '0.15s', plot: ['0.15s', '1.5s'], scheme: '0.15s', lift: ['gy-ink-lift'] });

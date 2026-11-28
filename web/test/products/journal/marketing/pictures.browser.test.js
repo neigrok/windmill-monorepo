@@ -85,7 +85,28 @@ const centreOf = (locator) => locator.evaluate((element) => {
   const box = element.getBoundingClientRect();
   return [box.left + box.width / 2, box.top + box.height / 2];
 });
-const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Waits until every finite animation and transition on an element and inside it has run its course; a loop is left running.
+const settled = (locator) => locator.evaluate((element) => Promise.all(element.getAnimations({ subtree: true })
+  .filter((animation) => animation.effect.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => {}))));
+// The transition an element is running, as [property, duration, easing], once it has run its course.
+const transitionOf = (locator) => locator.evaluate(async (element) => {
+  const [transition] = element.getAnimations().filter((animation) => animation instanceof CSSTransition);
+  if (!transition) return null;
+  const timing = [transition.transitionProperty, transition.effect.getTiming().duration, transition.effect.getTiming().easing];
+  await transition.finished.catch(() => {});
+  return timing;
+});
+// An animation's look at a moment of it: the animation is held there, read, and let go.
+const lookAt = (locator, time, read) => locator.evaluate((element, [at, property]) => {
+  const [animation] = element.getAnimations().filter((each) => each instanceof CSSAnimation);
+  animation.pause();
+  animation.currentTime = at;
+  const value = getComputedStyle(element)[property];
+  animation.play();
+  return { value, light: [animation.animationName, animation.effect.getTiming().duration] };
+}, [time, read]);
+// Waits for the page to draw twice, so what a scroll changed has reached the style.
+const drawnTwice = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 // What a colour computes to inside a picture, read off a probe that wears it.
 const colourOf = (frame, value) => frame.evaluate((body, colour) => {
   const probe = body.querySelector('.front-picture-stage > *').appendChild(document.createElement('i'));
@@ -110,7 +131,7 @@ test('at rest nothing moves in any picture on the journal\'s landing', { timeout
   const seen = [];
   for (let index = 0; index < await bodies.count(); index += 1) {
     await bodies.nth(index).evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
-    await settle(150);
+    await drawnTwice(page);
     seen.push(await bodies.nth(index).evaluate((element) => ({ animations: element.getAnimations({ subtree: true }).length,
       attributes: ['data-pointed', 'data-beat'].filter((name) => element.hasAttribute(name)) })));
   }
@@ -130,22 +151,18 @@ test('the seam between page and echo kindles over 1200ms while the picture is po
   const [rest] = await looked();
   const lit = await colourOf(frame, LIT);
   await page.mouse.move(...await centreOf(frame.locator('.jnPicture-page')));
-  await settle(1400);
+  const rising = await transitionOf(seam);
   const kindled = await looked();
   await page.mouse.move(2, 2);
-  await settle(1000);
-  const settling = await looked();
   const stillPointed = await pointed(frame);
-  await settle(1700);
-  const settled = await looked();
+  const falling = await transitionOf(seam);
+  const after = await looked();
   await page.close();
 
   assert.deepEqual(errors, []);
   assert.notEqual(rest, lit);
-  assert.deepEqual(kindled, [lit, '1.2s', 'cubic-bezier(0.45, 0, 0.15, 1)']);
-  assert.deepEqual([settling[1], settling[2], stillPointed], ['2.4s', 'linear', false]);
-  assert.ok(![rest, lit].includes(settling[0]), `the seam was ${settling[0]} 1000ms after the pointer left`);
-  assert.deepEqual(settled, [rest, '2.4s', 'linear']);
+  assert.deepEqual({ rising, kindled }, { rising: ['background-color', 1200, 'cubic-bezier(0.45, 0, 0.15, 1)'], kindled: [lit, '1.2s', 'cubic-bezier(0.45, 0, 0.15, 1)'] });
+  assert.deepEqual({ stillPointed, falling, after }, { stillPointed: false, falling: ['background-color', 2400, 'linear'], after: [rest, '2.4s', 'linear'] });
 });
 
 test('tonight\'s caret blinks only while the picture is pointed at and is solid the moment the pointer leaves; the echo\'s edge kindles', { timeout: 120000 }, async () => {
@@ -158,11 +175,10 @@ test('tonight\'s caret blinks only while the picture is pointed at and is solid 
   await page.mouse.move(...await centreOf(frame.locator('.jnWindow-earlier')));
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-pointed'), null, { timeout: 5000 });
   const blinking = await caretSeen();
-  const phases = new Set();
-  for (let sample = 0; sample < 8; sample += 1) {
-    phases.add((await caretSeen()).opacity);
-    await settle(170);
-  }
+  // The blink held at the middle of each half of two seconds: on, cut, on, cut.
+  const phases = [];
+  for (const time of [250, 750, 1250, 1750]) phases.push((await lookAt(caret, time, 'opacity')).value);
+  await settled(frame.locator('.jnWindow-echo'));
   const edge = await frame.locator('.jnWindow-echo').evaluate((element) => getComputedStyle(element).borderTopColor);
   const lit = await colourOf(frame, LIT);
   await page.mouse.move(2, 2);
@@ -172,7 +188,7 @@ test('tonight\'s caret blinks only while the picture is pointed at and is solid 
   assert.deepEqual(errors, []);
   assert.deepEqual(rest, { opacity: '1', blink: [] });
   assert.deepEqual(blinking.blink, [['jn-caret-blink', Infinity, 1000]]);
-  assert.deepEqual([...phases].sort(), ['0', '1'], 'the caret did not blink cut, on and off');
+  assert.deepEqual(phases, ['1', '0', '1', '0'], 'the caret did not blink cut, on and off');
   assert.equal(edge, lit, 'the echo\'s edge did not kindle');
   assert.deepEqual(left, { opacity: '1', blink: [] });
 });
@@ -188,11 +204,11 @@ test('the search hit takes the room\'s wash, edge to edge, and the dimmed days t
   });
   const rest = await washOf(hit);
   await page.mouse.move(...await centreOf(hit));
-  await settle(300);
+  await settled(hit);
   const hovered = await washOf(hit);
   const dim = frame.locator('.jnSearch li:not(.is-hit)').first();
   await page.mouse.move(...await centreOf(dim));
-  await settle(300);
+  await settled(frame);
   const dimWash = await dim.evaluate((element) => getComputedStyle(element, '::before').content);
   await page.close();
 
@@ -224,9 +240,9 @@ test('a page being written blinks its caret too, and a day dot grows 1.25 with i
   // and stands 3px inside a boundary: Chromium's hover lands a pixel apart from its hit test on an edge.
   const at = async (pointX, pointY) => {
     await page.mouse.move(2, 2);
-    await settle(200);
+    await settled(year);
     await page.mouse.move(pointX, pointY);
-    await settle(250);
+    await settled(year);
     return hovered();
   };
   const probes = {
@@ -246,7 +262,6 @@ test('under reduced motion the caret stays solid, a day dot rings without growin
   const night = await frameOf(page, '.jnWindow');
   await page.mouse.move(...await centreOf(night.locator('.jnWindow-earlier')));
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-pointed'), null, { timeout: 5000 });
-  await settle(300);
   const caret = await night.locator('.jnCursor').evaluate((element) => ({ opacity: getComputedStyle(element).opacity, animations: element.getAnimations().length }));
   const echo = await night.locator('.jnWindow-echo').evaluate((element) => getComputedStyle(element).transitionDuration);
   await page.mouse.move(2, 2);
@@ -257,7 +272,7 @@ test('under reduced motion the caret stays solid, a day dot rings without growin
   const year = await frameOf(page, '.jnYear');
   const dot = year.locator('.jnYear p').first().locator('i').first();
   await page.mouse.move(...await centreOf(dot));
-  await settle(250);
+  await settled(dot);
   const dotSeen = await dot.evaluate((element) => ({ scale: getComputedStyle(element).scale, ringed: getComputedStyle(element).boxShadow !== 'none', time: getComputedStyle(element).transitionDuration }));
   await page.close();
 
@@ -276,10 +291,9 @@ test('on a phone the echo\'s light plays once as each picture\'s beat and ends a
   const edgeRest = await colourOf(night, 'var(--border-subtle)');
   const edgeOf = () => edge.evaluate((element) => ({ colour: getComputedStyle(element).borderTopColor,
     light: element.getAnimations().filter((animation) => animation instanceof CSSAnimation).map((animation) => [animation.animationName, animation.effect.getTiming().duration]) }));
-  // Tonight's page stands in view as the landing opens, so it falls due first.
+  // Tonight's page stands in view as the landing opens, so it falls due first; its light is read held at 2400ms in.
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-beat'), null, { timeout: 5000 });
-  await settle(2000);
-  const edgeHeld = await edgeOf();
+  const edgeHeld = await lookAt(edge, 2400, 'borderTopColor');
   await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.jnWindow)').hasAttribute('data-beat'), null, { timeout: 10000 });
   const edgeAfter = await edgeOf();
 
@@ -289,12 +303,11 @@ test('on a phone the echo\'s light plays once as each picture\'s beat and ends a
     light: element.getAnimations().filter((animation) => animation instanceof CSSAnimation).map((animation) => [animation.animationName, animation.effect.getTiming().duration]) }));
   const seamRest = await colourOf(root, 'var(--border-subtle)');
   await page.waitForFunction(() => document.querySelector('.front-picture-body:has(.jnPicture)').hasAttribute('data-beat'), null, { timeout: 5000 });
-  await settle(2000);
-  const seamHeld = await seamOf();
+  const seamHeld = await lookAt(seam, 2400, 'backgroundColor');
   await page.waitForFunction(() => !document.querySelector('.front-picture-body:has(.jnPicture)').hasAttribute('data-beat'), null, { timeout: 10000 });
   const seamAfter = await seamOf();
   const pointed = await page.evaluate(() => [...document.querySelectorAll('.front-picture-body')].some((body) => body.hasAttribute('data-pointed')));
-  const pixels = { lit: await painted(page, lit), edgeHeld: await painted(page, edgeHeld.colour), seamHeld: await painted(page, seamHeld.colour) };
+  const pixels = { lit: await painted(page, lit), edgeHeld: await painted(page, edgeHeld.value), seamHeld: await painted(page, seamHeld.value) };
   await page.close();
 
   const desk = await open();
@@ -308,7 +321,7 @@ test('on a phone the echo\'s light plays once as each picture\'s beat and ends a
   await desk.page.close();
 
   assert.deepEqual([...errors, ...desk.errors], []);
-  assert.deepEqual([edgeHeld.light, edgeAfter.light, seamHeld.light, seamAfter.light], [[['jn-edge-light', 6000]], [], [['jn-seam-light', 6000]], []]);
+  assert.deepEqual([edgeHeld.light, edgeAfter.light, seamHeld.light, seamAfter.light], [['jn-edge-light', 6000], [], ['jn-seam-light', 6000], []]);
   assert.deepEqual([pixels.edgeHeld, pixels.seamHeld], [pixels.lit, pixels.lit], 'the light did not hold at the lamp\'s 26%');
   assert.deepEqual([edgeAfter.colour, seamAfter.colour], [edgeRest, seamRest], 'the light did not end as drawn');
   assert.deepEqual({ pointed, withHover }, { pointed: false, withHover: 0 });
