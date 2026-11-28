@@ -66,7 +66,8 @@ The rule is §5.2, in whole numbers:
 The floor is under revision (node `m2-revise-the-pause-floor`): the cases that pin a floor follow §5.2 as it
 stands, and no sequence recorded from a microphone is here until the floor is settled.
 
-Each sequence, and why its commits are what they are. S is 1,000,000 and a block's energy is written `b1`, `b2`.
+Each sequence, and why its commits are what they are. A block's energy is written `b1`, `b2`. Where a row names
+no energy, speech is 1,000,000 and quiet is 0 after a first quiet block.
 
 | Case | Arithmetic |
 |---|---|
@@ -125,7 +126,7 @@ The scene of the journal corpus's [`page-actions.json`](../domain/README.md#acti
 `SaveSpoken` is the one write of a take and of a recovery.
 
 - `mark` is the mark to store, or null to clear it. Every write decision carries it as the device write
-  `talkTake`, after the other device writes, which are in the order of their keys.
+  `talkTake`, among its device writes in the order of their keys.
 - `body` null leaves the page as it is: the decision writes the mark and nothing else.
 - Otherwise the decision is `SavePage`'s for the document `{body, mood, energy, source}`, its ratings those the
   phone holds for the day as `SaveWords` takes them, with the mark's write added. A refusal of `SavePage`'s is the
