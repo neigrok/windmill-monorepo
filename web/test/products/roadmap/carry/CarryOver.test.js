@@ -756,6 +756,32 @@ test('signed out, Coach asked about a roadmap the account already holds: a sign-
   assert.deepEqual(coachOf(phone), ASKED(id));
 });
 
+test('signed out, a step changed and Coach asked about a roadmap the account already holds: a sign-in whose push the change splits keeps the roadmap’s steps and the Coach records on both browsers, for the carry-over waits for the refusal to settle before it places the roadmap again', async (t) => {
+  const disk = browser(t);
+  const server = new Server();
+  const id = await plantedSignedOut();
+  await servedAs(t, server, 'A', id, 'Learn to sail');
+  const engine = await tab(t, disk, server);
+  const { carry, reported } = started(t, disk, engine);
+  await settled(carry, engine);
+  committedOf(await runner(engine).runAct(new ChangeStep(id, 'dock', { label: 'Leave the dock at slack water' })));
+  await askedAbout(engine, id);
+  engine.transport.account = 'A';
+  const due = (await engine.signIn('A')).due.find((question) => question.product === 'roadmap');
+  assert.equal((await engine.signIn('A', { decisions: { roadmap: 'add' }, counted: { roadmap: due.counted } })).complete, true);
+  await settled(carry, engine);
+  await sent(engine);
+  // The steps are read by id: keeping the change made signed out is node m3-a-refused-carry-keeps-the-edits-made-signed-out's.
+  const byId = (held) => ({ ...held, steps: held.steps.map(([step]) => step) });
+  const expected = { ...SAILED, steps: ['dock', 'solo', 'wind'] };
+  assert.deepEqual({ held: byId(holding(engine, id)), coach: coachOf(engine), notices: noticeCodes(engine), old: await oldStores(), reported },
+    { held: expected, coach: ASKED(id), notices: [], old: NOTHING_OLD, reported: [] });
+  const phone = await device(t, server, 'A');
+  for (const scope of [RoadmapScopes.tree(id), RoadmapScopes.overlay(id)]) await phone.subscribe(scope).catch(() => {});
+  await until(phone, () => JSON.stringify(byId(holding(phone, id))) === JSON.stringify(expected) && coachOf(phone).proposals.length === 1, 'the roadmap and the proposal on another device');
+  assert.deepEqual(coachOf(phone), ASKED(id));
+});
+
 // A carry the account's change interrupts: `change` runs as the carry-over asks the server of `tree`, its first await.
 function interrupted(engine, tree, change) {
   const subscribe = engine.subscribe.bind(engine);

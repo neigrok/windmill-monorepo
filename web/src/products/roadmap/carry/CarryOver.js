@@ -21,8 +21,9 @@
 // A creation keeps its old stores until the server takes it: the anon replica sends nothing, so a roadmap carried into
 // it keeps them until a sign-in adds it to an account and the server takes it there, or a sign-in's Discard takes them
 // with the work they were carried into (accountChange.js). Where the server refuses its id as taken or spent, the
-// roadmap is placed again as its fate says, from its old stores whole. Where it is placed, the Coach records the
-// refusal's notice holds are written again about it, and only then does the notice go.
+// roadmap is placed again as its fate says, from its old stores whole, once the refusal has settled: no entry the
+// refusal made an orphan still awaits its result. Where it is placed, the Coach records the refusal's notice holds are
+// written again about it, and only then does the notice go.
 //
 // What cannot land. Each roadmap's acts are written as one composed act with the ledger last; a part the domain refuses
 // is set aside, in the ledger's one list where it is past a bound, past a cap, of a roadmap deleted or of one no longer
@@ -270,14 +271,19 @@ export class CarryOver {
   }
 
   // Whether the server took the creation of `to` the carry-over made: `pending` while an entry of the replica still
-  // writes it, `refused` with the id of the notice that holds its refusal as taken or spent, or `landed`. A pending
-  // creation is waited on within the bound while the engine can reach the server; the anon replica sends nothing.
+  // writes it, or while an entry its refusal made an orphan awaits its result, since what that orphan holds back folds into
+  // the refusal's notice when the server refuses it; `refused` with the id of the notice that holds its refusal as taken or
+  // spent, once that has settled; or `landed`. A pending creation is waited on within the bound while the engine can reach
+  // the server; the anon replica sends nothing.
   creationAnswer(engine, to) {
     const answer = () => {
       const replica = engine.device.activeReplica;
       const notice = replica.notices.find((each) => each.scope === RoadmapScopes.account && TAKEN.has(each.code)
         && (each.content?.d ?? []).some((delta) => delta.t === Roadmap.type && String(delta.id) === to));
-      if (notice) return { kind: 'refused', notice: notice.id };
+      if (notice) {
+        const settling = replica.entries().some((entry) => `notice:${entry.orphanOf}` === notice.id && entry.state !== 'acked');
+        return settling ? { kind: 'pending' } : { kind: 'refused', notice: notice.id };
+      }
       return replica.entries().some((entry) => entry.state !== 'acked' && writesTree(entry, to)) ? { kind: 'pending' } : { kind: 'landed' };
     };
     return new Promise((resolve) => {

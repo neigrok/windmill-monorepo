@@ -459,7 +459,9 @@ items it carried, and each record it set aside for §6's one list.
   so a roadmap carried there keeps them until a sign-in adds it to an account and the server takes
   it, or a sign-in's Discard takes them with the work they were carried into (§5). Where the server
   refuses its id as taken or spent, the roadmap is placed again by the rules above, from its old
-  stores whole. One the account's list holds is carried to it as changes. Where the roadmap is placed, the [Roadmap
+  stores whole, once the refusal has settled: no entry it made an orphan still awaits its result,
+  so nothing the carry writes is held back behind one and folds into the refusal's notice. One the
+  account's list holds is carried to it as changes. Where the roadmap is placed, the [Roadmap
   Coach](roadmap-coach.md) records the notice holds are written again about it, and then the notice
   goes; one made signed out that names nobody and that the account's list does not hold waits, as the
   first point says, and its notice keeps them.
