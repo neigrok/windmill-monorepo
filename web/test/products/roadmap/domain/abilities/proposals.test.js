@@ -1,12 +1,14 @@
 // @ts-check
 // A proposal's rules beyond the corpus's cases: the ops' rows and the Shape rule held to the catalog, a name of a ref's
-// form, and the caps too large to hold as a case: a roadmap's steps and links, and a base past its 262,144 bytes.
+// form, the caps too large to hold as a case: a roadmap's steps and links, and a base past its 262,144 bytes; and what a
+// set reduces to for Apply, held to its fold.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { jcsBytes } from '../../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { jcs, jcsBytes } from '../../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Catalog, JsonSchema } from '../../../../../src/platform/domain-kit/abilities.js';
-import { ProposalAbilities, ProposalOps } from '../../../../../src/products/roadmap/domain/abilities/proposals.js';
+import { ProposalAbilities, ProposalFold, ProposalOps } from '../../../../../src/products/roadmap/domain/abilities/proposals.js';
+import { RoadmapTree } from '../../../../../src/products/roadmap/domain/records.js';
 import { Contract } from '../../../../platform/domain-kit/vectors.js';
 
 /** @typedef {import('../../../../../src/products/roadmap/domain/records.js').TreeInput} TreeInput */
@@ -109,4 +111,73 @@ test('a base past the 262,144 bytes the sync registry caps it at refuses the who
   const minted = proposing(smaller, changes);
   assert.ok('proposal' in minted, JSON.stringify(minted).slice(0, 200));
   assert.equal(minted.proposal.base.length, 2 + 100 + 100);
+});
+
+// The records of a roadmap as its reading compares them: every step with its words, colour and order, present or not,
+// the live links, the kinds and the marks.
+/** @param {RoadmapTree} tree */
+function compared(tree) {
+  return {
+    nodes: tree.nodes.map(({ id, present, label, icon, color, description, links, ord }) => ({ id, present, label, icon, color, description, links, ord }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1)),
+    links: tree.edges.filter((edge) => edge.present).map((edge) => jcs([edge.from, edge.to])).sort(),
+    kinds: tree.kinds.map(({ id, present, hue, label, description, ord }) => ({ id, present, hue, label, description, ord })).sort((a, b) => (a.id < b.id ? -1 : 1)),
+    marks: [...tree.marks.values()].filter((mark) => mark.status !== 'none' || mark.outOfOrder).map(({ node, status, outOfOrder }) => ({ node, status, outOfOrder }))
+      .sort((a, b) => (a.node < b.node ? -1 : 1)),
+  };
+}
+
+// The copy with a reduction written over it, as the engine would: the recolours repaint their wearers first, then each
+// record takes the fields written, a new one made with them, a removed step dead.
+/** @param {TreeInput} copy @param {import('../../../../../src/products/roadmap/domain/abilities/proposals.js').Reduced} reduced */
+function writtenOver(copy, { recolours, kinds, nodes, links, marks }) {
+  const steps = new Map((copy.nodes ?? []).map((node) => [node.id, { ...node }]));
+  const legend = new Map((copy.kinds ?? []).map((kind) => [kind.id, { ...kind }]));
+  const edges = new Map((copy.edges ?? []).map((edge) => [jcs([edge.from, edge.to]), { ...edge }]));
+  const marked = new Map((copy.marks ?? []).map((mark) => [mark.node, { ...mark }]));
+  for (const { kind, hue, wearers } of recolours) {
+    legend.set(kind, { .../** @type {any} */ (legend.get(kind)), hue });
+    for (const id of wearers) steps.set(id, { .../** @type {any} */ (steps.get(id)), color: hue });
+  }
+  for (const { id, removed, fields } of kinds) legend.set(id, { ...(legend.get(id) ?? { id, born: null }), ...fields, present: !removed });
+  for (const { id, removed, fields } of nodes) steps.set(id, { ...(steps.get(id) ?? { id, born: null }), ...fields, present: !removed });
+  for (const { from, to, alive } of links) edges.set(jcs([from, to]), { from, to, present: alive });
+  for (const { node, mark } of marks) marked.set(node, { node, ...mark, recordedAt: null, deviceAt: null });
+  return new RoadmapTree(/** @type {any} */ ({ ...copy, nodes: [...steps.values()], edges: [...edges.values()], kinds: [...legend.values()], marks: [...marked.values()] }));
+}
+
+test('what a set reduces to for Apply, written over the copy, leaves every register as the fold leaves it, for every accepted case', () => {
+  /** @type {any[]} */
+  const accepted = /** @type {any[]} */ (Contract.json('roadmap/abilities/propose_roadmap_change.json')).filter((each) => each.expect.proposal !== undefined);
+  assert.ok(accepted.length > 10);
+  for (const each of accepted) {
+    const ids = [...(each.given.ids ?? [])];
+    const minted = propose(each.given, each.call.input, each.about, () => /** @type {string} */ (ids.shift()));
+    const folded = ProposalFold.over(each.given, each.call.input.treeId, minted.proposal.changes);
+    assert.ok('fold' in folded, each.case);
+    const { fold } = folded;
+    const copy = /** @type {TreeInput} */ (each.given.trees.find((/** @type {TreeInput} */ tree) => tree.id === each.call.input.treeId));
+    assert.deepEqual(compared(writtenOver(copy, fold.reduced)), compared(fold.tree), each.case);
+  }
+});
+
+test('the recolours a set reduces to come first, each over the copy as the ones before it left it, and a new kind is written whole', () => {
+  const standing = sailing({ nodes: [{ id: 'a', ord: 'a0', label: 'Leave the dock' }, { id: 'b', ord: 'a1', label: 'Tie a bowline', color: 'olive' },
+    { id: 'c', ord: 'a2', label: 'Sail with an instructor', color: 'sky' }] });
+  const folded = ProposalFold.over(standing, T, [
+    { op: 'set_kind', nodeId: 'a', kind: 'learn' },
+    { op: 'recolor_kind', kind: 'learn', hue: 'gold' },
+    { op: 'recolor_kind', kind: 'build', hue: 'olive' },
+    { op: 'add_kind', kind: 'k_sail', label: 'Sail', hue: 'terracotta' },
+    { op: 'set_kind', nodeId: 'c', kind: 'k_sail' },
+    { op: 'recolor_kind', kind: 'k_sail', hue: 'brick' },
+  ]);
+  assert.ok('fold' in folded);
+  assert.deepEqual(folded.fold.reduced, {
+    recolours: [{ kind: 'learn', hue: 'gold', wearers: ['b'] }, { kind: 'build', hue: 'olive', wearers: ['a'] }],
+    kinds: [{ id: 'k_sail', created: true, removed: false, fields: { hue: 'brick', label: 'Sail', description: '', ord: 'a2' } }],
+    nodes: [{ id: 'a', created: false, removed: false, fields: { color: 'gold' } }, { id: 'c', created: false, removed: false, fields: { color: 'brick' } }],
+    links: [],
+    marks: [],
+  });
 });

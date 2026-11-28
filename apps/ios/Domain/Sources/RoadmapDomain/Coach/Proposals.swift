@@ -231,7 +231,7 @@ struct ProposalRemoval {
 
 // What folding one change writes, and what it asks of the copy before it writes: the registers it names without writing them,
 // which the turn may have read; the check that is the op's own, of its links or hues; the marks it keeps; whether it changes
-// nothing; and the step it removes.
+// nothing; the step it removes; and the recolour of a kind it makes.
 struct ProposalFolding {
   var writes: [ProposalWrite]
   var names: [ProposalWrite] = []
@@ -239,6 +239,7 @@ struct ProposalFolding {
   var marks: (() -> CoachRefusal?)? = nil
   var unchanged: Bool? = nil
   var removes: String? = nil
+  var recolour: (kind: String, hue: String)? = nil
 }
 
 // The records of a scratch copy in the order the roadmap holds them, a record a change makes after them, each found by its
@@ -350,6 +351,7 @@ public final class ProposalFold {
   var touched: [BaseRegister] = []
   var touchedKeys = Set<String>()
   var removes: [ProposalRemoval] = []
+  var recolours: [(kind: String, hue: String)] = []
   var cachedTree: RoadmapTree?
   var cachedRoadmap: StandingRoadmap?
 
@@ -416,6 +418,108 @@ public final class ProposalFold {
     return ["kinds": .array(kinds), "steps": .array(steps)]
   }
 
+  // §7 Apply: what a set writes, one write a register. The room's recolour of each kind the copy holds, in the order the
+  // changes make them, each repainting the steps that wear the kind's hue as the copy and the recolours before it leave them
+  // (`wearers`, by id); then every kind, step, link and mark the folded copy holds otherwise than the copy as the recolours
+  // leave it, each record by id: one the copy does not hold `created`, with every field the fold gave it, a step that ends
+  // removed `removed`, and the fields of the rest that changed. A link the copy does not hold that ends removed is written as
+  // nothing.
+  public struct Reduced: Sendable, Equatable {
+    public struct Recolour: Sendable, Equatable {
+      public let kind: String
+      public let hue: String
+      public let wearers: [String]
+    }
+
+    public struct RecordWrite: Sendable, Equatable {
+      public let id: String
+      public let created: Bool
+      public let removed: Bool
+      public let fields: [String: JSON]
+    }
+
+    public struct LinkWrite: Sendable, Equatable {
+      public let from: String
+      public let to: String
+      public let alive: Bool
+      public let created: Bool
+    }
+
+    public struct MarkWrite: Sendable, Equatable {
+      public let node: String
+      public let status: String
+      public let outOfOrder: Bool
+    }
+
+    public let recolours: [Recolour]
+    public let kinds: [RecordWrite]
+    public let nodes: [RecordWrite]
+    public let links: [LinkWrite]
+    public let marks: [MarkWrite]
+
+    public var json: JSON {
+      func written(_ record: RecordWrite) -> JSON {
+        ["id": .string(record.id), "created": .bool(record.created), "removed": .bool(record.removed), "fields": .object(JSON.Object(uniqueKeysWithValues: record.fields.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }))]
+      }
+      return ["recolours": .array(recolours.map { ["kind": .string($0.kind), "hue": .string($0.hue), "wearers": .array($0.wearers.map { .string($0) })] }),
+              "kinds": .array(kinds.map(written)), "nodes": .array(nodes.map(written)),
+              "links": .array(links.map { ["from": .string($0.from), "to": .string($0.to), "alive": .bool($0.alive), "created": .bool($0.created)] }),
+              "marks": .array(marks.map { ["node": .string($0.node), "mark": ["status": .string($0.status), "outOfOrder": .bool($0.outOfOrder)]] })]
+    }
+  }
+
+  // §7 Apply: what the set writes, one write a register. The recolours are the room's commands, so they come first, each over
+  // the copy as the ones before it left it; every other register the folded copy holds otherwise is then written its folded
+  // value, which the commands' repainting cannot reach after them.
+  public var reduced: Reduced {
+    var hues = ByText<String>(original.kinds.map { (Array($0.id.utf8), $0.hue) }) { _, last in last }
+    var colours = ByText<String>(original.nodes.map { (Array($0.id.utf8), $0.color) }) { _, last in last }
+    let byId = { (a: String, b: String) in a.utf8.lexicographicallyPrecedes(b.utf8) }
+    let recoloured = recolours.map { (kind: String, hue: String) -> Reduced.Recolour in
+      let old = hues[kind]
+      let wearers = original.nodes.map(\.id).filter { colours[$0].map { Array($0.utf8) } == old.map { Array($0.utf8) } }.sorted(by: byId)
+      for id in wearers { colours[id] = hue }
+      hues[kind] = hue
+      return Reduced.Recolour(kind: kind, hue: hue, wearers: wearers)
+    }
+    func changed<Held>(_ folded: [Held], _ copy: [Held], id: (Held) -> String, present: (Held) -> Bool,
+                       fields: (Held, Bool) -> [(String, JSON)]) -> [Reduced.RecordWrite] {
+      let before = ByText<Held>(copy.map { (Array(id($0).utf8), $0) }) { _, last in last }
+      return folded.sorted { byId(id($0), id($1)) }.compactMap { record in
+        let written = fields(record, false)
+        guard let held = before[id(record)] else {
+          return Reduced.RecordWrite(id: id(record), created: true, removed: !present(record), fields: Dictionary(written) { _, last in last })
+        }
+        if !present(record) && present(held) { return Reduced.RecordWrite(id: id(record), created: false, removed: true, fields: [:]) }
+        let was = Dictionary(fields(held, true)) { _, last in last }
+        let differing = written.filter { was[$0.0] != $0.1 }
+        return differing.isEmpty ? nil : Reduced.RecordWrite(id: id(record), created: false, removed: false, fields: Dictionary(differing) { _, last in last })
+      }
+    }
+    let kinds = changed(records.kinds, original.kinds, id: \.id, present: \.present) { kind, copied in
+      [("hue", .string(copied ? hues[kind.id] ?? kind.hue : kind.hue)), ("label", .string(kind.label)), ("description", .string(kind.description)), ("ord", .string(kind.ord))]
+    }
+    let nodes = changed(records.nodes, original.nodes, id: \.id, present: \.present) { node, copied in
+      [("label", .string(node.label)), ("icon", .string(node.icon)), ("color", .string(copied ? colours[node.id] ?? node.color : node.color)),
+       ("description", .string(node.description)), ("links", .array(node.links.map(\.json))), ("ord", .string(node.ord))]
+    }
+    let copiedEdges = Dictionary(original.edges.map { (ScratchRecords.linkKey($0.from, $0.to), $0.present) }) { _, last in last }
+    let links = records.edges.sorted { byId($0.from, $1.from) || ($0.from.utf8.elementsEqual($1.from.utf8) && byId($0.to, $1.to)) }.compactMap { edge -> Reduced.LinkWrite? in
+      let before = copiedEdges[ScratchRecords.linkKey(edge.from, edge.to)]
+      if edge.present == (before == true) || (before == nil && !edge.present) { return nil }
+      return Reduced.LinkWrite(from: edge.from, to: edge.to, alive: edge.present, created: before == nil)
+    }
+    let copiedMarks = ByText<RoadmapTree.Mark>(original.marks.map { (Array($0.node.utf8), $0) }) { _, last in last }
+    let marks = records.marks.sorted { byId($0.node, $1.node) }.compactMap { mark -> Reduced.MarkWrite? in
+      let before = copiedMarks[mark.node]
+      let unset = mark.status.utf8.elementsEqual(((try? Roadmap.Defaults.Progress.mark.member("status").asString()) ?? "none").utf8) && !mark.outOfOrder
+      if let before, before.status.utf8.elementsEqual(mark.status.utf8), before.outOfOrder == mark.outOfOrder { return nil }
+      if before == nil && unset { return nil }
+      return Reduced.MarkWrite(node: mark.node, status: mark.status, outOfOrder: mark.outOfOrder)
+    }
+    return Reduced(recolours: recoloured, kinds: kinds, nodes: nodes, links: links, marks: marks)
+  }
+
   // §7 One change in the record's form folded over the scratch, after the checks of the copy, in order: a step under a delete
   // the person can still undo, an id it gives that the copy holds, the steps and kinds it names, the caps of the roadmap's
   // counts, the op's own check of its links or hues, a register the turn saw at another stamp than the copy's, the marks,
@@ -443,6 +547,7 @@ public final class ProposalFold {
     if let marks = folding.marks?() { return marks }
     if folding.unchanged ?? folding.writes.allSatisfy({ records.value($0) == $0.value }) { return CoachRefusal(.noChange, change.subject) }
     if let removed = folding.removes { removes.append(removal(removed)) }
+    if let recolour = folding.recolour, !given.contains(Array(recolour.kind.utf8)) { recolours.append(recolour) }
     for each in touching where touchedKeys.insert(each.key).inserted { touched.append(each.register) }
     for each in giving { given.insert(Array(each.id.utf8)) }
     for write in folding.writes { records.write(write) }
@@ -596,7 +701,7 @@ public final class ProposalFold {
       var repaint = ProposalWrite.node($0.id, "color", .string(hue))
       repaint.base = false
       return repaint
-    }, check: { self.hueRefusal(hue, kind) })
+    }, check: { self.hueRefusal(hue, kind) }, recolour: (kind, hue))
   }
 
   // §6.1 `hue-taken`: a hue another present kind wears, checked at each change as the room's recolour checks it, so two kinds
