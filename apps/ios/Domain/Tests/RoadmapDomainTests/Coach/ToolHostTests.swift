@@ -28,7 +28,7 @@ struct ToolHostTests {
     }
     sync()
     let heard = Heard()
-    let host = RoadmapToolHost(runner: runner, about: created.tree.description) { heard.told.append("\($0) \($1.rawValue)") }
+    let host = RoadmapToolHost(runner: runner, about: created.tree.description) { heard.told.append("\($0.ability) \($1.rawValue)") }
     return (created.tree.description, Dictionary(uniqueKeysWithValues: created.steps.map { ($0.key, $0.id.description) }), host, heard)
   }
 
@@ -262,7 +262,7 @@ struct ToolHostTests {
     let id = ID<RoadmapEntry>(RecordID(tree))
     let (dock, knot, sail) = (ID<RoadmapStep>(RecordID(steps["dock"]!)), ID<RoadmapStep>(RecordID(steps["knot"]!)), ID<RoadmapStep>(RecordID(steps["sail"]!)))
     let before = try StandingRoadmaps(reading: phone.runner)
-    let host = RoadmapToolHost(runner: phone.runner, about: tree, standing: { before }) { heard.told.append("\($0) \($1.rawValue)") }
+    let host = RoadmapToolHost(runner: phone.runner, about: tree, standing: { before }) { heard.told.append("\($0.ability) \($1.rawValue)") }
     for act in [AnyActAction<RoadmapRefusal>(ChangeStep(tree: id, step: knot, changes: .init(label: "Tie a cleat hitch"))),
                 AnyActAction(MarkStep.complete(tree: id, step: dock)), AnyActAction(ChangePrerequisites(tree: id, step: knot, add: [dock]))] {
       guard case .committed = try phone.runner.runComposed([act]) else { throw ContractError("the person's write was not taken") }

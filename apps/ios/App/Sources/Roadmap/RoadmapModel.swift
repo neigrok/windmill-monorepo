@@ -320,17 +320,20 @@ final class RoadmapModel {
       // A direct write of Coach's, by its receipt (11.3), and its Undo taken (11.4).
       case coachWrote(CoachReceipt)
       case coachUndone
+      // A Coach conversation deleted in History, by its title (11.7).
+      case deletedConversation(String)
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, the act it takes back, and the kit's
     // Undo of that act, with the checks it is asked with.
     struct Undo: Equatable {
-      // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, or a roadmap's
-      // delete, with the roadmap where the room had it open, which its Undo opens again.
+      // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, a roadmap's
+      // delete, with the roadmap where the room had it open, which its Undo opens again, or a Coach conversation's delete.
       enum Act: Equatable {
         case step(String)
         case workspace(String)
         case roadmapDelete(reopens: String?)
+        case conversation
 
         // An act on steps or kinds keeps the kit's Undo of it past the engine's hold, so a step's delete is restored once
         // its hold has ended too; a roadmap's delete and a removal from a workspace are undone by their hold alone.
@@ -1163,6 +1166,8 @@ final class RoadmapModel {
       case .roadmapDelete(let reopens):
         telemetry.event("roadmap_deletion", properties: ["step": "undo", "outcome": taken ? "cancelled" : "released"])
         if taken, let reopens { arriving = reopens }
+      // Roadmap Coach §13 names no event of a conversation's delete or its Undo.
+      case .conversation: break
       }
       if !taken { show(Band(unrestored: receipt.says)) }
     } catch {

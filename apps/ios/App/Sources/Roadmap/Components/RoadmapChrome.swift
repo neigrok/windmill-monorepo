@@ -78,7 +78,7 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(locked) steps locked again", locale: .copy,
                     comment: "The band after a step is reset: how many steps it returned to Locked")
     case .deleted(let step):
-      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words, a link's title or a Coach conversation's title")
     case .deletedSteps(let count):
       return String(localized: "\(count) steps deleted", locale: .copy, comment: "The band while a delete of several steps is held: how many")
     case .recolored(let count):
@@ -94,15 +94,15 @@ extension RoadmapModel.Band.Says {
       return cleared ? String(localized: "Guide removed", comment: "The band after a roadmap's guide is saved blank")
         : String(localized: "Guide saved", comment: "The band after a roadmap's guide is saved")
     case .deletedRoadmap(let title):
-      return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+      return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words, a link's title or a Coach conversation's title")
     case .forked(let steps):
       return String(localized: "Forked · \(steps) steps planted", locale: .copy, comment: "The band once a fork's copy opens: how many steps it planted")
     case .unforked(let offline):
       return offline ? String(localized: "Forking needs a connection.") : String(localized: "Couldn’t fork this roadmap. Try again.")
     case .checked(_, let label):
       return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
-    case .deletedFromWorkspace(let name):
-      return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .deletedFromWorkspace(let name), .deletedConversation(let name):
+      return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words, a link's title or a Coach conversation's title")
     case .planted(let steps, let done):
       if done == 0 { return String(localized: "Roadmap planted · \(steps) steps", locale: .copy, comment: "The band once a roadmap is planted from a plan: how many steps it holds") }
       return String(localized: "Roadmap planted · \(steps) steps · \(done) already done", locale: .copy,
@@ -127,7 +127,7 @@ extension RoadmapModel.Band.Says {
       let lost: String? = switch receipt {
       case .deleted(let step): RoadmapModel.Row.name(of: step)
       case .deletedRoadmap(let title): ListedRoadmap.name(of: title)
-      case .removedKind(let name), .deletedFromWorkspace(let name): name
+      case .removedKind(let name), .deletedFromWorkspace(let name), .deletedConversation(let name): name
       default: nil
       }
       guard let lost else { return String(localized: "Couldn’t undo", comment: "The band after an Undo that brought nothing back of an act that is not a delete") }

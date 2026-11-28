@@ -684,8 +684,9 @@ what a call answered (INV-5):
 
 - `calls`: each call the turn made, in order, the context first as the ability `context`: `{ability, treeId, outcome,
   steps?, done?, nodeIds?, fields?}`, `treeId` null for a call about all roadmaps, `outcome` `ok` or the refusal code, and of
-  a read how many steps it answered and how many of them were done, the steps it named by id (at most 50) and the fields it
-  asked for. What Coach Read (board 11.8) and the line under an answer are made from them.
+  a read how many steps it answered, `done` how many of them were done where the read answered it (the context, and a
+  `get_tree` that asked each step's state), the steps it named by id (at most 50) and the fields it asked for. What Coach
+  Read (board 11.8) and the line under an answer are made from them, and say no done count where a call recorded none.
 - `receipts`: each direct write that landed (D-4), at most `MAX_WRITES`: `{ability, treeId, nodeId, label, change,
   fields?, items?, prerequisites?}`, `label` the step's label after the write, the person's own roadmap data in their own
   records, and `change` one of `completed`, `reset`, `changed` (with the `fields` changed, of `label`, `description` and

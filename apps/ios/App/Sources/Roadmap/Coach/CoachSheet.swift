@@ -22,13 +22,16 @@ struct CoachSheet: View {
       CoachThreadView(coach: coach, roadmap: roadmap)
         .modifier(CoachSheetTitle(title: String(localized: "Coach"), subtitle: scope))
         .toolbar {
+          // The bar's controls are neutral, as the boards draw them; the accent stays with the thread's links.
           ToolbarItem(placement: .topBarLeading) {
             Button { coach.sheet = false } label: { Image(systemName: "xmark") }.accessibilityLabel(Text("Close"))
-              .accessibilityIdentifier("roadmap-coach-close")
+              .tint(RoadmapPalette.ink).accessibilityIdentifier("roadmap-coach-close")
           }
           ToolbarItemGroup(placement: .topBarTrailing) {
-            Button("History", systemImage: "clock.arrow.circlepath") { path.append(.history) }.accessibilityIdentifier("roadmap-coach-history")
-            Button("New Chat", systemImage: "square.and.pencil") { coach.newChat() }.accessibilityIdentifier("roadmap-coach-new-chat")
+            Button("History", systemImage: "clock.arrow.circlepath") { path.append(.history) }.tint(RoadmapPalette.ink)
+              .accessibilityIdentifier("roadmap-coach-history")
+            Button("New Chat", systemImage: "square.and.pencil") { coach.newChat() }.tint(RoadmapPalette.ink)
+              .accessibilityIdentifier("roadmap-coach-new-chat")
           }
         }
         .navigationDestination(for: Page.self) { page in
@@ -47,15 +50,14 @@ struct CoachSheet: View {
     .onChange(of: coach.focused) { _, focused in if focused { detent = .large } }
   }
 
-  // The scope, written only here (11.5): the roadmap's name, About the step it started from, or All roadmaps.
+  // The scope, written only here (11.5): what the conversation is about, the roadmap's name, About the step it started from,
+  // or All roadmaps.
   var scope: String {
     _ = coach.revision
-    let thread = coach.conversation?.thread
-    let treeId = thread?.treeId ?? coach.about?.treeId
-    if let step = thread?.stepId ?? coach.about?.step, let treeId, let label = roadmap.label(of: step, in: treeId) {
+    guard let treeId = coach.about?.treeId else { return String(localized: "All roadmaps") }
+    if let step = coach.about?.step, let label = roadmap.label(of: step, in: treeId) {
       return String(localized: "About \(label)", comment: "The scope of a Coach conversation started from a step: the step's name")
     }
-    guard let treeId else { return String(localized: "All roadmaps") }
     return roadmap.title(of: treeId)
   }
 }
@@ -82,7 +84,8 @@ struct CoachSheetTitle: ViewModifier {
 }
 
 // The thread (11.5, 11.6, 11.6b, 11.6c): each question as a bubble, each answer as text with its steps as links, its line of
-// what Coach read, and its receipts, one row each, Undone where its write was taken back; the bottom in view.
+// what Coach read, and its receipts, one row each, Undone where its write was taken back. A short thread starts under the
+// bar; one that overflows keeps its bottom in view.
 struct CoachThreadView: View {
   let coach: RoadmapCoach
   let roadmap: RoadmapModel
@@ -97,7 +100,9 @@ struct CoachThreadView: View {
         }
       }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 12)
     }
-    .defaultScrollAnchor(.bottom)
+    .defaultScrollAnchor(.top, for: .alignment)
+    .defaultScrollAnchor(.bottom, for: .initialOffset)
+    .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .background(RoadmapPalette.canvas)
     .environment(\.openURL, OpenURLAction { url in
       guard url.scheme == "windmill-step", let step = url.host() else { return .systemAction }
@@ -123,10 +128,13 @@ struct CoachThreadView: View {
           .textSelection(.enabled).accessibilityIdentifier("roadmap-coach-answer")
       }
       let fates = Set((conversation?.fates ?? []).filter { $0.messageId == message.id && $0.fate == "undone" }.map(\.receipt))
-      ForEach(Array((message.receipts ?? []).enumerated()), id: \.offset) { index, receipt in
-        let undone = fates.contains(index)
-        Label(CoachReceiptLine.words(receipt, undone: undone), systemImage: undone ? "arrow.counterclockwise" : "checkmark")
-          .font(.footnote).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-coach-receipt")
+      // Each receipt in its place, the index its fate names; one in a shape this build does not read is drawn as nothing.
+      ForEach(Array((message.receipts ?? []).enumerated()), id: \.offset) { index, held in
+        if let receipt = held.receipt {
+          let undone = fates.contains(index)
+          Label(CoachReceiptLine.words(receipt, undone: undone), systemImage: undone ? "arrow.counterclockwise" : "checkmark")
+            .font(.footnote).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-coach-receipt")
+        }
       }
       // A direct write's answer is its receipt alone (11.6c); an answer in words says what Coach read for it.
       if !text.isEmpty, let read = Self.readLine(message.calls) {
@@ -165,7 +173,8 @@ struct CoachThreadView: View {
 }
 
 // History (11.7): one list of every conversation, the open roadmap's first, each tagged with its roadmap, All roadmaps or the
-// step it is about, with the proposal it minted; the title menu filters by roadmap, and a swipe deletes. No composer.
+// step it is about, with the proposal it minted, and its day by the phone's clock; the title menu filters by roadmap, and a
+// swipe deletes, held with the room's band and its Undo at the foot. No composer.
 struct CoachHistoryView: View {
   let coach: RoadmapCoach
   let roadmap: RoadmapModel
@@ -175,11 +184,12 @@ struct CoachHistoryView: View {
   var body: some View {
     let _ = coach.revision
     let history = coach.history()
+    let now = coach.now()
     let keep = { (row: CoachHistory.Row) in only == nil || row.thread.treeId == only }
     List {
-      Section { ForEach((history?.current ?? []).filter(keep)) { line($0) } }
+      Section { ForEach((history?.current ?? []).filter(keep)) { line($0, now: now) } }
       let other = (history?.other ?? []).filter(keep)
-      if !other.isEmpty { Section("Other conversations") { ForEach(other) { line($0) } } }
+      if !other.isEmpty { Section("Other conversations") { ForEach(other) { line($0, now: now) } } }
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(RoadmapPalette.canvas)
       .navigationTitle("History").navigationBarTitleDisplayMode(.inline)
       .toolbarTitleMenu {
@@ -188,19 +198,23 @@ struct CoachHistoryView: View {
           ForEach(roadmap.roadmaps, id: \.id) { listed in Text(listed.name).tag(Optional(listed.id)) }
         }
       }
-      .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 0) }
+      .roadmapFoot(roadmap, inSheet: true) {}
   }
 
-  func line(_ row: CoachHistory.Row) -> some View {
+  // A row opens its conversation in the sheet, a chevron at its trailing end as a row that opens one shows.
+  func line(_ row: CoachHistory.Row, now: Instant?) -> some View {
     Button {
       coach.show(row.thread.id)
       opened()
     } label: {
-      LabeledContent {
-        Text(row.at.map(Self.day) ?? "")
-      } label: {
-        Text(row.thread.title).foregroundStyle(RoadmapPalette.ink).lineLimit(1)
-        Text(tag(row)).font(.caption).foregroundStyle(RoadmapPalette.inkDim).lineLimit(1)
+      HStack {
+        LabeledContent {
+          Text(row.at.map { Self.day($0, now: now) } ?? "")
+        } label: {
+          Text(row.thread.title).foregroundStyle(RoadmapPalette.ink).lineLimit(1)
+          Text(tag(row)).font(.caption).foregroundStyle(RoadmapPalette.inkDim).lineLimit(1)
+        }
+        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkFaint)
       }
     }.listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-coach-history-row")
       .swipeActions(edge: .trailing) {
@@ -231,16 +245,20 @@ struct CoachHistoryView: View {
     return parts.joined(separator: " · ")
   }
 
-  // A conversation's day: Today, Yesterday, or the day and month.
-  static func day(_ at: Instant) -> String {
+  // A conversation's day by the phone's clock: Today, Yesterday, or the day and month.
+  static func day(_ at: Instant, now: Instant?) -> String {
     let date = Date(timeIntervalSince1970: Double(at.ms) / 1_000)
-    if Calendar.current.isDateInToday(date) { return String(localized: "Today") }
-    if Calendar.current.isDateInYesterday(date) { return String(localized: "Yesterday") }
+    let today = now.map { Date(timeIntervalSince1970: Double($0.ms) / 1_000) } ?? .now
+    if Calendar.current.isDate(date, inSameDayAs: today) { return String(localized: "Today") }
+    if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today), Calendar.current.isDate(date, inSameDayAs: yesterday) {
+      return String(localized: "Yesterday")
+    }
     return date.formatted(.dateTime.day().month(.abbreviated))
   }
 }
 
-// What Coach Read (11.8): one row per thing Coach used for that answer, in order, a step read twice once.
+// What Coach Read (11.8): one row per thing Coach used for that answer, in order, a step read twice once, each saying only
+// what its record holds; a step the copy no longer holds is left out, and no id is ever shown.
 struct WhatCoachRead: View {
   let coach: RoadmapCoach
   let roadmap: RoadmapModel
@@ -272,7 +290,10 @@ struct WhatCoachRead: View {
       case CoachCall.context where call.treeId == nil, "list_trees":
         return [(String(localized: "Your roadmaps"), String(localized: "\(call.steps ?? 0) roadmaps", locale: .copy, comment: "What Coach Read: how many roadmaps"))]
       case CoachCall.context, "get_tree":
-        return [(roadmap.title(of: treeId), String(localized: "\(call.steps ?? 0) steps · \(call.done ?? 0) done", locale: .copy, comment: "What Coach Read: a roadmap's steps, and how many are done"))]
+        guard let done = call.done else {
+          return [(roadmap.title(of: treeId), String(localized: "\(call.steps ?? 0) steps", locale: .copy, comment: "What Coach Read: a roadmap's steps, where the read kept no count of the done ones"))]
+        }
+        return [(roadmap.title(of: treeId), String(localized: "\(call.steps ?? 0) steps · \(done) done", locale: .copy, comment: "What Coach Read: a roadmap's steps, and how many are done"))]
       case "get_progress":
         return [(String(localized: "Your progress"), String(localized: "\(call.steps ?? 0) steps done", locale: .copy, comment: "What Coach Read: how many steps the person has done"))]
       case "find_nodes":
@@ -280,8 +301,8 @@ struct WhatCoachRead: View {
       case "get_diagnostics":
         return [(String(localized: "Problems in your roadmap"), String(localized: "Loops, missing links and smells"))]
       case "get_nodes":
-        return (call.nodeIds ?? []).filter { seen.insert($0).inserted }.map { id in
-          (roadmap.label(of: id, in: treeId) ?? id, Self.fields(call.fields))
+        return (call.nodeIds ?? []).filter { seen.insert($0).inserted }.compactMap { id in
+          roadmap.label(of: id, in: treeId).map { ($0, Self.fields(call.fields)) }
         }
       default: return []
       }

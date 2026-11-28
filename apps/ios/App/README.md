@@ -192,9 +192,12 @@ reads too), once the phone's copy holds the step, whether the Board then shows a
 
 `Coach/` is Roadmap Coach in the room (roadmap-ios.md §8), which exists only where `-roadmap-coach on` launches a
 simulator's Debug build (`AppSettings.roadmapCoach`, `WM_ROADMAP_COACH_ENABLED`, never in Release): `RoadmapCoach` is the
-room's Coach, its composer's words and what they are about, a turn sent, stopped, recovered by its mark and a turn nobody
-ends ended stale, each direct write offered in the room's band with its Undo, which records the receipt's fate, and the
-conversation, History and their delete read from the phone's copy; `RoadmapTurnHost` is the Coach engine's tool host over
+room's Coach, its composer's words and what they are about (`About`: the roadmap of the room the composer stands in, a
+roadmap gone into among them, or what a conversation's record says, and whether Coach writes there), a turn sent, stopped,
+recovered by its mark and a turn nobody ends ended stale, holding a question in the field while a turn is read back or the
+seat changes, each direct write offered in the room's band with its Undo, which records the receipt's fate, each turn's
+tool host kept while a write of it can still be undone, and the conversation, History and its delete, held with the room's
+band, read from the phone's copy; `RoadmapTurnHost` is the Coach engine's tool host over
 the room's runner and `RoadmapToolHost`, writing the turn's records as roadmap's acts under the turn's lease, the text at
 most once a second, and at the end the facts of its calls and receipts; `CoachProfile` reads the words the bundle carries
 from `packages/api-contract/roadmap/coach/` and the catalog; `CoachReceiptLine` words a receipt, as `receipts.json` holds
@@ -204,7 +207,9 @@ service a launch plays with `-coach-play` (and `-coach-allowance spent` or `capa
 (`RoadmapCoachFlowTests`) and captures (`RoadmapCoachCaptures`) run their turns on. A board launched with Coach runs the
 phone's clock, and the model server's with it, on from the board's moment (`RunningBoardClock`), so turns asked one after
 another are said in that order; `-board roadmap-signed-out` is a phone never signed in that holds *Learn to sail* with
-three steps done. `RoadmapCoachIntegrationFlowTests` runs against `tools/coach-e2e/room_stack.py`.
+three steps done, and `-board roadmap-coach-history` an account whose other phone had five conversations, today, yesterday
+and days before, about *Learn to sail*, its *Read the wind*, every roadmap, *Spanish B1* and *Become a day skipper*.
+`RoadmapCoachIntegrationFlowTests` runs against `tools/coach-e2e/room_stack.py`.
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,

@@ -24,14 +24,17 @@ import SyncCore
     let contract = { (name: String) throws -> Data in try Data(contentsOf: Contract.root().appending(path: "roadmap/coach/\(name)")) }
     #expect(Data(profile.prompt.utf8) == (try contract("prompt.md")))
     #expect(profile.refusals == (try JSONDecoder().decode([String: String].self, from: try contract("refusals.json"))))
-    let roadmap = try profile.profile(seat: .bound, about: "t_0000000000000001")
+    let roadmap = try profile.profile(seat: .bound, about: "t_0000000000000001", writes: true)
     #expect(roadmap.name == "roadmap.coach" && roadmap.version == 1 && roadmap.label == "roadmap.coach.turn")
     #expect(roadmap.tools.map(\.name) == ["get_tree", "get_nodes", "find_nodes", "get_progress", "get_diagnostics", "set_progress", "update_node", "create_node", "connect"])
     #expect(roadmap.tools.filter(\.countsAsWrite).map(\.name) == ["set_progress", "update_node", "create_node", "connect"])
     #expect([roadmap.modelCalls, roadmap.abilityCalls, roadmap.writes] == [8, 12, 6] && roadmap.groups.isEmpty)
-    let every = try profile.profile(seat: .anon, about: nil)
+    let every = try profile.profile(seat: .anon, about: nil, writes: false)
     #expect(every.tools.map(\.name) == ["get_tree", "get_nodes", "find_nodes", "get_progress", "get_diagnostics", "list_trees"])
     #expect(every.refusal("closes-cycle") == JSON.object(["code": "closes-cycle", "message": .string(profile.refusals["closes-cycle"] ?? "")]).jcsText)
+    // A roadmap the person only reads is read, never written.
+    let read = try profile.profile(seat: .bound, about: "t_0000000000000001", writes: false)
+    #expect(read.tools.map(\.name) == ["get_tree", "get_nodes", "find_nodes", "get_progress", "get_diagnostics"])
   }
 
   @Test func theEarlierConversationKeepsItsLastTurnsWithinItsBytes() throws {

@@ -10,6 +10,9 @@ import RoadmapDomain
 struct CoachComposer: View {
   @Bindable var coach: RoadmapCoach
   let entry: RoadmapCoach.Entry
+  // The room the composer stands in, a roadmap gone into among them, whose roadmap it asks about; none in the sheet, which
+  // goes on with its conversation.
+  var room: RoadmapModel?
   // The step a step's page asks about; none at the foot of the Board and the Graph, which ask about the roadmap.
   var step: (id: String, label: String)?
   @Environment(AppModel.self) private var app
@@ -25,12 +28,13 @@ struct CoachComposer: View {
     }
       .onChange(of: coach.focused, initial: true) { _, focused in focus = focused }
       .onChange(of: focus) { _, focused in
-        if focused && !coach.focused && entry != .sheet { coach.open(about: step, from: entry) }
+        if focused && !coach.focused, let room { coach.open(in: room, about: step, from: entry) }
         coach.focused = focused
       }
   }
 
-  // The field, which sends on return, and Send at its trailing end while it holds a question.
+  // The field, which sends on return, and Send at its trailing end while it holds a question, in a capsule with a hairline
+  // edge that reads on daylight's bar as on dark's (11.1).
   var field: some View {
     HStack(alignment: .bottom, spacing: 0) {
       // A field that grows takes return as a new line, so return is caught here and sends what was typed before it.
@@ -48,7 +52,7 @@ struct CoachComposer: View {
           Image(systemName: "arrow.up.circle.fill").font(.title2).foregroundStyle(RoadmapPalette.accent)
         }.padding(6).accessibilityLabel(Text("Send")).accessibilityIdentifier("roadmap-coach-send")
       }
-    }.background(Capsule().fill(RoadmapPalette.raised)).frame(maxWidth: .infinity)
+    }.background(Capsule().fill(RoadmapPalette.raised)).overlay(Capsule().strokeBorder(RoadmapPalette.line)).frame(maxWidth: .infinity)
   }
 
   // 11.2: the turn's step line, from the catalog and never the model, and Stop.

@@ -165,7 +165,7 @@ struct RoadmapBoard: View {
   // a tap, a chosen one on the raised ground, and slides and presses for nothing.
   func row(_ row: RoadmapModel.Row, selecting: Bool, chosen: Bool) -> some View {
     let coach = roadmap.root.coach
-    let asked = coach.map { $0.focused && $0.about?.step == row.id } ?? false
+    let asked = coach.map { $0.focused && $0.about?.treeId == open.id.description && $0.about?.step == row.id } ?? false
     let arrived = roadmap.band?.arrived.contains(row.id) == true || asked
     return RoadmapStepRow(roadmap: roadmap, row: row, door: .card, line: open.reason(row.card), excerpt: true)
       .listRowBackground(ZStack { chosen ? RoadmapPalette.raised : RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
@@ -190,7 +190,7 @@ struct RoadmapBoard: View {
     Button("Select", systemImage: "checkmark.circle") { roadmap.startSelecting(row.id, from: .menu) }.tint(RoadmapPalette.ink)
     // 11.17: Ask Coach opens the composer about the step.
     if let coach = roadmap.root.coach {
-      Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(about: (row.id, row.step.label), from: .row) }
+      Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(in: roadmap, about: (row.id, row.step.label), from: .row) }
         .tint(RoadmapPalette.ink).accessibilityIdentifier("roadmap-ask-coach")
     }
     if row.deletes {

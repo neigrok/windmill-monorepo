@@ -175,7 +175,7 @@ struct RoadmapViews: View {
           // composer has the keyboard or a turn runs; without it, New step alone (11.22a).
           if let coach = roadmap.coach, !coach.sheet {
             HStack(alignment: .bottom, spacing: RoomSpace.related) {
-              CoachComposer(coach: coach, entry: .foot)
+              CoachComposer(coach: coach, entry: .foot, room: roadmap)
               if !coach.focused && coach.running == nil { newStep }
             }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
           } else {

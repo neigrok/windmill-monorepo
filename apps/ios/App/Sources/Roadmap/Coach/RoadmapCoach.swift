@@ -13,11 +13,14 @@ import WindmillPlatform
 // the AI service lets this phone ask. One composer is in the room at a time: at the foot of the Board, the Graph and a step's
 // page, or at the sheet's foot while a conversation is open.
 @Observable @MainActor final class RoadmapCoach: RoadmapTurnHost.Listener {
-  // What the next question is about: the open roadmap, or one step of it, and where the composer was opened from.
+  // What a conversation is about: one roadmap, one step of it, or every roadmap of the person's (no roadmap); and whether
+  // Coach may write there, which it does in a roadmap of the person's own alone. The sheet's subtitle, the context, the
+  // profile's tools and the tool host's scope all read this one value.
   struct About: Equatable {
-    let treeId: String
+    let treeId: String?
     let step: String?
     let stepLabel: String?
+    let writes: Bool
   }
 
   // Where a person opened Coach, as `roadmap_coach_opened` names it: the foot of the Board or the Graph, a step's page,
@@ -74,6 +77,14 @@ import WindmillPlatform
     var line: String
   }
 
+  // Each turn's tool host while a write of it may still be undone: the writes the band offers the Undo of, and those whose
+  // Undo the engine still settles. A host closes once neither holds a write and its turn has ended.
+  struct Host {
+    let tools: RoadmapToolHost
+    var offered: [CoachWrite] = []
+    var undoing: [CoachWrite] = []
+  }
+
   // The engine and its ports, which the app builds once Coach is switched on.
   struct Engine {
     let turn: Turn
@@ -85,9 +96,9 @@ import WindmillPlatform
   let engine: Engine
   let profile: CoachProfile
   let telemetry: any EventTelemetry
-  // The seat a turn runs under now: the account signed in, or this phone's installation; and the installation's credential
-  // taken, minted on first use, before a turn signed out asks.
-  let seat: @MainActor () -> Agent.Seat?
+  // The seat a turn runs under now: the account signed in, or this phone's installation, which throws where the phone
+  // cannot read its account; and the installation's credential taken, minted on first use, before a turn signed out asks.
+  let seat: @MainActor () throws -> Agent.Seat
   let installation: @MainActor () async throws -> Void
   let online: @MainActor () -> Bool
   let freshness: @MainActor () -> SyncFreshness
@@ -109,11 +120,16 @@ import WindmillPlatform
   var revision = 0
   // The question a turn took from the field, given back if the turn is withdrawn.
   @ObservationIgnored var asked: (question: String, about: About?)?
-  // Each turn's tool host while a receipt of it may still be undone, and the writes whose Undo it still settles, in order.
-  @ObservationIgnored var hosts: [ID<CoachMessage>: (tools: RoadmapToolHost, undoing: [CoachWrite])] = [:]
+  @ObservationIgnored var hosts: [ID<CoachMessage>: Host] = [:]
   @ObservationIgnored var sweep: Task<Void, Never>?
+  // While a turn this replica marked is read back, or the seat changes, Coach holds: a question waits in the field and
+  // nothing is written. A seat change may be announced more than once before it finishes.
+  @ObservationIgnored var recovering = false
+  @ObservationIgnored var seatChanges = 0
+  // The kinds of failure a settling Undo's read has reported, once each while the room lives.
+  @ObservationIgnored var followFailures: Set<String> = []
 
-  init(runner: ActionRunner, engine: Engine, profile: CoachProfile, telemetry: any EventTelemetry, seat: @escaping @MainActor () -> Agent.Seat?,
+  init(runner: ActionRunner, engine: Engine, profile: CoachProfile, telemetry: any EventTelemetry, seat: @escaping @MainActor () throws -> Agent.Seat,
        installation: @escaping @MainActor () async throws -> Void, online: @escaping @MainActor () -> Bool,
        freshness: @escaping @MainActor () -> SyncFreshness) {
     self.runner = runner; self.engine = engine; self.profile = profile; self.telemetry = telemetry; self.seat = seat
@@ -123,13 +139,17 @@ import WindmillPlatform
 
   // MARK: - Opening
 
-  // A person opens the composer, from the foot, a step's page or a Board row's Ask Coach: about the open roadmap, or one of
-  // its steps.
-  func open(about step: (id: String, label: String)? = nil, from entry: Entry) {
-    guard let treeId = room?.shown?.id.description else { return }
-    about = About(treeId: treeId, step: step?.id, stepLabel: step?.label)
-    // A conversation goes on while it is about what the composer now asks of; another starts anew.
-    if let shown = conversation?.thread, shown.treeId != treeId || (step != nil && shown.stepId != step?.id) { thread = nil }
+  // A person opens the composer, from the foot, a step's page or a Board row's Ask Coach of the room they are in, a roadmap
+  // gone into among them: about the roadmap that room shows, or one of its steps. A conversation goes on while it is about
+  // what the composer now asks of, and keeps what it is about; another starts anew.
+  func open(in shown: RoadmapModel, about step: (id: String, label: String)? = nil, from entry: Entry) {
+    guard let treeId = shown.shown?.id.description else { return }
+    if let thread, let held = about(of: thread), held.treeId == treeId, step == nil || held.step == step?.id {
+      about = held
+    } else {
+      thread = nil
+      about = About(treeId: treeId, step: step?.id, stepLabel: step?.label, writes: shown.owns)
+    }
     focused = true
     telemetry.event("roadmap_coach_opened", properties: ["entry": entry.rawValue])
     Task { await readAllowance() }
@@ -141,34 +161,53 @@ import WindmillPlatform
     focused = true
   }
 
-  // History opens a conversation: the sheet shows it, and the next question continues it.
+  // History opens a conversation: the sheet shows it, and the next question continues it, about what its record says.
   func show(_ thread: ID<CoachThread>) {
+    guard let held = about(of: thread) else { return }
     self.thread = thread
+    about = held
     sheet = true
+  }
+
+  // What a conversation is about, as its record holds it: its roadmap and step, and whether that roadmap is the person's own.
+  func about(of thread: ID<CoachThread>) -> About? {
+    guard let record = (try? runner.read(CoachThread.scope) { try $0.repository(CoachThread.self).find(thread, in: .drawn) }) ?? nil else { return nil }
+    guard let treeId = record.treeId else { return About(treeId: nil, step: nil, stepLabel: nil, writes: false) }
+    let label = record.stepId.flatMap { room?.label(of: $0, in: treeId) }
+    return About(treeId: treeId, step: record.stepId, stepLabel: label, writes: room?.account.trees.contains { $0.id == treeId } == true)
   }
 
   // Engine §7: before a question is sent, the allowance says whether one could be asked.
   func readAllowance() async {
-    guard let seat = seat(), notice == nil || notice == .offline else { return }
-    guard let profile = try? profile.profile(seat: seat.kind, about: about?.treeId) else { return }
+    guard let seat = try? seat(), notice == nil || notice == .offline else { return }
+    guard let profile = try? profile.profile(seat: seat.kind, about: about?.treeId, writes: about?.writes == true) else { return }
     guard let allowance = try? await engine.client.allowance(profile: profile, seat: seat), let code = try? allowance.member("code").asString() else { return }
     notice = code == "ok" ? nil : Notice(code: code, allowance: allowance, signedIn: seat.kind == .bound)
   }
 
   // MARK: - Asking
 
-  // Send (11.2): the question leaves the field and a turn opens its records and runs. With no connection, or a seat the
-  // phone cannot take, the question stays in the field and the band slot says why (11.21).
+  // Send (11.2): the question leaves the field and a turn opens its records and runs. With no connection, a seat the phone
+  // cannot read or take, or while Coach holds, the question stays in the field and nothing is written; the band slot says why
+  // where there are words for it (11.21).
   func send(_ words: String? = nil) async {
     let question = words ?? field
-    guard running == nil, !TextSpec.isBlank(question), question.utf8.count <= RoadmapLimits.questionBytes else { return }
+    guard running == nil, !holds, !TextSpec.isBlank(question), question.utf8.count <= RoadmapLimits.questionBytes else { return }
     guard online() else { return refuse(.offline) }
-    let signedIn = seat()?.kind == .bound
-    if !signedIn {
+    let seat: Agent.Seat
+    do { seat = try self.seat() } catch {
+      telemetry.failure("roadmap-coach-turn", kind: "storage")
+      return
+    }
+    if seat.kind == .anon {
       do { try await installation() } catch { return refuse(online() ? .signIn : .offline) }
     }
-    guard let seat = seat(), let treeId = about?.treeId ?? room?.shown?.id.description else { return }
-    let about = about ?? About(treeId: treeId, step: nil, stepLabel: nil)
+    guard running == nil, !holds, let about = thread.flatMap(about(of:)) ?? about else { return }
+    let profile: Profile
+    do { profile = try self.profile.profile(seat: seat.kind, about: about.treeId, writes: about.writes) } catch {
+      telemetry.failure("roadmap-coach-turn", kind: "unexpected")
+      return
+    }
     let open: RoadmapDomain.OpenTurn = thread.map { RoadmapDomain.OpenTurn(thread: $0, question: question) }
       ?? RoadmapDomain.OpenTurn(about: .init(treeId: about.treeId, stepId: about.step), question: question)
     let turn: RoadmapDomain.OpenTurn.Turn
@@ -181,22 +220,26 @@ import WindmillPlatform
       telemetry.failure("roadmap-coach-turn", kind: "storage")
       return
     }
-    let tools = RoadmapToolHost(runner: runner, about: about.treeId) { [weak self] ability, undo in self?.told(ability, undo) }
-    hosts[turn.coach] = (tools, [])
+    let tools = RoadmapToolHost(runner: runner, about: about.treeId) { [weak self] receipt, undo in self?.told(receipt, undo, of: turn.coach) }
+    hosts[turn.coach] = Host(tools: tools)
     engine.host.next = RoadmapTurnHost.Opened(turn: turn, about: about.treeId, step: about.step, seat: seat, tools: tools)
     asked = (question, self.about)
     field = ""
     notice = nil
     thread = turn.thread
+    self.about = about
     running = Running(turn: turn, line: Self.line(of: nil))
-    let profile: Profile
-    do { profile = try self.profile.profile(seat: seat.kind, about: about.treeId) } catch {
-      telemetry.failure("roadmap-coach-turn", kind: "unexpected")
+    guard let end = await engine.turn.run(input: TurnInput(turnId: turn.coach.description, seat: seat, question: question), profile: profile) else {
+      // Another execution took the engine after the records opened: they are withdrawn, and the question is back.
+      engine.host.next = nil
+      do { _ = try runner.runAct(WithdrawTurn(turn: turn)) } catch { telemetry.failure("roadmap-coach-turn", kind: "storage") }
       return finished(turn, end: nil)
     }
-    let end = await engine.turn.run(input: TurnInput(turnId: turn.coach.description, seat: seat, question: question), profile: profile)
     finished(turn, end: end)
   }
+
+  // Coach holds while a turn this replica marked is read back, or the seat changes.
+  var holds: Bool { recovering || seatChanges > 0 }
 
   // A turn ended: given back to the field where it never began, its refusal said where a cap or a door stopped it, its sheet
   // left as it was, and its tool host kept while a receipt of it may still be undone.
@@ -211,11 +254,11 @@ import WindmillPlatform
     }
     asked = nil
     if let end, end.state == .failed || withdrawn {
-      let refused = Notice(code: end.code, allowance: engine.client.lastAllowance, signedIn: seat()?.kind == .bound)
+      let refused = Notice(code: end.code, allowance: engine.client.lastAllowance, signedIn: (try? seat())?.kind == .bound)
       notice = refused
       if withdrawn { telemetry.event("roadmap_coach_ask_refused", properties: ["reason": refused.reason]) }
     }
-    if hosts[turn.coach]?.undoing.isEmpty != false, receipts(of: turn.coach).isEmpty { close(turn.coach) }
+    closeIfSettled(turn.coach)
   }
 
   func refuse(_ notice: Notice) {
@@ -241,6 +284,7 @@ import WindmillPlatform
   // own words (11.18).
   func wrote(_ write: CoachWrite) {
     running?.line = Self.line(of: write.receipt.ability)
+    hosts[write.message]?.offered.append(write)
     room?.offer(write)
   }
 
@@ -263,12 +307,15 @@ import WindmillPlatform
   // MARK: - Receipts and their Undo
 
   // The band's Undo of a receipt: the tool host takes the write back, and what it came to is told as the engine settles it.
-  // An Undo that throws reports under the room's own write failure (§13).
+  // An Undo asked again of a write it is taking back asks nothing; one whose host has closed brought nothing back. An Undo
+  // that throws reports under the room's own write failure (§13).
   func undo(_ write: CoachWrite) {
     guard let host = hosts[write.message] else {
       room?.show(.init(unrestored: .coachWrote(write.facts)))
       return
     }
+    guard let offered = host.offered.firstIndex(of: write) else { return }
+    hosts[write.message]?.offered.remove(at: offered)
     hosts[write.message]?.undoing.append(write)
     do { try host.tools.undo(write.receipt) } catch {
       room?.report(error, write: "coachUndo")
@@ -277,17 +324,20 @@ import WindmillPlatform
 
   // The band of a receipt ended: the engine keeps nothing more of its act.
   func forget(_ write: CoachWrite) {
-    guard let host = hosts[write.message] else { return }
+    guard let host = hosts[write.message], let offered = host.offered.firstIndex(of: write) else { return }
+    hosts[write.message]?.offered.remove(at: offered)
     do { try host.tools.forget(write.receipt) } catch { room?.report(error, write: "coachUndo") }
-    if host.undoing.isEmpty, running?.turn.coach != write.message { close(write.message) }
+    closeIfSettled(write.message)
   }
 
-  // The tool host told what an Undo came to: the band says so, and an Undo that took the write back is the receipt's fate,
-  // so it reads Undone on every device.
-  func told(_ ability: String, _ undo: WriteReceipt.Undo) {
-    telemetry.event("roadmap_coach_write_undone", properties: ["ability": ability, "outcome": undo.rawValue])
-    guard let message = hosts.first(where: { !$0.value.undoing.isEmpty && $0.value.undoing[0].receipt.ability == ability })?.key,
-          let write = hosts[message]?.undoing.removeFirst() else { return }
+  // The tool host of a turn told what an Undo of one of its writes came to: the band says so, and an Undo that took the write
+  // back is the receipt's fate, so it reads Undone on every device.
+  func told(_ receipt: WriteReceipt, _ undo: WriteReceipt.Undo, of message: ID<CoachMessage>) {
+    telemetry.event("roadmap_coach_write_undone", properties: ["ability": receipt.ability, "outcome": undo.rawValue])
+    guard let index = hosts[message]?.undoing.firstIndex(where: { $0.receipt == receipt }), let write = hosts[message]?.undoing.remove(at: index) else {
+      return
+    }
+    defer { closeIfSettled(message) }
     guard undo == .undone else {
       room?.show(.init(unrestored: .coachWrote(write.facts)))
       return
@@ -298,20 +348,26 @@ import WindmillPlatform
     room?.show(.init(told: .coachUndone))
   }
 
-  // The copy changed: each Undo the engine has settled since it was asked is told.
+  // The copy changed: each Undo the engine has settled since it was asked is told. A read that throws reports once for each
+  // kind of failure while the room lives, not on every read.
   func follow() {
     for host in hosts.values where !host.undoing.isEmpty {
-      do { try host.tools.follow() } catch { room?.report(error, write: "coachUndo") }
+      do { try host.tools.follow() } catch {
+        guard followFailures.insert((error as? CommitFailure)?.kind == .storeFailure ? "storage" : "unexpected").inserted else { continue }
+        room?.report(error, write: "coachUndo")
+      }
     }
+  }
+
+  // A turn's host closes once its turn has ended and it holds no write the band offers or the engine still settles.
+  func closeIfSettled(_ message: ID<CoachMessage>) {
+    guard let host = hosts[message], host.offered.isEmpty, host.undoing.isEmpty, running?.turn.coach != message else { return }
+    close(message)
   }
 
   func close(_ message: ID<CoachMessage>) {
     guard let host = hosts.removeValue(forKey: message) else { return }
     try? host.tools.close()
-  }
-
-  func receipts(of message: ID<CoachMessage>) -> [CoachReceipt] {
-    (try? runner.read(CoachMessage.scope) { try $0.repository(CoachMessage.self).find(message, in: .drawn) })??.receipts ?? []
   }
 
   // MARK: - Reading the records
@@ -322,15 +378,26 @@ import WindmillPlatform
     return try? runner.read(CoachThread.scope) { try Conversation.read($0, thread: thread) }
   }
 
+  // The moment by the phone's clock, which History's day words read.
+  func now() -> Instant? {
+    try? runner.moment().now
+  }
+
   // History (11.7): every conversation, the open roadmap's first.
   func history() -> CoachHistory? {
     try? runner.read(CoachThread.scope) { try CoachHistory.read($0, current: room?.shown?.id.description) }
   }
 
-  // History's swipe: the conversation and its proposals, held as any roadmap delete is.
+  // History's swipe: the conversation and its proposals, held as any roadmap delete is, with the room's band and its Undo
+  // for the hold.
   func delete(_ thread: ID<CoachThread>) {
     guard running?.turn.thread != thread else { return }
-    do { _ = try runner.runAct(DeleteConversation(thread)) } catch { room?.report(error, write: "coachDelete") }
+    let title = (try? runner.read(CoachThread.scope) { try $0.repository(CoachThread.self).find(thread, in: .drawn) })??.title
+    do {
+      if case .committed(_, let receipt) = try runner.runAct(DeleteConversation(thread)) {
+        room?.show(.init(.deletedConversation(title ?? ""), of: receipt, act: .conversation))
+      }
+    } catch { room?.report(error, write: "coachDelete") }
     if self.thread == thread { self.thread = nil }
   }
 
@@ -350,7 +417,9 @@ import WindmillPlatform
   }
 
   func recover() async {
-    guard let seat = seat(), let profile = try? profile.profile(seat: seat.kind, about: nil) else { return }
+    guard !recovering, let seat = try? seat(), let profile = try? profile.profile(seat: seat.kind, about: nil, writes: false) else { return }
+    recovering = true
+    defer { recovering = false }
     let marks: [RunningMark]
     switch try? runner.runAct(RecoverMark()) {
     case .committed(let held, _)?, .unchanged(let held)?: marks = held
@@ -372,12 +441,18 @@ import WindmillPlatform
     }
   }
 
-  // Engine §5, the seat changes: a running turn ends interrupted, its pass dropped, before the seat is replaced.
+  // Engine §5, the seat changes: a running turn ends interrupted, its pass dropped, before the seat is replaced, and Coach
+  // holds until the change has finished.
   func seatWillChange() async {
+    seatChanges += 1
     await engine.turn.seatWillChange()
     engine.host.seatDidChange()
     for message in Array(hosts.keys) { close(message) }
     notice = nil
+  }
+
+  func seatChangeFinished() {
+    seatChanges = max(0, seatChanges - 1)
   }
 
   func stopSweeping() {
@@ -394,6 +469,10 @@ import WindmillPlatform
   func seatWillChange() async throws {
     await coach?.seatWillChange()
   }
+
+  func seatChangeFinished() async {
+    coach?.seatChangeFinished()
+  }
 }
 
 extension RoadmapCoach {
@@ -401,13 +480,13 @@ extension RoadmapCoach {
   // origin, or the service a Debug launch plays, under the account signed in or this phone's installation.
   static func make(runtime: AppRuntime, telemetry: any EventTelemetry) throws -> RoadmapCoach {
     let profile = try CoachProfile()
-    let seat = { @MainActor () -> Agent.Seat? in
-      guard let account = try? runtime.account() else { return Agent.Seat(kind: .anon, key: "installation") }
+    let seat = { @MainActor () throws -> Agent.Seat in
+      guard let account = try runtime.account() else { return Agent.Seat(kind: .anon, key: "installation") }
       return Agent.Seat(kind: .bound, key: account)
     }
     let host = RoadmapTurnHost(runner: runtime.roadmapRunner, profile: profile, seat: seat)
     let ports = CoachTelemetry(telemetry: telemetry) { [weak host] in host?.lastEnd?.truncated ?? false }
-    #if DEBUG
+    #if DEBUG && targetEnvironment(simulator)
     let played: (any AiTransport)? = PlayedAiService.asked()
     #else
     let played: (any AiTransport)? = nil

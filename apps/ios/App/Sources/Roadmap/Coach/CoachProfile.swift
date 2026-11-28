@@ -53,12 +53,13 @@ struct CoachProfile {
     })
   }
 
-  // The profile of a turn under `seat`, about one roadmap (`about`) or all of the person's.
-  func profile(seat: Agent.Seat.Kind, about: String?) throws -> Profile {
+  // The profile of a turn under `seat`, about one roadmap (`about`) or all of the person's: the reads, and the direct
+  // writes in a roadmap Coach `writes` in, the person's own.
+  func profile(seat: Agent.Seat.Kind, about: String?, writes: Bool) throws -> Profile {
     let offered = Catalog.roadmap.abilities.filter { ability in
       guard ability.agent == .runs else { return false }
       if ability.name == "list_trees" { return about == nil }
-      return ability.kind == .read || about != nil
+      return ability.kind == .read || (about != nil && writes)
     }
     let tools: [JSON] = offered.map { ability in
       ["name": .string(ability.name), "description": .string(described[ability.name]?.description ?? ""),

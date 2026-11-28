@@ -140,14 +140,14 @@ struct RoadmapStepPage: View {
         // about the step; any other page of the person's own has the composer itself.
         let coach = roadmap.owns ? roadmap.root.coach : nil
         if let coach, !coach.sheet, coach.focused || !row.completes {
-          CoachComposer(coach: coach, entry: .step, step: (row.id, row.step.label))
+          CoachComposer(coach: coach, entry: .step, room: roadmap, step: (row.id, row.step.label))
             .padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         } else if row.completes {
           HStack(spacing: RoomSpace.related) {
             Button { roadmap.complete(row, by: .page) } label: { Text("Complete").frame(maxWidth: .infinity) }
               .buttonStyle(RoomPrimaryStyle(room: .roadmap)).accessibilityIdentifier("roadmap-complete")
             if let coach, !coach.sheet {
-              Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(about: (row.id, row.step.label), from: .step) }
+              Button("Ask Coach", systemImage: "bubble.left.and.bubble.right") { coach.open(in: roadmap, about: (row.id, row.step.label), from: .step) }
                 .modifier(GlassCircle()).accessibilityIdentifier("roadmap-coach-circle")
             }
           }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)

@@ -45,16 +45,17 @@ import WindmillPlatform
 
   let runner: ActionRunner
   let profile: CoachProfile
-  let seat: @MainActor () -> Agent.Seat?
+  let seat: @MainActor () throws -> Agent.Seat
   let textEvery: Duration
   var generation: UInt64 = 0
   var next: Opened?
   var writing: Writing?
-  // How the last turn ended, for its `roadmap_coach_turn` event.
+  // How the turn the engine runs now ended, for its `roadmap_coach_turn` event; none while it has not, or where it never
+  // reached its end.
   private(set) var lastEnd: TurnEnd?
   weak var listener: (any Listener)?
 
-  init(runner: ActionRunner, profile: CoachProfile, seat: @escaping @MainActor () -> Agent.Seat?, textEvery: Duration = .seconds(1)) {
+  init(runner: ActionRunner, profile: CoachProfile, seat: @escaping @MainActor () throws -> Agent.Seat, textEvery: Duration = .seconds(1)) {
     self.runner = runner; self.profile = profile; self.seat = seat; self.textEvery = textEvery
   }
 
@@ -64,6 +65,7 @@ import WindmillPlatform
   // MARK: - Open and recover
 
   func open(_ input: TurnInput) async throws -> Agent.OpenTurn {
+    lastEnd = nil
     guard let opened = next, opened.turn.coach.description == input.turnId else { throw HostFailure.recordGone }
     next = nil
     let lease = try leased(input)
@@ -94,6 +96,7 @@ import WindmillPlatform
 
   // Engine §5, the process ends: the turn its mark names, while this replica writes it, with the round the mark holds.
   func recover(_ input: TurnInput) async throws -> Recovery? {
+    lastEnd = nil
     let marks = try runner.runAct(RecoverMark())
     let found: [RunningMark] = switch marks {
     case .committed(let marks, _), .unchanged(let marks): marks
@@ -116,7 +119,7 @@ import WindmillPlatform
 
   // The engine's fence: a lease from before the seat changed, or under another seat or replica, writes nothing.
   func check(_ lease: HostLease) throws {
-    guard lease.generation == generation, lease.seat == seat(), lease.replica == (try runner.read(CoachMessage.scope) { $0.replica }) else {
+    guard lease.generation == generation, lease.seat == (try? seat()), lease.replica == (try runner.read(CoachMessage.scope) { $0.replica }) else {
       throw HostFailure.staleSeat
     }
   }
@@ -240,14 +243,16 @@ import WindmillPlatform
     }
   }
 
-  // One call as the turn records it (§9): of a read, how many steps or rows it answered, the steps it named and the fields
-  // it asked for; nothing of what it answered.
+  // One call as the turn records it (§9): of a read, how many steps or rows it answered, of a roadmap's read that answered
+  // each step's state how many are done, the steps it named and the fields it asked for; nothing of what it answered.
   static func call(_ call: ToolCall, outcome: String, answer: JSON?) -> CoachCall {
     let treeId = try? call.input.member("treeId").asString()
     let names = { (key: String) -> [String]? in try? call.input.member(key).asArray().map { try $0.asString() } }
     let answered = ["steps", "completed", "trees"].lazy.compactMap { answer?[$0].flatMap { try? $0.asArray().count } }.first
+    let states = call.name == "get_tree" ? answer?["steps"].flatMap { try? $0.asArray().map { $0["state"].flatMap { try? $0.asString() } } } : nil
+    let done = states.flatMap { $0.contains(nil) ? nil : $0.filter { $0 == StepState.complete.rawValue }.count }
     let nodeIds = names("nodeIds").map { Array($0.prefix(CoachCall.nodeIdCap)) }
-    return CoachCall(ability: call.name, treeId: treeId, outcome: outcome, steps: answered, nodeIds: nodeIds, fields: names("fields"))
+    return CoachCall(ability: call.name, treeId: treeId, outcome: outcome, steps: answered, done: done, nodeIds: nodeIds, fields: names("fields"))
   }
 }
 
