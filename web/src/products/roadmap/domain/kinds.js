@@ -79,26 +79,32 @@ function wearing(present, hue, own) {
   }
 }
 
-// What an Undo that brings a kind back onto the hue it wore must find standing, as a kind made or changed is checked (§4):
-// no other present kind wearing that hue. A kind's delete and its recolour name it beside their recipes, since the device
-// keeps no hue of a kind once its delete has reached it.
-class KindRestore {
+// What an Undo that brings kinds back onto the hues they wore must find standing, as a kind made or changed is checked (§4):
+// no kind outside the Undo wearing a hue it gives back, the legend read as the whole Undo leaves it. `restored` are the
+// kinds the Undo brings back onto a hue, and `removed` those it takes away, which wear nothing after it. A kind's delete and
+// its recolour name their one kind beside their recipes, since the device keeps no hue of a kind once its delete has
+// reached it; a proposal's Apply names every kind it recolours and every kind it makes, in one check.
+export class KindRestore {
   /**
    * @param {string} tree
-   * @param {string} kind
-   * @param {string} hue
+   * @param {{ kind: string, hue: string }[]} restored
+   * @param {string[]} [removed]
    */
-  constructor(tree, kind, hue) {
+  constructor(tree, restored, removed = []) {
     this.tree = tree;
-    this.kind = kind;
-    this.hue = hue;
+    this.restored = Object.freeze(restored.map((each) => Object.freeze({ ...each })));
+    this.removed = Object.freeze([...removed]);
     Object.freeze(this);
   }
 
   get scope() { return RoadmapScopes.tree(this.tree); }
 
   /** @param {Reader} read */
-  check(read) { wearing(read.repository(RoadmapKind).all('drawn'), this.hue, this.kind); }
+  check(read) {
+    const undone = new Set([...this.restored.map(({ kind }) => kind), ...this.removed]);
+    const outside = read.repository(RoadmapKind).all('drawn').filter((kind) => !undone.has(String(kind.id.record)));
+    for (const { kind, hue } of this.restored) wearing(outside, hue, kind);
+  }
 }
 
 export class CreateKind {
@@ -153,6 +159,8 @@ function revived(tree, held, valid) {
   return writeIn(RoadmapScopes.tree(tree), held.reviving(valid, changed), null);
 }
 
+// §4 A change to a kind's words, its label and description. A kind's hue is the recolour's to write, which repaints the steps
+// that wear it and checks no other kind wears the new one, so a hue the change is given is no part of it.
 export class ChangeKind {
   /**
    * @param {string} tree
@@ -162,7 +170,8 @@ export class ChangeKind {
   constructor(tree, kind, changes) {
     this.tree = tree;
     this.kind = kind;
-    this.changes = changes;
+    this.changes = /** @type {KindWords} */ (Object.fromEntries(/** @type {const} */ (['label', 'description']).filter((name) => changes[name] !== undefined)
+      .map((name) => [name, changes[name]])));
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
@@ -247,22 +256,36 @@ export class RecolourKind {
     const hue = recoloured.value.hue;
     wearing(present, hue, this.kind);
     if (held.changed(recoloured).length === 0) return ActDecision.unchanged(null);
-    const worn = held.holdsValues ? steps.filter((step) => step.color === kind.hue).sort((a, b) => Id.compare(a.id, b.id)) : [];
-    const wearers = worn.map((step) => Prediction.update(step.id, { color: hue }));
+    const worn = held.holdsValues ? steps.filter((step) => step.color === kind.hue).map((step) => step.id).sort(Id.compare) : [];
     const scope = RoadmapScopes.tree(this.tree);
-    const recolour = Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
-      [Prediction.update(kind.id, { hue }), ...wearers]);
-    if (held.holdsValues) {
-      recolour.undoBy(UndoRecipe.fields(Restore.tree, [
-        { target: UndoTarget.field(kind.id, 'hue'), defaultValue: UNSET.kind.hue },
-        ...worn.map((step) => ({ target: UndoTarget.field(step.id, 'color'), defaultValue: UNSET.node.color }))]));
-    }
-    if (held.state === 'present') recolour.undoCheckedBy(new KindRestore(this.tree, this.kind, kind.hue));
-    const command = new ScopedPlan(scope, recolour);
+    const command = new ScopedPlan(scope, recolouring(this.tree, kind, hue, worn, { restored: held.holdsValues, checked: held.state === 'present' }));
     if (!held.absent) return ActDecision.write(new ActPlan([command]), null);
     const revival = held.reviving(new Valid(kind, moment, []), []);
     return ActDecision.write(new ActPlan([new ScopedPlan(scope, revival), command]), null);
   }
+}
+
+// §4 `roadmap.recolourKind` as one plan, the room's recolour and a proposal's alike: the command, predicting the kind's new
+// hue and each step of `worn`, those that wear its hue, repainted. Where the device holds the kind's values (`restored`),
+// its Undo writes the kind's hue and each worn step's colour back; of a kind that stands (`checked`), that Undo is asked
+// only while no other kind has come to wear the hue it writes back, `kind`'s.
+/**
+ * @param {string} tree
+ * @param {RoadmapKindValue} kind
+ * @param {string} hue
+ * @param {Id<import('./steps.js').RoadmapStepValue>[]} worn
+ * @param {{ restored: boolean, checked: boolean }} undo
+ */
+export function recolouring(tree, kind, hue, worn, { restored, checked }) {
+  const plan = Plan.running({ name: 'roadmap.recolourKind', specs: [RoadmapSpecs.recolourHue], args: { kind: kind.id.record, hue } },
+    [Prediction.update(kind.id, { hue }), ...worn.map((step) => Prediction.update(step, { color: hue }))]);
+  if (restored) {
+    plan.undoBy(UndoRecipe.fields(Restore.tree, [
+      { target: UndoTarget.field(kind.id, 'hue'), defaultValue: UNSET.kind.hue },
+      ...worn.map((step) => ({ target: UndoTarget.field(step, 'color'), defaultValue: UNSET.node.color }))]));
+  }
+  if (checked) plan.undoCheckedBy(new KindRestore(tree, [{ kind: String(kind.id.record), hue: kind.hue }]));
+  return plan;
 }
 
 // A kind's death, which an Undo writes back while no other kind has come to wear its hue.
@@ -287,7 +310,7 @@ export class DeleteKind {
     const plan = new Plan();
     plan.remove(this.id);
     plan.undoBy(restoring(Restore.tree, this.id, [], { life: true }));
-    plan.undoCheckedBy(new KindRestore(this.tree, String(this.id.record), kind.hue));
+    plan.undoCheckedBy(new KindRestore(this.tree, [{ kind: String(this.id.record), hue: kind.hue }]));
     return writeIn(RoadmapScopes.tree(this.tree), plan, null);
   }
 }

@@ -7,7 +7,7 @@ import { Contract, withRecordsReversed } from '../../../platform/domain-kit/vect
 import { roadmapBook, runAction, runRead, runScene } from './vectors.js';
 
 const READS = ['account', 'activity', 'board', 'diagnostics', 'effects', 'graph', 'guides', 'landing', 'legend', 'pointers', 'progress', 'replica', 'search'].map((name) => `${name}.json`);
-const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing', 'conversation'].map((name) => `${name}-actions.json`);
+const ACTIONS = ['roadmaps', 'steps', 'kinds', 'progress', 'workspace', 'landing', 'conversation', 'apply'].map((name) => `${name}-actions.json`);
 // A turn's records beyond its opening and end run in turnRecords.test.js.
 const TURN = ['turn-records-actions.json'];
 const SCENES = ['undo.json'];

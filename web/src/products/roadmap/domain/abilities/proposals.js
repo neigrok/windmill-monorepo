@@ -39,8 +39,22 @@ import { RoadmapCaps, StandingRoadmaps } from './standing.js';
 /**
  * What folding one change writes, and what it asks of the copy before it writes: the registers it names without writing
  * them, which the turn may have read; the check that is the op's own, of its links or hues; the marks it keeps; whether it
- * changes nothing; and the step it removes.
- * @typedef {{ writes: Write[], names?: Write[], check?: () => Refused | null, marks?: () => Refused | null, unchanged?: boolean, removes?: string }} Folding
+ * changes nothing; the step it removes; and the recolour of a kind it makes.
+ * @typedef {{ writes: Write[], names?: Write[], check?: () => Refused | null, marks?: () => Refused | null, unchanged?: boolean, removes?: string,
+ *   recolour?: { kind: string, hue: string } }} Folding
+ */
+/**
+ * §7 Apply: what a set of changes writes, one write a register. The room's recolour of each kind the copy holds, in the
+ * order the changes make them, each repainting the steps that wear the kind's hue as the copy and the recolours before it
+ * leave them (`wearers`, by id); then every kind, step, link and mark the folded copy holds otherwise than the copy as the
+ * recolours leave it, each record by id: one the copy does not hold `created`, with every field the fold gave it, a step
+ * that ends removed `removed`, and the fields of the rest that changed. A link the copy does not hold that ends removed
+ * is written as nothing.
+ * @typedef {{ kind: string, hue: string, wearers: string[] }} Recolour
+ * @typedef {{ id: string, created: boolean, removed: boolean, fields: Record<string, Json> }} RecordWrite
+ * @typedef {{ from: string, to: string, alive: boolean, created: boolean }} LinkWrite
+ * @typedef {{ node: string, mark: { status: string, outOfOrder: boolean } }} MarkWrite
+ * @typedef {{ recolours: Recolour[], kinds: RecordWrite[], nodes: RecordWrite[], links: LinkWrite[], marks: MarkWrite[] }} Reduced
  */
 
 // §7 Each op of a change, by the fields its row names, required and then optional.
@@ -216,6 +230,21 @@ function stampIn(stamps, key, register) {
   return { held: Object.hasOwn(record.f, register), stamp: record.f[register] ?? null };
 }
 
+// §7 Apply: whether anything in a proposal's base differs from the copy now, the standing roadmap's stamps: a stamp that
+// is not the one recorded, or a step or link that has gone or come, which moves the stamp of its life. An entry that is
+// no register is a base that cannot stand.
+/** @param {Standing} standing @param {string} treeId @param {readonly Json[]} base */
+export function baseMoved(standing, treeId, base) {
+  const stamps = new Map((standing.stamps ?? []).map((record) => [recordKey(record.scope, record.t, record.id), record]));
+  return base.some((entry) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return true;
+    const { t, id, register, stamp } = /** @type {Record<string, Json>} */ (entry);
+    if (typeof t !== 'string' || typeof register !== 'string' || id === undefined) return true;
+    const scope = t === 'progress' ? RoadmapScopes.overlay(treeId) : RoadmapScopes.tree(treeId);
+    return stampIn(stamps, recordKey(scope, t, id), register).stamp !== (stamp ?? null);
+  });
+}
+
 // A link's key among the scratch's links.
 /** @param {string} from @param {string} to */
 const linkKey = (from, to) => jcs([from, to]);
@@ -269,6 +298,8 @@ export class ProposalFold {
   #base = new Map();
   /** @type {Removal[]} */
   #removes = [];
+  /** @type {{ kind: string, hue: string }[]} */
+  #recolours = [];
   /** @type {RoadmapTree | null} */
   #tree = null;
   /** @type {StandingRoadmap | null} */
@@ -340,6 +371,58 @@ export class ProposalFold {
     };
   }
 
+  // §7 Apply: what the set writes, one write a register (`Reduced`). The recolours are the room's commands, so they come
+  // first, each over the copy as the ones before it left it; every other register the folded copy holds otherwise is then
+  // written its folded value, which the commands' repainting cannot reach after them.
+  /** @returns {Reduced} */
+  get reduced() {
+    const copy = this.input;
+    const hues = new Map((copy.kinds ?? []).map((kind) => [kind.id, kind.hue]));
+    const colours = new Map((copy.nodes ?? []).map((node) => [node.id, node.color ?? UNSET.node.color]));
+    const recolours = this.#recolours.map(({ kind, hue }) => {
+      const old = hues.get(kind);
+      const wearers = [...colours.entries()].filter(([, colour]) => colour === old).map(([id]) => id).sort(compareText);
+      for (const id of wearers) colours.set(id, hue);
+      hues.set(kind, hue);
+      return { kind, hue, wearers };
+    });
+    const { nodes, edges, kinds, marks } = this.#records;
+    const copied = {
+      nodes: new Map((copy.nodes ?? []).map((node) => [node.id, { ...node, color: colours.get(node.id) }])),
+      kinds: new Map((copy.kinds ?? []).map((kind) => [kind.id, { ...kind, hue: hues.get(kind.id) }])),
+      edges: new Map((copy.edges ?? []).map((edge) => [linkKey(edge.from, edge.to), edge])),
+      marks: new Map((copy.marks ?? []).map((mark) => [mark.node, mark])),
+    };
+    /** @param {Map<string, Record<string, any>>} folded @param {Map<string, Record<string, any>>} held @param {readonly string[]} names @param {Readonly<Record<string, any>>} unset */
+    const records = (folded, held, names, unset) => [...folded.values()].sort((a, b) => compareText(a.id, b.id)).flatMap((record) => {
+      const before = held.get(record.id);
+      /** @param {Record<string, any>} from @param {string} name @returns {Json} */
+      const value = (from, name) => from[name] ?? unset[name] ?? null;
+      if (before === undefined) {
+        return [{ id: record.id, created: true, removed: record.present !== true, fields: Object.fromEntries(names.map((name) => [name, value(record, name)])) }];
+      }
+      if (record.present !== true && before.present === true) return [{ id: record.id, created: false, removed: true, fields: {} }];
+      const fields = Object.fromEntries(names.filter((name) => !sameJson(value(record, name), value(before, name))).map((name) => [name, value(record, name)]));
+      return Object.keys(fields).length ? [{ id: record.id, created: false, removed: false, fields }] : [];
+    });
+    return {
+      recolours,
+      kinds: records(kinds, copied.kinds, ['hue', 'label', 'description', 'ord'], UNSET.kind),
+      nodes: records(nodes, copied.nodes, ['label', 'icon', 'color', 'description', 'links', 'ord'], UNSET.node),
+      links: [...edges.values()].sort((a, b) => compareText(a.from, b.from) || compareText(a.to, b.to)).flatMap(({ from, to, present }) => {
+        const before = copied.edges.get(linkKey(from, to));
+        if (present === (before?.present === true) || (before === undefined && !present)) return [];
+        return [{ from, to, alive: present, created: before === undefined }];
+      }),
+      marks: [...marks.values()].sort((a, b) => compareText(a.node, b.node)).flatMap(({ node, status, outOfOrder = false }) => {
+        const before = copied.marks.get(node);
+        if (before !== undefined && before.status === status && (before.outOfOrder ?? false) === outOfOrder) return [];
+        if (before === undefined && status === UNSET.progress.mark.status && !outOfOrder) return [];
+        return [{ node, mark: { status, outOfOrder } }];
+      }),
+    };
+  }
+
   // §7 One change in the record's form folded over the scratch, after the checks of the copy, in order: a step under a
   // delete the person can still undo, an id it gives that the copy holds, the steps and kinds it names, the caps of the
   // roadmap's counts, the op's own check of its links or hues, a register the turn saw at another stamp than the copy's,
@@ -372,6 +455,7 @@ export class ProposalFold {
       return refusal(AbilityCodes.noChange, subjectOf(change), at);
     }
     if (folding.removes !== undefined) this.#removes.push(this.removal(folding.removes));
+    if (folding.recolour !== undefined && !this.#given.has(folding.recolour.kind)) this.#recolours.push(folding.recolour);
     for (const { key, entry } of touched) if (!this.#base.has(key)) this.#base.set(key, entry);
     for (const { id } of giving) this.#given.add(id);
     for (const write of folding.writes) writeInto(records, write);
@@ -512,7 +596,7 @@ export class ProposalFold {
     const old = this.hueOf(kind);
     const wearing = [...this.#records.nodes.values()].filter((node) => (node.color ?? 'terracotta') === old);
     return { writes: [kindField(kind, 'hue', hue), ...wearing.map((node) => /** @type {Write} */ ({ ...nodeField(node.id, 'color', hue), base: false }))],
-      check: () => this.hueRefusal(hue, kind) };
+      check: () => this.hueRefusal(hue, kind), recolour: { kind, hue } };
   }
 
   // §6.1 `hue-taken`: a hue another present kind wears, checked at each change as the room's recolour checks it, so two

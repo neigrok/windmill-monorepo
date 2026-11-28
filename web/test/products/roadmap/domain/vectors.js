@@ -21,6 +21,13 @@ import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/ro
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { Contract, VECTOR_REPLICA, savedForm, viewRecords } from '../../../platform/domain-kit/vectors.js';
 import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, CoachPicture, WithdrawTurn, pendingProposal } from '../../../../src/products/roadmap/domain/conversation.js';
+import { ApplyProposal, ProposalUndone, RejectProposal, SettleApplying } from '../../../../src/products/roadmap/domain/apply.js';
+import { ActDecision } from '../../../../src/platform/domain-kit/acts.js';
+import { precondition } from '../../../../src/platform/domain-kit/values.js';
+import { ProposalAbilities } from '../../../../src/products/roadmap/domain/abilities/proposals.js';
+import { readReached } from '../../../../src/products/roadmap/domain/abilities/standing.js';
+import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
@@ -91,6 +98,10 @@ function actOf(input) {
       coach: new Id(given.coach, CoachMessage) });
     case 'MintProposal': return new MintProposal({ proposal: new Id(given.proposal, CoachProposal), treeId: given.treeId, thread: new Id(given.thread, CoachThread),
       message: new Id(given.message, CoachMessage), changes: given.changes, base: given.base });
+    case 'ApplyProposal': return new ApplyProposal(new Id(given.proposal, CoachProposal));
+    case 'SettleApplying': return new SettleApplying();
+    case 'RejectProposal': return new RejectProposal(new Id(given.proposal, CoachProposal));
+    case 'ProposalUndone': return new ProposalUndone(new Id(given.proposal, CoachProposal), given.undo);
     default: throw new Error(`no roadmap action ${action}`);
   }
 }
@@ -176,10 +187,11 @@ export function decideAct(vector, act) {
 // K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
 // binding, then their Undo and Redo, each by the Undo handle its receipt or the Redo before it carries. A step names a
 // role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back names each minted id by the first
-// role that holds it, and any other minted id `<new>`.
+// role that holds it, and any other minted id `<new>`. A proposal is minted as a turn mints one, the ability over the
+// phone's copy and then MintProposal, and an applied one undone as a surface undoes it, the act's Undo and then its mark.
 /** @param {Vector} vector */
 export async function runScene(vector) {
-  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account, anonymous: vector.input.signedOut === true });
   /** @type {Record<string, Harness>} */
   const phones = { a };
   /** @type {Record<string, { input: any, result: any, undo: import('../../../../src/platform/domain-kit/runner.js').UndoHandle | null, requestId: string | null }>} */
@@ -278,6 +290,28 @@ export async function runScene(vector) {
           if (undo !== null) role.undo = undo;
           outcomes.push(inverse(result));
         }
+      } else if (step.propose) {
+        const { treeId, changes } = bind(step.propose);
+        const standing = await phone.runner.runAct(/** @type {any} */ ({ refusals: RoadmapRefusals, load: (/** @type {any} */ read) => readReached(read, treeId),
+          decide: (/** @type {any} */ copy) => ActDecision.unchanged(copy) }));
+        precondition(standing.kind === 'unchanged', 'a standing roadmap is read');
+        /** @param {'coachProposal' | 'node' | 'kind'} type */
+        const minted = (type) => String((type === 'coachProposal' ? phone.runner.mint(CoachProposal) : type === 'node'
+          ? phone.runner.mint(RoadmapStep, RoadmapScopes.tree(treeId)) : phone.runner.mint(RoadmapKind, RoadmapScopes.tree(treeId))).record);
+        const proposed = /** @type {any} */ (ProposalAbilities.propose_roadmap_change(standing.result, { treeId, changes }, treeId, minted));
+        if (!proposed.proposal) throw new Error(`the scene's proposal is refused: ${JSON.stringify(proposed.refused)}`);
+        const proposal = String(proposed.result.proposalId);
+        const outcome = await phone.runner.runAct(new MintProposal({ proposal: new Id(proposal, CoachProposal), treeId, thread: new Id(String(bind(step.thread)), CoachThread),
+          message: new Id(String(bind(step.message)), CoachMessage), changes: proposed.proposal.changes, base: proposed.proposal.base }));
+        if (step.as) roles[step.as] = { input: { treeId, changes }, result: { proposal, changes: proposed.proposal.changes }, undo: null, requestId: null };
+        outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
+      } else if (step.undoProposal) {
+        const role = roles[step.undoProposal];
+        if (role?.undo == null) throw new Error(`${step.undoProposal} applied no act`);
+        const undone = await phone.runner.undo(role.undo);
+        if (undone.kind !== 'unavailable') role.requestId = undone.requestId;
+        const marked = await phone.runner.runAct(new ProposalUndone(new Id(String(role.input.proposal), CoachProposal), undone));
+        outcomes.push({ inverse: inverse(undone), outcome: marked.kind === 'refused' ? { refused: refusalForm(marked.refusal) } : marked.result });
       } else if (step.read) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {

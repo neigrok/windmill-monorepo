@@ -206,8 +206,35 @@ public struct ImportedSteps: Sendable {
   }
 }
 
+// One unit a gesture's records are cut into chunks by: how many records it writes, and their canonical bytes.
+protocol ChunkedUnit {
+  var count: Int { get }
+  var bytes: Int { get }
+}
+
+extension Array where Element: ChunkedUnit {
+  // §5 Import and paste, and a proposal applied: chunks of at most `importChunk` records and `importChunkBytes`, each unit
+  // whole and in its order, so a step's prerequisites come in its chunk or an earlier one. The first chunk keeps room for
+  // `reserved` records.
+  func chunked(reserving reserved: Int = 0) -> [[Element]] {
+    var chunks: [[Element]] = [[]]
+    var (count, bytes) = (reserved, 0)
+    for unit in self {
+      if count > 0 && (count + unit.count > RoadmapLimits.importChunk || bytes + unit.bytes > RoadmapLimits.importChunkBytes) {
+        chunks.append([unit])
+        (count, bytes) = (unit.count, unit.bytes)
+        continue
+      }
+      chunks[chunks.count - 1].append(unit)
+      count += unit.count
+      bytes += unit.bytes
+    }
+    return chunks
+  }
+}
+
 // One imported step and the links that lead to it: the unit a chunk holds whole, measured as its records' JCS bytes.
-struct ImportUnit {
+struct ImportUnit: ChunkedUnit {
   let step: Valid<RoadmapStep>
   let links: [Valid<RoadmapLink>]
   let bytes: Int
@@ -290,24 +317,6 @@ struct StepsImport {
     }
     self.units = units
     self.ids = zip(imported.steps, minted).map { (key: $0.key, id: $1) }
-  }
-
-  // §5 Import and paste: chunks of at most `importChunk` records and `importChunkBytes`, a step's prerequisites in its chunk
-  // or an earlier one. The first chunk keeps room for `reserved` records.
-  func chunks(reserving reserved: Int) -> [[ImportUnit]] {
-    var chunks: [[ImportUnit]] = [[]]
-    var (count, bytes) = (reserved, 0)
-    for unit in units {
-      if count > 0 && (count + unit.count > RoadmapLimits.importChunk || bytes + unit.bytes > RoadmapLimits.importChunkBytes) {
-        chunks.append([unit])
-        (count, bytes) = (unit.count, unit.bytes)
-        continue
-      }
-      chunks[chunks.count - 1].append(unit)
-      count += unit.count
-      bytes += unit.bytes
-    }
-    return chunks
   }
 }
 
@@ -591,7 +600,7 @@ public struct ImportSteps: ActAction {
     let full = loaded.steps.refusal(growing: steps.count, subject: steps.first?.id.ref)
       ?? loaded.links.refusal(growing: links.count, subject: links.first?.id.ref)
     if let full { return .refuse(RoadmapRefusal(full)) }
-    var chunks = planned.chunks(reserving: 0).map { (chunk: [ImportUnit]) -> Plan in
+    var chunks = planned.units.chunked().map { (chunk: [ImportUnit]) -> Plan in
       var plan = Plan()
       for unit in chunk { unit.write(to: &plan, undoable: true) }
       return plan

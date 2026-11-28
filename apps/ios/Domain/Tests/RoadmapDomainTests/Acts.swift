@@ -55,6 +55,22 @@ struct RoadmapAct {
                              message: try input.id("message"), changes: try input.member("changes").asArray(), base: try input.member("base").asArray())
       self.init(act, result: { $0.json })
       return
+    case "ApplyProposal":
+      self.init(ApplyProposal(try input.id("proposal")), result: { .string($0.rawValue) })
+      return
+    case "SettleApplying":
+      self.init(SettleApplying(), result: { .array($0.map(\.json)) })
+      return
+    case "RejectProposal":
+      self.init(RejectProposal(try input.id("proposal")), result: { .string($0.rawValue) })
+      return
+    case "ProposalUndone":
+      // The Undo's result as a case states it, without the ids of its request and its act.
+      var undo = try input.member("undo").asObject()
+      undo["requestId"] = undo["kind"] == "unavailable" ? .null : "request"
+      undo["inverseActId"] = "inverse"
+      self.init(ProposalUndone(try input.id("proposal"), undo: try InverseResult(json: .object(undo))), result: { .string($0.rawValue) })
+      return
     default: break
     }
     let tree: ID<RoadmapEntry> = try input.id("tree")

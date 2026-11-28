@@ -5,7 +5,8 @@ import SyncCore
 import Testing
 
 // A proposal's rules beyond the corpus's cases: the ops' rows and the Shape rule held to the catalog, a name of a ref's form,
-// the caps too large to hold as a case, a roadmap's steps and links and a base past its 262,144 bytes, and a large set's time.
+// the caps too large to hold as a case, a roadmap's steps and links and a base past its 262,144 bytes, a large set's time,
+// and what a set reduces to for Apply, held to its fold.
 struct ProposalsTests {
   static let tree = "t_0000000000000001"
 
@@ -138,5 +139,108 @@ struct ProposalsTests {
     #expect(proposal.changes.count == 100)
     print("propose_roadmap_change: 100 changes over 5,000 steps in \(elapsed), a base of \(proposal.base.count) registers")
     #expect(elapsed < .seconds(30))
+  }
+
+  // The copy, in its case's form, with a reduction written over it as the engine would: the recolours repaint their wearers
+  // first, then each record takes the fields written, a new one made with them, a removed step dead.
+  static func written(_ reduced: ProposalFold.Reduced, over copy: JSON) throws -> JSON {
+    func keyed(_ key: String, _ id: (JSON) throws -> String) throws -> [(String, JSON.Object)] {
+      try (copy[key]?.asArray() ?? []).map { (try id($0), try $0.asObject()) }
+    }
+    var nodes = try keyed("nodes") { try $0.member("id").asString() }
+    var kinds = try keyed("kinds") { try $0.member("id").asString() }
+    var edges = try keyed("edges") { JSON.array([try $0.member("from"), try $0.member("to")]).jcsText }
+    var marks = try keyed("marks") { try $0.member("node").asString() }
+    func put(_ list: inout [(String, JSON.Object)], _ id: String, _ change: (inout JSON.Object) -> Void) {
+      if let at = list.firstIndex(where: { $0.0.utf8.elementsEqual(id.utf8) }) { change(&list[at].1); return }
+      var made: JSON.Object = [:]
+      change(&made)
+      list.append((id, made))
+    }
+    for recolour in reduced.recolours {
+      put(&kinds, recolour.kind) { $0["hue"] = .string(recolour.hue) }
+      for id in recolour.wearers { put(&nodes, id) { $0["color"] = .string(recolour.hue) } }
+    }
+    for kind in reduced.kinds {
+      put(&kinds, kind.id) { record in
+        record["id"] = .string(kind.id)
+        for (name, value) in kind.fields { record[name] = value }
+        record["present"] = .bool(!kind.removed)
+      }
+    }
+    for node in reduced.nodes {
+      put(&nodes, node.id) { record in
+        record["id"] = .string(node.id)
+        for (name, value) in node.fields { record[name] = value }
+        record["present"] = .bool(!node.removed)
+      }
+    }
+    for link in reduced.links {
+      put(&edges, JSON.array([.string(link.from), .string(link.to)]).jcsText) {
+        $0["from"] = .string(link.from)
+        $0["to"] = .string(link.to)
+        $0["present"] = .bool(link.alive)
+      }
+    }
+    for mark in reduced.marks {
+      put(&marks, mark.node) {
+        $0["node"] = .string(mark.node)
+        $0["status"] = .string(mark.status)
+        $0["outOfOrder"] = .bool(mark.outOfOrder)
+        $0["recordedAt"] = .null
+        $0["deviceAt"] = .null
+      }
+    }
+    var tree = try copy.asObject()
+    tree["nodes"] = .array(nodes.map { .object($0.1) })
+    tree["kinds"] = .array(kinds.map { .object($0.1) })
+    tree["edges"] = .array(edges.map { .object($0.1) })
+    tree["marks"] = .array(marks.map { .object($0.1) })
+    return .object(tree)
+  }
+
+  @Test func whatASetReducesToForApplyWrittenOverTheCopyLeavesTheRoadmapAsTheFoldLeavesItForEveryAcceptedCase() throws {
+    let file = "roadmap/abilities/propose_roadmap_change.json"
+    let accepted = try Contract.json(file).asArray().filter { $0["expect"]?["proposal"] != nil }
+    #expect(accepted.count > 10)
+    for (each, raw) in zip(try AbilityCase.all(in: file).filter { $0.expect["proposal"] != nil }, accepted) {
+      var minted = each.ids
+      guard case .minted(let proposal, _) = RoadmapProposals.answer(each.input, over: each.standing, about: each.about, ids: { _ in minted.removeFirst() }) else {
+        Issue.record("\(each.title) is refused")
+        continue
+      }
+      let treeId = try each.input.member("treeId").asString()
+      let fold = try ProposalFold.over(each.standing, treeId: treeId, changes: proposal.changes).get()
+      let trees = try raw.member("given").member("trees").asArray()
+      let landed = try trees.map { try $0.member("id").asString() == treeId ? Self.written(fold.reduced, over: $0) : $0 }.map(RoadmapTree.init(form:))
+      let again = try ProposalFold.over(StandingRoadmaps(trees: landed), treeId: treeId, changes: []).get()
+      #expect(again.folded == fold.folded, "\(each.title)\n  got    \(again.folded.jcsText)\n  expect \(fold.folded.jcsText)")
+    }
+  }
+
+  @Test func theRecoloursASetReducesToComeFirstEachOverTheCopyAsTheOnesBeforeItLeftItAndANewKindIsWrittenWhole() throws {
+    let tree = Self.tree
+    let standing = StandingRoadmaps(trees: [RoadmapTree(id: tree, own: true, meta: RoadmapTree.Metadata(title: "Learn to sail", root: tree),
+      nodes: [Step(id: "a", label: "Leave the dock", ord: "a0"), Step(id: "b", label: "Tie a bowline", color: "olive", ord: "a1"),
+              Step(id: "c", label: "Sail with an instructor", color: "sky", ord: "a2")],
+      edges: [RoadmapTree.Edge(from: "a", to: "c", present: true), RoadmapTree.Edge(from: "b", to: "c", present: true)],
+      kinds: [Kind(id: "build", hue: "terracotta", label: "Build", ord: "a0"), Kind(id: "learn", hue: "olive", label: "Learn", ord: "a1")],
+      marks: [RoadmapTree.Mark(node: "a", status: "complete", outOfOrder: false, recordedAt: nil, deviceAt: nil)])])
+    let fold = try ProposalFold.over(standing, treeId: tree, changes: [
+      ["op": "set_kind", "nodeId": "a", "kind": "learn"],
+      ["op": "recolor_kind", "kind": "learn", "hue": "gold"],
+      ["op": "recolor_kind", "kind": "build", "hue": "olive"],
+      ["op": "add_kind", "kind": "k_sail", "label": "Sail", "hue": "terracotta"],
+      ["op": "set_kind", "nodeId": "c", "kind": "k_sail"],
+      ["op": "recolor_kind", "kind": "k_sail", "hue": "brick"],
+    ]).get()
+    let expected: JSON = [
+      "recolours": [["kind": "learn", "hue": "gold", "wearers": ["b"]], ["kind": "build", "hue": "olive", "wearers": ["a"]]],
+      "kinds": [["id": "k_sail", "created": true, "removed": false, "fields": ["description": "", "hue": "brick", "label": "Sail", "ord": "a2"]]],
+      "nodes": [["id": "a", "created": false, "removed": false, "fields": ["color": "gold"]], ["id": "c", "created": false, "removed": false, "fields": ["color": "brick"]]],
+      "links": [],
+      "marks": [],
+    ]
+    #expect(fold.reduced.json.jcs == expected.jcs, "got \(fold.reduced.json.jcsText)")
   }
 }

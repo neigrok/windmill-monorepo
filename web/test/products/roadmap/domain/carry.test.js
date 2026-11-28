@@ -279,7 +279,7 @@ test('a refused creation’s Coach records are written again where the roadmap i
         message0001: { threadId: 'thread0001', role: 'person', at: later, text: 'Which knot first?' },
       },
       coachProposal: { proposal0001: { treeId: placed, threadId: landed.thread, messageId: landed.coach, changes: [{ op: 'add', label: 'Tie a bowline' }], base: [],
-        state: 'pending', undone: false } },
+        state: 'pending' } },
     };
     assert.deepEqual({ here: coachRecords(a), there: coachRecords(b) }, { here: expected, there: expected });
   } finally {
