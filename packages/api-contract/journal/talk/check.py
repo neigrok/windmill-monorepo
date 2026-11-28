@@ -24,6 +24,8 @@ TAKE_MAX, END_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, RESULT_POLL, RECOVER_FOR, KEPT_MA
 WAITING_FIRST_FAILURES = {'concurrency_exhausted'}
 # What `unopened` carries when no door of the AI wire answered.
 DOOR_CODES = {'offline'}
+# Last messages of the fixtures no story plays, and why.
+NOT_PLAYED = {'null_charged': '`provider_failed` before its charge is known: a take reads no money (P-6)'}
 ORDERS = ['microphone', 'close', 'open', 'read']
 PHASES = {
     None: {'connecting', 'ended', 'recovering', 'recovered'}, 'connecting': {'connecting', 'listening', 'ended'},
@@ -113,6 +115,12 @@ PINS = {
         '§5.5 step 4, no `started` or a refusal': ['bridge-no-started', 'bridge-refused'],
         '§5.5 step 5, the lost session\'s result': ['bridge-result-replaces', 'bridge-result-gone', 'bridge-result-unknown'],
         '§5.5 MAX_BRIDGES': ['bridge-max'],
+        '§5.6 a mark that is none to recover': ['recover-day-passed', 'recover-no-session'],
+        '§5.6 a result replaces its part': ['recover-result-replaces', 'recover-nothing-saved', 'recover-two-sessions',
+                                           'recover-after-unsettled-end'],
+        '§5.6 a result gone or unknown': ['recover-gone-keeps', 'recover-unknown-keeps'],
+        '§5.6 writes only while the page has the digest': ['recover-page-changed', 'recover-same-length-edit', 'recover-changed-meanwhile'],
+        '§5.6 reads repeat, and RECOVER_FOR': ['recover-still-open', 'recover-expired'],
         'INV-2 another device meanwhile': ['other-device-meanwhile'],
     },
 }
@@ -558,6 +566,8 @@ def check_takes(documents, shape):
             raise ValueError(path + ': malformed story') from error
         except ValueError as error:
             raise ValueError(path + ': ' + str(error)) from error
+    played.discard(None)
+    require(played | set(NOT_PLAYED) == set(fixtures['liveTerminals']) and not played & set(NOT_PLAYED), 'last messages played and the live fixtures differ: ' + ', '.join(sorted((played | set(NOT_PLAYED)) ^ set(fixtures['liveTerminals']))))
     return len(documents), steps
 
 
@@ -611,6 +621,8 @@ def negative_probes(documents, reasons=None):
         ('a first failure with a charge', take('bridge-concurrency-retry', lambda story: step(story, 'failed')['in']['heard']['message'].update(charged='0'))),
         ('a clause left with no story', lambda docs: docs.pop('takes/cut-idle.json')),
         ('a wake at another deadline', take('bridge-lost', lambda story: step(story, 'lost')['out'].update(wakeAt=step(story, 'lost')['out']['wakeAt'] + 1))),
+        ('a recovery that closes a connection', take('recover-result-replaces', lambda story: story['steps'][0]['out']['do'].insert(0, {'close': 'A' * 22}))),
+        ('a recovery that reads a session past RECOVER_FOR', take('recover-expired', lambda story: story['steps'][0]['out']['do'].insert(0, {'read': 'A' * 22}))),
         ('an end with another cause', take('end-background', lambda story: story['end'].update(cause='person'))),
         ('an end that counts a bridge it did not make', take('open-and-end', lambda story: story['end'].update(bridges=1))),
         ('a save past the page\'s limit', take('page-full', lambda story: story['steps'][3]['out']['saved'].update(body=story['steps'][3]['out']['saved']['body'] + ' c'))),
@@ -619,6 +631,7 @@ def negative_probes(documents, reasons=None):
         ('a session opened twice', take('bridge-lost', lambda story: step(story, 'lost')['out']['do'].insert(0, {'open': 'A' * 22}))),
         ('a callId that is not made up', take('open-and-end', lambda story: story['given'].update(callIds=['abcdefghijklmnopqrstuv']))),
         ('Undo that leaves the page spoken', take('end-undo', lambda story: step(story, 'undo')['out']['saved'].update(source='spoken'))),
+        ('a mark that outlives a finished recovery', take('recover-unknown-keeps', lambda story: story['steps'][-1]['out'].update(mark=story['steps'][0]['out']['mark']))),
     ]
     for name, mutate in probes:
         invalid = copy.deepcopy(documents)

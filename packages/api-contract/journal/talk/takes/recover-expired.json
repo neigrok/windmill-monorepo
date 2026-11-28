@@ -1,0 +1,21 @@
+{
+  "format": "journal-take/v1",
+  "name": "recover-expired",
+  "given": {"offsetSeconds": 0, "page": {"body": "Up early.\n\nWalked to the river. Tea first", "source": "spoken"}, "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "e3c460eb33530ba2", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856000000}, {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "bytesSaved": 9, "heardAt": 1790856400000}]}, "callIds": []},
+  "steps": [
+    {"at": 1790856600000, "in": {"recover": true},
+     "out": {"phase": "recovering", "do": [{"read": "BBBBBBBBBBBBBBBBBBBBBB"}], "send": [],
+             "page": {"text": "Up early.\n\nWalked to the river. Tea first", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river. Tea first", "source": "spoken"},
+             "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "e3c460eb33530ba2", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856000000}, {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "bytesSaved": 9, "heardAt": 1790856400000}]},
+             "wakeAt": 1790857000000}},
+    {"at": 1790857000000, "in": {"clock": true},
+     "out": {"phase": "recovered", "do": [], "send": [],
+             "page": {"text": "Up early.\n\nWalked to the river. Tea first", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river. Tea first", "source": "spoken"},
+             "mark": null,
+             "wakeAt": null}}
+  ],
+  "end": null,
+  "recovered": {"cause": "recovered", "answered": 0}
+}

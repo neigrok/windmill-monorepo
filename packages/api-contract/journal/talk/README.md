@@ -20,7 +20,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 13 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 52 stories, 394 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 65 stories, 439 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -322,6 +322,11 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `bridge-no-started`, `bridge-refused` | §5.5 step 4 |
 | `bridge-result-replaces`, `bridge-result-gone`, `bridge-result-unknown` | §5.5 step 5 |
 | `bridge-max` | §5.5: `MAX_BRIDGES` |
+| `recover-day-passed`, `recover-no-session` | §5.6: a mark that is none to recover |
+| `recover-result-replaces`, `recover-nothing-saved`, `recover-two-sessions`, `recover-after-unsettled-end` | §5.6: a result replaces its part |
+| `recover-gone-keeps`, `recover-unknown-keeps` | §5.6: a result gone or unknown |
+| `recover-page-changed`, `recover-same-length-edit`, `recover-changed-meanwhile` | §5.6: writes only while the page has the digest |
+| `recover-still-open`, `recover-expired` | §5.6: reads repeat, and `RECOVER_FOR` |
 
 Every frame sequence of a story begins its session with a quiet second and sets speech at 1,000,000 against a
 quiet of 0, so a revised floor does not move a commit here.
@@ -370,6 +375,7 @@ step, never a story's text.
   - every `heard` message passes the AI wire's own check; a `started` equals `liveEvents`' but for its `callId`; a
     last message equals an entry of `liveTerminals` in every field but `text`, or of `liveFirstFailures` whole; a
     control frame equals an entry of `liveFrames`, and none is `context`; a result's code is one of `refusals`;
+  - the stories between them play every key of `liveTerminals` but those `NOT_PLAYED` names with its reason;
   - the commits sent to each session are where the reference of §5.2 puts them over the frames sent to it;
   - audio is sent once, in the order captured, to a session that said `started` and was not sent `end`; no more
     than 100 frames are ever kept; nothing captured while `listening` is held back;

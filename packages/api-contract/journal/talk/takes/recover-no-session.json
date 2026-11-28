@@ -1,0 +1,15 @@
+{
+  "format": "journal-take/v1",
+  "name": "recover-no-session",
+  "given": {"offsetSeconds": 0, "page": {"body": "Up early.\n", "source": "typed"}, "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "7650ff28ded081a8", "sessions": []}, "callIds": []},
+  "steps": [
+    {"at": 1790856060000, "in": {"recover": true},
+     "out": {"phase": "recovered", "do": [], "send": [],
+             "page": {"text": "Up early.\n", "unsettled": []},
+             "saved": {"body": "Up early.\n", "source": "typed"},
+             "mark": null,
+             "wakeAt": null}}
+  ],
+  "end": null,
+  "recovered": {"cause": "dropped", "answered": 0}
+}

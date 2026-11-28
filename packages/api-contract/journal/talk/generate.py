@@ -233,6 +233,16 @@ class Story:
         self.phase, self.shown, self.parts, self.heard, self.marked, self.mark, self.wake = None, [], [], [], False, None, None
         self.stored, self.source = body, source
 
+    # A mark found with no take in memory, and the page it was written with or the page another hand left.
+    @classmethod
+    def found(cls, name, before, parts, heard, calls=(A,), source='spoken', stored=None):
+        story = cls(name)
+        story.before, story.parts, story.heard, story.marked, story.calls = before, parts, heard, True, list(calls)
+        story.mark = mark_of(before, parts, heard, calls)
+        story.stored, story.source = placed(before, parts) if stored is None else stored, source
+        story.given.update(page={'body': story.stored, 'source': source}, mark=copy.deepcopy(story.mark), callIds=[])
+        return story
+
     def step(self, at, given, phase=None, do=(), send=(), shown=None, saved=None, source=None, heard=None, marked=None, stored=KEEP, wake=KEEP):
         if phase is not None: self.phase = phase
         if shown is not None: self.shown = shown
@@ -632,6 +642,87 @@ def bridge_stories():
     return out
 
 
+def recovery_stories():
+    T, R, out = NOON, NOON + 60000, []
+    before, water, expiry = 'Up early.\n', FIRST + ' Cold water.', NOON + 5800 + RECOVER_FOR
+    s = unsettled_end('recover-after-unsettled-end')
+    s.step(T + 21100, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(T + 21300, result(A, code='conflict'), wake=T + 21300 + RESULT_POLL)
+    s.step(T + 26300, {'clock': True}, do=[read(A)], wake=expiry)
+    s.step(T + 26500, result(A, message=last('went_away', water)), phase='recovered', saved=[water], marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-result-replaces', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, message=last('went_away', water)), phase='recovered', saved=[water], marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-nothing-saved', before, [], [T + 400], source='typed')
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=T + 400 + RECOVER_FOR)
+    s.step(R + 200, result(A, message=last('went_away', FIRST)), phase='recovered', saved=[FIRST], source='spoken', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-two-sessions', before, [FIRST, 'Tea first'], [T + 4450, T + 8200], calls=(A, B))
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A), read(B)], wake=T + 4450 + RECOVER_FOR)
+    s.step(R + 200, result(B, message=last('went_away', 'Tea first. Then out.')), saved=[FIRST, 'Tea first. Then out.'])
+    s.step(R + 300, result(A, code='result_gone'), wake=R + 300 + RESULT_POLL)
+    s.step(R + 5300, {'clock': True}, do=[read(A)], wake=T + 4450 + RECOVER_FOR)
+    s.step(R + 5400, result(A, code='result_gone'), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-gone-keeps', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, code='result_gone'), wake=R + 200 + RESULT_POLL)
+    s.step(R + 5200, {'clock': True}, do=[read(A)], wake=expiry)
+    s.step(R + 5400, result(A, code='result_gone'), phase='recovered', marked=False, wake=None)
+    s.recovers(); out.append(s)
+
+    s = Story.found('recover-unknown-keeps', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, code='call_unknown'), phase='recovered', marked=False, wake=None)
+    s.recovers(); out.append(s)
+
+    s = Story.found('recover-page-changed', before, [FIRST], [T + 5800], stored=placed(before, [FIRST]) + '\n\nAnd home by dark.')
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, message=last('went_away', water)), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-same-length-edit', before, ['Walked to the rivet.'], [T + 5800], stored=placed(before, [FIRST]))
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 200, result(A, message=last('went_away', 'Walked to the rivet. Cold water.')), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    typed = placed(before, [FIRST]) + ' And home.'
+    s = Story.found('recover-changed-meanwhile', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 100, {'changed': {'body': typed, 'source': 'spoken'}}, stored=typed)
+    s.step(R + 200, result(A, message=last('went_away', water)), phase='recovered', marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-still-open', before, [FIRST], [T + 5800])
+    s.step(R, {'recover': True}, phase='recovering', do=[read(A)], wake=expiry)
+    s.step(R + 100, result(A, code='conflict'), wake=R + 100 + RESULT_POLL)
+    s.step(R + 5100, {'clock': True}, do=[read(A)], wake=expiry)
+    s.step(R + 5200, result(A, unread=True), wake=R + 5200 + RESULT_POLL)
+    s.step(R + 10200, {'clock': True}, do=[read(A)], wake=expiry)
+    s.step(R + 10300, result(A, message=last('went_away', water)), phase='recovered', saved=[water], marked=False, wake=None)
+    s.recovers(answered=1); out.append(s)
+
+    s = Story.found('recover-expired', before, [FIRST, 'Tea first'], [T, T + 400000], calls=(A, B))
+    s.step(T + RECOVER_FOR, {'recover': True}, phase='recovering', do=[read(B)], wake=T + 400000 + RECOVER_FOR)
+    s.step(T + 400000 + RECOVER_FOR, {'clock': True}, phase='recovered', marked=False, wake=None)
+    s.recovers(); out.append(s)
+
+    s = Story.found('recover-day-passed', before, [FIRST], [T + 5800])
+    s.step(T + 46800000, {'recover': True}, phase='recovered', marked=False)
+    s.recovers('dropped'); out.append(s)
+
+    s = Story.found('recover-no-session', before, [], [], source='typed')
+    s.step(R, {'recover': True}, phase='recovered', marked=False)
+    s.recovers('dropped'); out.append(s)
+    return out
+
+
 def story_text(story):
     line = lambda value: json.dumps(value, ensure_ascii=False)
     lines = ['{', f'  "format": {line(story["format"])},', f'  "name": {line(story["name"])},', f'  "given": {line(story["given"])},', '  "steps": [']
@@ -650,7 +741,7 @@ def story_text(story):
 
 
 def documents():
-    stories = [story.document() for story in open_stories() + word_stories() + end_stories() + bridge_stories()]
+    stories = [story.document() for story in open_stories() + word_stories() + end_stories() + bridge_stories() + recovery_stories()]
     if len({story['name'] for story in stories}) != len(stories): raise ValueError('story names repeat')
     return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes()),
             **{'takes/' + story['name'] + '.json': story_text(story) for story in stories}}
