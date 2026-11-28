@@ -1,20 +1,22 @@
-/* A still tree in the room's node vocabulary (ComposedTree.jsx). A node carries its kind as three custom properties
+/* A tree in the room's node vocabulary (ComposedTree.jsx). A node carries its kind as three custom properties
    from theme.js's KIND_CSS: --fill and --ring are the kind's base and ring tokens, --g the base again, mixed down
    for the halo. An open ring and a locked node are filled with the plate the tree stands on, --rm-plate. */
 .rmTree { position: relative; flex: none; --rm-plate: var(--look-panel); }
 .rmTree > svg { position: absolute; inset: 0; overflow: visible; }
-.rmTree-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5; }
+.rmTree-edge { fill: none; stroke-linecap: round; stroke: var(--connector-inactive); stroke-width: 1.5;
+               transition: stroke var(--duration-fast) var(--ease-standard), stroke-opacity var(--duration-fast) var(--ease-standard); }
 .rmTree-edge.is-lit { stroke: var(--connector-active); stroke-width: 2.2; }
-.rmTree-crown { position: absolute; z-index: 3; display: flex; transform: translate(-50%, -50%); color: var(--kind-gold); }
+.rmTree-crown { position: absolute; z-index: 3; display: flex; transform: translate(-50%, -50%); color: var(--kind-gold); pointer-events: none; }
 .rmTree-crown svg { fill: currentColor; }
 
-.rmTree .nd { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; box-sizing: border-box; z-index: 2; }
+.rmTree .nd { position: absolute; translate: -50% -50%; border-radius: 50%; box-sizing: border-box; z-index: 2;
+              --nd-glow: color-mix(in srgb, var(--g) 40%, transparent);
+              transition: scale var(--duration-base) var(--ease-soft), filter var(--duration-base) var(--ease-soft); }
 .rmTree .nd-dim { border: 2px solid color-mix(in srgb, var(--g) 32%, transparent); background: color-mix(in srgb, var(--g) 22%, var(--rm-plate)); }
 .rmTree .nd-avail { border: 2.5px solid var(--ring); background: var(--rm-plate); }
-.rmTree .nd-done { border: 2.5px solid var(--ring); background: var(--fill);
-                   box-shadow: 0 0 0 3px color-mix(in srgb, var(--g) 40%, transparent), 0 0 16px color-mix(in srgb, var(--g) 40%, transparent); }
+.rmTree .nd-done { border: 2.5px solid var(--ring); background: var(--fill); box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 .rmTree .ndlabel { position: absolute; z-index: 3; transform: translate(-50%, 0); font-family: var(--font-body); font-weight: 700;
-                   font-size: 11px; line-height: 14px; color: var(--neutral-600); white-space: nowrap; }
+                   font-size: 11px; line-height: 14px; color: var(--neutral-600); white-space: nowrap; pointer-events: none; }
 .rmTree .ndlabel--dim { font-weight: 600; color: var(--neutral-500); }
 
 .rmTree .plq { position: absolute; left: 17px; top: 15px; z-index: 6; display: flex; align-items: center; gap: 9px;
@@ -25,3 +27,39 @@
 .rmTree .plq .by { font-family: var(--font-body); font-size: 11px; line-height: 1.25; color: var(--text-tertiary); }
 .rmTree .plq .by b { color: var(--text-secondary); }
 .rmTree .plq .ct { font-family: var(--font-mono); }
+
+/* ---- under a counted pointer (the frame's data-pointed): the room's feedback on a step and a branch, a disc 48px across
+   and a band 24px wide ---- */
+.rmTree .nd::before { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; translate: -50% -50%; border-radius: 50%; }
+.rmTree-reach { fill: none; stroke: transparent; stroke-width: 24; visibility: hidden; pointer-events: stroke; }
+[data-pointed] .rmTree .nd:hover { filter: brightness(1.12); }
+[data-pointed] .rmTree-branch:hover .rmTree-edge:not(.is-lit) { stroke: var(--connector-active); stroke-opacity: .95; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .rmTree .nd:hover { scale: 1.06; }
+}
+
+/* ---- the room's motion under the frame's attributes (shell/marketing/pictureMotion.js): the crown's breath, then a beat ---- */
+.rmTree-travel { opacity: 0; pointer-events: none; }
+.rmTree-travel path { fill: none; stroke: color-mix(in srgb, var(--connector-active) 70%, white); stroke-linecap: round;
+                      stroke-dasharray: var(--dash) calc(var(--length) + var(--dash)); stroke-dashoffset: var(--dash); }
+.rmTree-head { --dash: 1px; stroke-width: 4.4; }
+.rmTree-tail { --dash: 24px; stroke-width: 2.2; stroke-opacity: .5; }
+@keyframes rm-travel { to { stroke-dashoffset: calc(var(--dash) - var(--length)); } }
+@keyframes rm-travel-shown { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .rmTree .nd-done.is-crowned { animation: wm-pulse-node var(--duration-glow) var(--ease-glow) infinite; }
+  [data-beat] .rmTree[data-arrival="frontier"] .nd-avail { animation: wm-pulse-frontier var(--duration-glow) var(--ease-glow); }
+  [data-beat] .rmTree[data-arrival="unlock"] .nd-done { animation: wm-blossom var(--duration-slow) var(--ease-soft); }
+  [data-beat] .rmTree[data-arrival="unlock"] .nd.is-opened {
+    animation: wm-wake var(--duration-slow) var(--ease-soft) var(--wake-at), wm-pulse-frontier var(--duration-glow) var(--ease-glow) var(--pulse-at);
+  }
+  [data-beat] .rmTree-travel { animation: rm-travel-shown var(--duration-fast) linear calc(var(--travel-at) + var(--travel)) backwards; }
+  [data-beat] .rmTree-travel path { animation: rm-travel var(--travel) var(--ease-standard) var(--travel-at) forwards; }
+}
+
+/* Reduced motion keeps the step's brightening and the branch's colour at their own times, and plays no scale, breath or beat. */
+@media (prefers-reduced-motion: reduce) {
+  .rmTree .nd { transition-duration: var(--duration-base) !important; }
+  .rmTree-edge { transition-duration: var(--duration-fast) !important; }
+}

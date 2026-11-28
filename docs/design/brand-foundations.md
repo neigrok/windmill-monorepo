@@ -80,8 +80,10 @@ says **can appear**, never a promise of placement.
 
 **The moat rule.** A product's picture on a public page is built from the product's real vocabulary
 — never a screenshot, stock or an invented illustration. On a page in the Instrument look (the front page and
-the three product landings) each picture is a still composition of the product's own components,
-tokens and type, labelled as composed, and the page carries no infinite motion.
+the three product landings) each picture is a composition of the product's own components, tokens and
+type, labelled as composed. It rests still and moves only with motion its own room makes: under the
+pointer, and once as it comes into view on a phone
+([Motion language §8](guidelines/motion-language.md#8-pictures-on-public-pages)).
 
 ## Visual foundations
 
@@ -122,7 +124,8 @@ tokens and type, labelled as composed, and the page carries no infinite motion.
     from `--nd-glow`; `wm-ember` is the lower-amplitude sibling on the same clock, frozen at
     mid-breath under reduced motion. The calm ceiling — exactly one infinite loop on screen —
     is a motion-doc rule, and where those loops are spent is the consuming product's call.
-  - No infinite decorative loops outside a product's own canvas.
+  - No infinite decorative loops outside a product's own canvas. A product picture on a public page
+    runs its room's one loop only while the pointer is on it.
 - **Hover states**: backgrounds shift to a slightly darker neutral (`--surface-hover`) or the
   brand-soft tint for selected/active items — never pure opacity fades on solid fills.
 - **Press states**: primary buttons scale to 0.97 (soft compress, not a bounce).

@@ -150,14 +150,14 @@ test('no line on the page promises what the product does not do, names a price o
   assert.doesNotMatch(words, /[$€£]\s?\d|\d+\s?(USD|dollars)/);
 });
 
-test('each room hands the frame its picture, labelled as composed, with the stages it is drawn at', async (t) => {
+test('each room hands the frame its picture, labelled as composed, under the name its event tells, with the stages it is drawn at', async (t) => {
   const page = await frontPage(t, { status: 'ghost', user: null });
   told();
   const frames = page.elements.filter((element) => element.type?.name === 'PictureFrame');
-  assert.deepEqual(frames.map(({ props }) => [props.id, props.picture.label, props.theme, props.picture.stages.map((stage) => stage.name)]), [
-    ['roadmap', 'Composed tree', 'light', ['narrow', 'column', 'row']],
-    ['journal', 'Composed page', 'light', ['narrow', 'column', 'wide']],
-    ['gym', 'Composed session', 'light', ['narrow', 'wide']],
+  assert.deepEqual(frames.map(({ props }) => [props.id, props.page, props.route, props.picture.name, props.picture.label, props.theme, props.picture.stages.map((stage) => stage.name)]), [
+    ['roadmap', 'front', '/', 'root', 'Composed tree', 'light', ['narrow', 'column', 'row']],
+    ['journal', 'front', '/', 'root', 'Composed page', 'light', ['narrow', 'column', 'wide']],
+    ['gym', 'front', '/', 'root', 'Composed session', 'light', ['narrow', 'wide']],
   ]);
 });
 

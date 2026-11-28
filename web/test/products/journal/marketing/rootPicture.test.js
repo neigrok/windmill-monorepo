@@ -9,7 +9,10 @@ const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { JournalPicture } = await import('../../../../src/products/journal/marketing/RootPicture.jsx');
 
-const CSS = readFileSync(new URL('../../../../src/products/journal/marketing/journalRootPicture.css', import.meta.url), 'utf8');
+const file = (name) => readFileSync(new URL(`../../../../src/products/journal/marketing/${name}`, import.meta.url), 'utf8');
+const CSS = file('journalRootPicture.css');
+const SHEETS = ['journalRootPicture.css', 'landingPictures.css'].map(file).join('\n');
+const SOURCES = ['RootPicture.jsx', 'LandingPictures.jsx'].map(file).join('\n');
 const html = renderToStaticMarkup(React.createElement(JournalPicture));
 const text = (markup) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -22,9 +25,24 @@ test('the picture keeps the journal’s night canvas whatever the page wears', (
   assert.ok(!/\[data-theme/.test(CSS), 'a theme rule repaints a picture its own canvas already answers for');
 });
 
-test('the picture is still, free of raw colour, and holds nothing a person could press', () => {
+// Every rule of the journal's picture sheets that declares an animation, by its selectors.
+const animated = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .filter(([, , body]) => /(^|;)\s*animation(-name)?\s*:/.test(body))
+  .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim()));
+
+// Every selector of a sheet's rules that answer the pointer.
+const hovered = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*\}/g)]
+  .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim())).filter((selector) => selector.includes(':hover'));
+
+test('the picture holds nothing a person could press, names no raw colour, and moves nothing at rest', () => {
   assert.ok(!/<(a|button|input|details|summary)[ >]|tabindex|onclick|href=/i.test(html), 'the picture draws a control');
   assert.match(html, /<span class="jnPicture-go">Go to page<\/span>/, 'the echo’s door is a styled span, not a control');
   assert.ok(!/animation|style=/.test(html), 'the picture carries motion or an inline style');
-  assert.ok(!/animation|@keyframes|#[0-9a-fA-F]{3,6}\b/.test(CSS), 'the sheet animates or names a raw colour');
+  assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
+  assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(SHEETS), 'a sheet names a raw colour');
+  assert.deepEqual(hovered(SHEETS).filter((selector) => !selector.startsWith('[data-pointed] ')), [], 'a part answers a pointer the frame does not count, a finger');
+  assert.deepEqual(hovered(SHEETS), ['[data-pointed] .jnSearch li.is-hit:hover::before', '[data-pointed] .jnYear i:hover', '[data-pointed] .jnYear i:hover']);
+  const selectors = animated(SHEETS);
+  assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] /.test(selector)), [], 'an animation runs before the pointer arrives');
+  assert.deepEqual(selectors, ['[data-beat] .jnPicture-rule', '[data-pointed] .jnCursor', '[data-beat] .jnWindow-echo']);
 });

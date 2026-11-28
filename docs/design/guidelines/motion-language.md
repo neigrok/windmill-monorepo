@@ -44,7 +44,8 @@ Two intensities, by the tier the node *lands on*:
   `--ease-standard`. No blossom, no beat, no toast (except delete-undo).
 - **Entrances reuse the wake shape**: an element arriving on the canvas fades in and
   scale-settles to its *resting* tier treatment.
-- DOM approximation: `wm-bloom` (560ms `--ease-soft`), in `tokens/motion.css`.
+- DOM approximation: `wm-bloom` (560ms `--ease-soft`), in `tokens/motion.css`; `wm-blossom` for a
+  complete step blooming again from its resting halo; `wm-wake` for a lit step's wake.
 
 ### travel — light runs along a trunk edge
 
@@ -83,7 +84,8 @@ Two intensities, by the tier the node *lands on*:
   infinite halo loop on the canvas. Other complete nodes wear a **static** halo (α .28).
 - **Pulse** (finite attention beat): the same waveform at double-time — **1200ms/cycle × 2
   cycles, decaying** (peaks α .42/+3px, then .34/+1.5px), then rest. Marks the newly-available
-  frontier after a ceremony. DOM: `wm-pulse-echo` (2400ms, once).
+  frontier after a ceremony. DOM: `wm-pulse-echo` (2400ms, once); `wm-pulse-frontier` on a step with
+  no resting halo.
 - **Shared phase**: all oscillating halos lock to one global clock.
 - **Arrived card** (Board, DOM): a step card that just became up next, or was just created in
   Locked, wakes (fade, scale 1→1.02→1, 480ms `--ease-soft`) while its brand edge and
@@ -108,7 +110,8 @@ Two intensities, by the tier the node *lands on*:
   (one toast that sums them).
 - **≤24 nodes tweening concurrently.** A wider ring drops the blossom overshoot and
   plain-cross-fades instead.
-- **Exactly 1 infinite halo loop** in the scene: the crown. Every other node animation is finite.
+- **Exactly 1 infinite halo loop** in the scene: the crown. Every other node animation is finite. On
+  a public page it runs only in the picture under the pointer (§8).
 - **Motion yields to interaction**: pointer-down / wheel / pinch / key-nav fast-forwards every
   running ceremony beat to its end state via a **150ms** fade. Toasts survive. Feedback motion
   never waits.
@@ -166,3 +169,34 @@ Easings (`tokens/motion.css`): `--ease-soft cubic-bezier(0.16,1,0.3,1)` ·
 
 Owning specs refine content (copy, targets), never the physics: durations, easings, ceilings
 and reduced-motion mappings come from here.
+
+## 8. Pictures on public pages
+
+A product picture on the front page or a product landing borrows its room's motion and invents none:
+a part its room does not move stays still, and so does every labelled button a picture draws (Apply,
+Turn this down, Complete, Fork this tree, Go to page, Add movement).
+
+- **At rest** a picture is still, and nothing moves before the picture has drawn.
+- **Under the pointer.** A picture answers a mouse or a pen on a device whose primary pointer hovers;
+  a finger never leaves anything lit or moving. A part gives its room's feedback (§0) at the room's
+  values. It takes no press, no focus and no cursor of its own, and it never shows a state, number or
+  word the picture does not already show.
+- **Arrival.** When that pointer is on a picture that is at least 60% in view, or that covers at least
+  60% of the view's height, a picture that has a beat plays it: a tree's open steps pulse ×2, the
+  unlock picture plays ceremony #4 from the state it draws back to the same state, and Gym's
+  remembered weight lifts its ink. The other pictures have no beat. A beat plays again only after it
+  has ended and the pointer has been away for 2400ms.
+- **While the pointer stays** a picture runs its room's one loop: a tree's crown breathes, a hovered
+  path card's crown breathes, a page's caret blinks; Journal's echo keeps its light. When the pointer
+  leaves, the tree's crown plays its breath to the end of the cycle and stops, a path card's crown
+  ends with its card's hover, the caret returns solid at once, and the echo's light settles.
+- **Without hover**, on a phone, a picture with a beat plays it once per page load, after it has
+  stayed that much in view for 400ms, one picture at a time down the page. There Journal's echo light
+  is a beat too: it kindles, holds and settles once. Taps do nothing and no loop runs.
+- **Calm ceiling.** Only the picture under the pointer starts motion. One the pointer has just left
+  finishes its beat and its breath and starts nothing new. On a phone one beat plays at a time.
+- **Reduced motion** follows §5: colour and opacity changes stay, scale, travel, breath and pulse do
+  not, and a room's own reduced-motion rule wins where it has one.
+
+The frame that carries this is `web/src/shell/marketing/pictureMotion.js`; each room's picture sheet
+under `web/src/products/<room>/marketing/` holds its own responses.

@@ -54,9 +54,13 @@ page frame's `data-look="instrument"`.
 - The header carries the approved mark, unchanged, with the word "Windmill" set in the page's type;
   on a night ground it carries the night mark, the same shapes with a lighter hub and door
   ([Logo](brand-foundations.md#logo)).
-- Product pictures are still compositions of the product's own components, tokens and type, each
-  labelled as composed. Nothing inside a picture is live, and the page has no infinite motion.
-  Controls are small and quiet, and the footer is the sitemap.
+- Product pictures are compositions of the product's own components, tokens and type, each labelled
+  as composed. A picture rests still. Under the pointer it answers with its room's own feedback and
+  runs at most its room's one loop while the pointer stays; a picture that has a beat plays it when the
+  pointer arrives, and on a phone plays it once, as it comes into view. Nothing in it navigates, takes
+  focus or changes what it shows
+  ([Motion language §8](guidelines/motion-language.md#8-pictures-on-public-pages)).
+- Controls are small and quiet, and the footer is the sitemap.
 
 ## Built: the front page `/`
 

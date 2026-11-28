@@ -1,5 +1,5 @@
-// Roadmap's pictures on its landing, each still and drawn at the stage the shell names: the sail tree on the page's
-// ground, a step finishing and the steps it opens, the ready paths, a step's page, and a published tree with its fork.
+// Roadmap's pictures on its landing, each drawn at the stage the shell names: the sail tree on the page's ground, a
+// step finishing and the steps it opens, the ready paths, a step's page, and a published tree with its fork.
 
 import React from 'react';
 import { Check } from 'lucide-react';
@@ -26,7 +26,8 @@ export function HeroTree({ stage }) {
   );
 }
 
-// The room's unlock: Rig the mast finished, and the two steps that waited on it open.
+// The room's unlock: Rig the mast finished, and the two steps that waited on it open. Only the finished beat plays the
+// unlock when the pointer arrives, so the picture holds one ceremony.
 const BEAT = { width: 320, height: 190, plaque: false, size: { done: 26, avail: 22, dim: 22 },
   seats: { rig: [84, 98], trim: [236, 46], points: [248, 148] }, edges: [['rig', 'trim'], ['rig', 'points']] };
 const beatSteps = (finished) => ({
@@ -38,7 +39,7 @@ const beatSteps = (finished) => ({
 function Beat({ finished }) {
   return (
     <div className="rmBeat">
-      <div className="rmBeat-world"><ComposedTree world={BEAT} steps={beatSteps(finished)} needs={BEAT.edges} /></div>
+      <div className="rmBeat-world"><ComposedTree world={BEAT} steps={beatSteps(finished)} needs={BEAT.edges} arrival={finished ? 'unlock' : null} /></div>
       <p className="rmBeat-caption">{finished
         ? t('roadmap.step.completedOutcomeMany', { count: 2, shown: '2' })
         : t('roadmap.step.finishToUnlock', { step: t('roadmap.scene.rigMast') })}</p>

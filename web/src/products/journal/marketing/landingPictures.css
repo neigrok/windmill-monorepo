@@ -1,9 +1,15 @@
 /* The journal's pictures on its landing (LandingPictures.jsx), in the night canvas's tokens at any hour; the lamp is
-   --color-brand. Each fills its stage, its contents centred. */
+   --color-brand. Each fills its stage, its contents centred, and answers a counted pointer (the frame's data-pointed)
+   as the room does. */
 .jnNight { box-sizing: border-box; display: flex; align-items: center; justify-content: center; height: 100%;
            background: var(--surface-canvas); color: var(--text-primary); font-family: var(--font-body); text-align: left; }
 .jnNight :where(p, ul) { margin: 0; padding: 0; list-style: none; }
 .jnCursor { display: inline-block; width: 2px; height: 18px; margin-left: 2px; vertical-align: -3px; background: var(--color-brand); }
+/* A field's caret, on for the first half of each second and cut, not faded, while the picture is pointed at. */
+@keyframes jn-caret-blink { 0%, 49.99% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .jnCursor { animation: jn-caret-blink 1000ms steps(1) infinite; }
+}
 
 /* ---- tonight's page, the line before it and an echo under it ---- */
 .jnWindow { padding: 40px 48px; }
@@ -14,7 +20,20 @@
 .jnWindow-earlier { margin-top: 18px; font-size: 16px; line-height: 28px; color: var(--text-secondary); }
 .jnWindow-tonight { margin-top: 14px; font-size: 16px; line-height: 28px; }
 .jnWindow-echo { margin-top: 20px; padding: 15px 17px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-card);
-                 font-size: 14.5px; line-height: 23px; color: var(--text-secondary); }
+                 font-size: 14.5px; line-height: 23px; color: var(--text-secondary); transition: border-color var(--duration-glow) linear; }
+/* The echo's edge kindles while the picture is pointed at, as the margin's seam does. */
+[data-pointed] .jnWindow-echo { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent);
+                                transition: border-color calc(var(--duration-glow) / 2) var(--ease-glow); }
+/* Without hover the edge plays its light once as the picture's beat, as the brand root's seam does. */
+@keyframes jn-edge-light {
+  0% { border-color: var(--border-subtle); animation-timing-function: var(--ease-glow); }
+  20% { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent); }
+  60% { border-color: color-mix(in srgb, var(--color-brand) 26%, transparent); animation-timing-function: linear; }
+  100% { border-color: var(--border-subtle); }
+}
+@media (hover: none) {
+  [data-beat] .jnWindow-echo { animation: jn-edge-light calc(var(--duration-glow) * 2.5) linear; }
+}
 .jnWindow-date { margin-top: 9px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-brand); }
 .jnWindow[data-stage="narrow"] { padding: 24px 16px; }
 .jnWindow[data-stage="narrow"] .jnWindow-page { width: 318px; }
@@ -25,7 +44,10 @@
 .jnSearch-query { display: flex; align-items: center; gap: 11px; padding: 15px 18px; border-bottom: 1px solid var(--border-subtle); font-size: 16px; line-height: 22px; }
 .jnSearch-query svg { color: var(--color-brand); }
 .jnSearch ul { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
-.jnSearch li { display: flex; gap: 14px; opacity: .45; }
+.jnSearch li { position: relative; z-index: 0; display: flex; gap: 14px; opacity: .45; }
+.jnSearch li.is-hit::before { content: ""; position: absolute; inset: -6px -18px; z-index: -1; opacity: 0;
+                              background: color-mix(in srgb, var(--color-brand) 8%, transparent); transition: opacity 140ms var(--ease-standard); }
+[data-pointed] .jnSearch li.is-hit:hover::before { opacity: 1; }
 .jnSearch li.is-hit { opacity: 1; }
 .jnSearch-day { flex: none; width: 56px; padding-top: 2px; font-family: var(--font-mono); font-size: 10px; line-height: 16px; text-transform: uppercase; color: var(--text-tertiary); }
 .is-hit .jnSearch-day { color: var(--color-brand); }
@@ -47,9 +69,27 @@
 .jnYear { display: flex; flex-direction: column; gap: 9px; margin-top: 12px; }
 .jnYear p { display: grid; grid-template-columns: 26px repeat(21, 1fr); align-items: center; column-gap: 5px; }
 .jnYear span { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; color: var(--text-tertiary); }
-.jnYear i { aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; border: 1px solid var(--neutral-300); }
+.jnYear i { position: relative; aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; border: 1px solid var(--neutral-300);
+            transition: scale 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard); }
+/* A day takes the pointer over its whole grid cell: its row, as tall as the month's line (the row wears the month's
+   type, so a day's 1lh is that line), and its column, out to half of each gap. A hollow day's 1px edge is inside it. */
+.jnYear p { font-family: var(--font-mono); font-size: 9px; }
+.jnYear i::before { content: ""; position: absolute; inset: calc((100% - 1lh) / 2 - 4.5px) -2.5px; }
+.jnYear i:not([class])::before { inset: calc((100% - 1lh) / 2 - 4.5px) -3.5px; }
 .jnYear i.is-lamp2 { border: none; background: var(--lamp-200); }
 .jnYear i.is-lamp4 { border: none; background: var(--lamp-400); }
 .jnYear i.is-lamp5 { border: none; background: var(--lamp-500); }
 .jnYear i.is-lamp6 { border: none; background: var(--lamp-600); }
 .jnScene-legend { margin-top: 14px; font-size: 11px; line-height: 16px; color: var(--text-tertiary); }
+[data-pointed] .jnYear i:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand) 60%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .jnYear i:hover { scale: 1.25; }
+}
+
+/* Reduced motion keeps the echo's light, the hit's wash and a day's ring at their own times; the caret stays solid. */
+@media (prefers-reduced-motion: reduce) {
+  .jnWindow-echo { transition-duration: var(--duration-glow) !important; }
+  [data-pointed] .jnWindow-echo { transition-duration: calc(var(--duration-glow) / 2) !important; }
+  .jnSearch li.is-hit::before { transition-duration: 140ms !important; }
+  .jnYear i { transition-duration: 120ms !important; }
+}

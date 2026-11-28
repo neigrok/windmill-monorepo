@@ -1,4 +1,4 @@
-// Gym's picture on the brand root: one Coach turn, its receipt in the room's own sentence, still, on the stage the shell names.
+// Gym's picture on the brand root: one Coach turn, its receipt in the room's own sentence, on the stage the shell names.
 
 import React from 'react';
 import { BookOpen, ChevronRight } from 'lucide-react';
@@ -22,7 +22,7 @@ export function GymPicture({ stage }) {
             <b>{t('gym.root.movement')}</b>
             <span className="gyPicture-figure">{t('gym.root.change', { next: <span className="gyPicture-next">{t('gym.root.changeNext')}</span> })}</span>
           </p>
-          <p className="gyPicture-kept">{t('gym.proposals.keptRun', { count: 2 })}<span className="gyPicture-more">›</span></p>
+          <p className="gyPicture-kept gyPicture-unfold">{t('gym.proposals.keptRun', { count: 2 })}<span className="gyPicture-more">›</span></p>
           <span className="gyPicture-apply">{t('gym.common.apply')}</span>
           <p className="gyPicture-kept">{t('gym.proposals.loggedSetsUnchanged')}</p>
           <span className="gyPicture-turnDown">{t('gym.proposals.turnDown')}</span>

@@ -1,7 +1,7 @@
 // What every page of the site wears in the instrument look: the frame with its own head, the header, the footer
 // as the sitemap, the arrow link and the frame a composed picture sits in. Sign in opens the door in place; a page
 // never navigates to sign in. `page` names the page in every event it tells (`front` for the brand root, a
-// product's id for its landing), and nothing inside a picture frame is live.
+// product's id for its landing). A picture answers the pointer with its room's own motion and holds no control.
 
 import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ErrorBoundary, Icon, SegmentedControl } from '../../design-system';
@@ -18,6 +18,7 @@ import { movedSinceArrival } from '../arrival.jsx';
 import { track } from '../../telemetry/beacon.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
+import { PictureDrawn, usePictureMotion } from './pictureMotion.js';
 import { t } from '../i18n/entry/index.js';
 import './site.css';
 
@@ -275,10 +276,12 @@ function stageFor(stages, width) {
   return { stage, width, scale: width ? Math.min(1, width / stage.width) : 1 };
 }
 
-// `id` is the product the picture belongs to; `route` the page it stands on, for the report a crash sends.
-export function PictureFrame({ id, picture, theme, route, className }) {
+// `id` is the product the picture belongs to, `page` the page it stands on as its events name it, and `route` that
+// page's path, for the report a crash sends.
+export function PictureFrame({ id, picture, theme, page, route, className }) {
   const body = useRef(null);
   const [fit, setFit] = useState(null);
+  const drawn = usePictureMotion(body, { page, product: id, picture: picture.name, route });
 
   useLayoutEffect(() => {
     const measure = () => setFit((was) => {
@@ -294,14 +297,14 @@ export function PictureFrame({ id, picture, theme, route, className }) {
   return (
     <figure className={className ? `front-picture ${className}` : 'front-picture'}>
       <figcaption className="front-picture-bar">{picture.label}</figcaption>
-      {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it. */}
-      <div ref={body} className="front-picture-body" aria-hidden="true" inert="" data-brand={id} data-theme={theme}
+      {/* The composed picture is spared a screen reader and holds nothing to focus; its label above is what is said of it. */}
+      <div ref={body} className="front-picture-body" aria-hidden="true" data-brand={id} data-theme={theme}
         style={fit ? { height: fit.stage.height * fit.scale } : undefined}>
         {fit && (
           <div className="front-picture-stage"
             style={{ width: fit.width / fit.scale, height: fit.stage.height, transform: fit.scale < 1 ? `scale(${fit.scale})` : undefined }}>
             <ErrorBoundary fallback={null} onCrash={() => reportPicture(id, route)}>
-              <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /></Suspense>
+              <Suspense fallback={null}><picture.Picture stage={fit.stage.name} /><PictureDrawn onChange={drawn} /></Suspense>
             </ErrorBoundary>
           </div>
         )}

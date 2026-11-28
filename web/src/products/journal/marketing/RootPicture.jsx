@@ -1,4 +1,4 @@
-// The journal's picture on the brand root: three days of the page and one echo, still, on its own night canvas at any hour.
+// The journal's picture on the brand root: three days of the page and one echo, on its own night canvas at any hour.
 
 import React from 'react';
 import { t } from '../i18n/entry/index.js';

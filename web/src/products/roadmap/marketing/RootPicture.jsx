@@ -1,4 +1,4 @@
-// Roadmap's picture on the brand root: the request and the tree it became, still, on the stage the shell names.
+// Roadmap's picture on the brand root: the request and the tree it became, on the stage the shell names.
 
 import React from 'react';
 import { Icon } from '../../../design-system';

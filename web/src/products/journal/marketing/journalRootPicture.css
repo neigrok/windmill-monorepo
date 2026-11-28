@@ -9,7 +9,7 @@
 .jnPicture-day--today { color: var(--color-brand); }
 .jnPicture-text { margin: 0; font-size: 16px; line-height: 26px; }
 .jnPicture-text + .jnPicture-text { margin-top: 26px; }
-.jnPicture-rule { align-self: stretch; flex: none; width: 1px; background: var(--border-subtle); }
+.jnPicture-rule { align-self: stretch; flex: none; width: 1px; background: var(--border-subtle); transition: background-color var(--duration-glow) linear; }
 .jnPicture-echo { display: flex; flex-direction: column; align-items: flex-start; align-self: flex-start; flex: none; width: 240px; margin-top: 32px; }
 .jnPicture-kicker { font-family: var(--font-mono); font-size: 10px; line-height: 14px; letter-spacing: .08em; text-transform: uppercase;
                     color: var(--color-brand); }
@@ -25,3 +25,24 @@
 .jnPicture:not([data-stage="wide"]) .jnPicture-rule { height: 1px; }
 .jnPicture[data-stage="column"] :is(.jnPicture-page, .jnPicture-echo, .jnPicture-rule) { width: 600px; }
 .jnPicture[data-stage="narrow"] :is(.jnPicture-page, .jnPicture-echo, .jnPicture-rule) { width: 324px; }
+
+/* While the picture is pointed at, the seam between the page and its echo kindles as the margin's edge does: it rises
+   over half the glow and settles over the whole of it, under reduced motion too. */
+[data-pointed] .jnPicture-rule { background-color: color-mix(in srgb, var(--color-brand) 26%, transparent);
+                                 transition: background-color calc(var(--duration-glow) / 2) var(--ease-glow); }
+@media (prefers-reduced-motion: reduce) {
+  .jnPicture-rule { transition-duration: var(--duration-glow) !important; }
+  [data-pointed] .jnPicture-rule { transition-duration: calc(var(--duration-glow) / 2) !important; }
+}
+
+/* Without hover nothing is pointed at: the seam plays its light once as the picture's beat, half a glow rising, a glow
+   held and a glow settling, and ends as drawn. */
+@keyframes jn-seam-light {
+  0% { background-color: var(--border-subtle); animation-timing-function: var(--ease-glow); }
+  20% { background-color: color-mix(in srgb, var(--color-brand) 26%, transparent); }
+  60% { background-color: color-mix(in srgb, var(--color-brand) 26%, transparent); animation-timing-function: linear; }
+  100% { background-color: var(--border-subtle); }
+}
+@media (hover: none) {
+  [data-beat] .jnPicture-rule { animation: jn-seam-light calc(var(--duration-glow) * 2.5) linear; }
+}

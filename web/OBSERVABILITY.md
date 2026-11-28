@@ -335,9 +335,12 @@ The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) and each product's 
 (`src/shell/marketing/SiteChrome.jsx`) and tell one event for each link and control a person uses, through `track` in
 `src/telemetry/beacon.js`. Every event carries `page`: `front` for the brand root, the product's registry id for its
 landing. Properties are allowlisted, bounded labels: no address, link text, account or email enters them. `product` is a
-product's registry id. One use of a link tells one event: the second click of a double click tells nothing. Nothing inside a picture frame is a control, so a picture tells nothing.
-`test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js` drive every link and
-control, signed out, signed in and with a link already sent, and hold the events to this table.
+product's registry id. One use of a link tells one event: the second click of a double click tells nothing. Nothing inside a
+picture frame is a control; a picture tells `front_picture` once a mouse or pen has rested on it for a second, drawn and
+in view, with the page still. `test/shell/marketing/BrandLanding.test.js` and `test/shell/marketing/ProductLanding.test.js`
+drive every link and control, signed out, signed in and with a link already sent, and hold the events to this table;
+`ProductLanding.test.js` also holds every picture's name to the `front_picture` row, and
+`test/shell/marketing/pictureMotion.browser.test.js` holds when it is told.
 
 The pricing page (`public/pricing.html`), a static page in the same look, and the support page (`public/support.html`), in
 the family look, tell the same events as `page: pricing` and `page: support` through `/events.js`
@@ -357,11 +360,15 @@ drives the emitted file, and `test/shell/pricing.test.mjs` holds every link on t
 | The page opened, once per mount, at its first paint without waiting on the network (on the pricing page, once per load); the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | `page: front/roadmap/journal/gym/pricing/support` |
 | A link followed. `area` is where it stands: the header, the brand root's three tools, a room's section on the brand root, "Your AI, or ours.", the footer's sitemap, or on a landing its first screen (`first`), a section's own link (`section`), a feature's link (`feature`) or the closing. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the live demo, a section of the same page (`section`: Gym's Where it runs, Journal's echoes), the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page. On the static pages `area` is also pricing's three ways (`ways`), support's body (`content`) or the footer (`footer`), and `to` also the sign-in door, account settings or the feedback address | `front_link` | `page: front/roadmap/journal/gym/pricing/support`, `area: header/tools/room/ai/sitemap/first/section/feature/closing/ways/content/footer`, `to: home/landing/room/demo/section/app/pricing/connect/changelog/gallery/support/privacy/terms/refunds/sign_in/settings/feedback`, `product?: roadmap/journal/gym` |
 | A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `page: front/roadmap/journal/gym/pricing/support`, `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+| A picture looked at: a mouse or pen, on a device whose primary pointer hovers, rested 1000ms on the drawn picture while at least 60% of it stood in view (or it covered 60% of the view's height) and the page did not scroll, once per picture per page load. Entering, leaving, a scroll or the picture leaving view starts the second over; a pass across it, a scroll past it, a sliver of it, a frame whose picture never drew, a finger, or a picture whose motion failed tells nothing. `picture` is the fixed name its declaration carries | `front_picture` | `page: front/roadmap/journal/gym`, `product: roadmap/journal/gym`, `picture: root/hero/unlock/paths/step/fork/night/search/write/look_back/logger/connect/remembered/strength/routine` |
 
 A product's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
 `front-picture-journal` or `front-picture-gym`, with kind `render`, no stack and the page's path as its route, once per page
 load for each page and picture, however often the page mounts (`BrandLanding.browser.test.js`,
-`ProductLanding.browser.test.js`). A landing whose own code cannot load (its chunk, its page's words, a stylesheet, or a
+`ProductLanding.browser.test.js`). A failure in the code that moves a picture, under a pointer or on a phone as it comes
+into view (`src/shell/marketing/pictureMotion.js`), leaves that picture wholly still, never pointed again and telling no
+`front_picture`, and reports `front-picture-motion` with kind `render`, the error's stack frames, the page's path as its
+route and the tags `product` and `picture`, once per page load for each page (`pictureMotion.browser.test.js`). A landing whose own code cannot load (its chunk, its page's words, a stylesheet, or a
 session provider above it) keeps the first HTML the document arrived with, its whole page and links, and reports
 `landing-front`, `landing-roadmap`, `landing-journal` or `landing-gym` once, with kind `render`, no stack and the page's
 path as its route (`src/shell/arrival.jsx`). Any other render crash reaches `client_error` under the page's route family. The sign-in door and the feedback dialog it opens tell

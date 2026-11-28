@@ -1,5 +1,6 @@
 /* Roadmap's pictures on its landing (LandingPictures.jsx), one rule set per picture and stage. Each fills the stage it
-   is given, its contents centred; the trees are composedTree.css's. */
+   is given, its contents centred; the trees are composedTree.css's. A part the room answers under the pointer answers
+   here with the room's own feedback, under a counted pointer (the frame's data-pointed). */
 :where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) { box-sizing: border-box; height: 100%; font-family: var(--font-body); }
 :where(.rmHero, .rmUnlock, .rmPaths, .rmStep, .rmFork) :where(p, dl, dd, ul) { margin: 0; padding: 0; }
 
@@ -33,6 +34,7 @@
 .rmPaths-rule { flex: none; height: 3px; }
 .rmPaths-thumb { display: block; flex: 1; min-height: 0; padding: 8px 14px 0; background: var(--surface-canvas); border-bottom: 1px solid var(--border-subtle); }
 .rmPaths-thumb .quest-thumb { display: block; width: 100%; height: 100%; }
+.rmPaths-thumb .quest-thumb-halo { opacity: .56; }
 .rmPaths-meta { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 14px 16px; }
 .rmPaths-meta > span:first-child { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rmPaths-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; line-height: 1.2; color: var(--text-primary); }
@@ -41,6 +43,11 @@
 .rmPaths-dots i { width: 7px; height: 7px; border-radius: 50%; }
 .rmPaths[data-stage="narrow"] { flex-direction: column; gap: 16px; padding: 16px; }
 .rmPaths[data-stage="narrow"] .rmPaths-card { width: 326px; }
+/* The shelf's card under a counted pointer: its crown breathes from its resting crest until the pointer leaves. The card
+   stays where it is, because a card that lifts asks for a press the picture does not take. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-pointed] .rmPaths-card:hover .quest-thumb-halo { animation: quest-halo-breathe var(--duration-glow) var(--ease-glow) calc(var(--duration-glow) / -2) infinite; }
+}
 
 /* ---- a step's page: its state, what it requires and opens, and the workspace that is only the owner's ---- */
 .rmStep { display: flex; align-items: center; justify-content: center; padding: 48px 16px; }
@@ -58,7 +65,10 @@
 .rmStep-workspace span { font-weight: 600; color: var(--text-tertiary); }
 .rmStep-subtasks { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; padding: 14px 16px; list-style: none;
                    border-radius: 12px; background: var(--surface-canvas); font-size: 12px; line-height: 16px; font-weight: 700; }
-.rmStep-subtasks li { display: flex; align-items: center; gap: 10px; }
+.rmStep-subtasks li { position: relative; z-index: 0; display: flex; align-items: center; gap: 10px; }
+.rmStep-subtasks li::before { content: ""; position: absolute; inset: -7px -8px; z-index: -1; border-radius: 8px; background: var(--surface-hover);
+                              opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
+[data-pointed] .rmStep-subtasks li:hover::before { opacity: 1; }
 .rmStep-subtasks li.is-done { font-weight: 600; color: var(--text-secondary); }
 .rmStep-box { display: flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; box-sizing: border-box;
               border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--surface-card); color: var(--text-on-accent); }
@@ -74,7 +84,7 @@
 [data-theme="dark"] :is(.rmStep-about, .rmStep-links dt, .rmStep-workspace, .rmStep-subtasks li.is-done, .rmStep-note b) { color: #B4B2AC; }
 [data-theme="dark"] :is(.rmStep-links dd, .rmStep-workspace span, .rmStep-tally) { color: #86847E; }
 [data-theme="dark"] .rmStep-subtasks { background: #0B0B0C; }
-[data-theme="dark"] .rmStep-note { background: #222224; }
+[data-theme="dark"] .rmStep-note, [data-theme="dark"] .rmStep-subtasks li::before { background: #222224; }
 [data-theme="dark"] .rmStep-state { color: #D98B5F; }
 [data-theme="dark"] .rmStep-box { border-color: #4A4A50; background: #171719; }
 [data-theme="dark"] :is(.is-done .rmStep-box, .rmStep-complete) { border-color: #D98B5F; background: #D98B5F; color: #1B1408; }
@@ -88,3 +98,8 @@
 .rmFork[data-stage="narrow"] { gap: 24px; padding: 24px 16px; }
 .rmFork[data-stage="narrow"] .rmFork-tree { width: 326px; height: 200px; }
 .rmFork[data-stage="narrow"] .rmFork-tree .rmTree { transform: none; }
+
+/* Reduced motion keeps the subtask's wash at its own time, and plays no breath. */
+@media (prefers-reduced-motion: reduce) {
+  .rmStep-subtasks li::before { transition-duration: var(--duration-fast) !important; }
+}

@@ -273,6 +273,7 @@ function rootSeamGaps(product) {
     ...(root.title ? [] : ['root.title']),
     ...(isText(root.paragraph) ? [] : ['root.paragraph']),
     ...(features.length === 3 && features.every((feature) => isText(feature?.title) && isText(feature?.text)) ? [] : ['root.features (exactly three {title, text})']),
+    ...(/^[a-z][a-z0-9_]*$/.test(root.picture?.name ?? '') ? [] : ['root.picture.name (lower snake case, as every label its event tells)']),
     ...(isText(root.picture?.label) ? [] : ['root.picture.label']),
     ...(stagesHold(root.picture?.stages) ? [] : ['root.picture.stages (named sizes, narrowest first)']),
     ...(isComponent(root.picture?.Picture) ? [] : ['root.picture.Picture']),

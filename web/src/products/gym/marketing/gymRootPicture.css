@@ -17,6 +17,7 @@
 .gyPicture-change b { font-weight: 700; font-size: 14px; }
 .gyPicture-next { color: var(--text-link); }
 .gyPicture-kept { font-size: 13px; line-height: 18px; color: var(--gym-ink-faint); }
+.gyPicture-unfold { transition: color var(--duration-fast) var(--ease-standard); }
 .gyPicture-more { margin-left: 4px; }
 .gyPicture-change + .gyPicture-kept { margin-top: 12px; }
 .gyPicture-apply { display: flex; align-items: center; justify-content: center; height: 44px; margin: 16px 0 8px; border-radius: var(--radius-full);
@@ -26,3 +27,9 @@
 .gyPicture[data-stage="narrow"] { padding: 24px 16px; }
 .gyPicture[data-stage="narrow"] .gyPicture-thread { width: 324px; }
 .gyPicture[data-stage="narrow"] .gyPicture-question { max-width: 282px; }
+
+/* The unchanged lines' run warms under a counted pointer as the room's unfold does, under reduced motion too. */
+[data-pointed] .gyPicture-unfold:hover { color: var(--gym-ink-dim); }
+@media (prefers-reduced-motion: reduce) {
+  .gyPicture-unfold { transition-duration: var(--duration-fast) !important; }
+}

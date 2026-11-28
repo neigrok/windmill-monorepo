@@ -46,7 +46,7 @@ function Section({ product, section, theme, onFollow }) {
           <h2 className="front-title" id={`${product.id}-${section.key}`}>{lines(section.title)}</h2>
           <p className="front-text">{section.paragraph}</p>
         </div>
-        {section.picture && <PictureFrame id={product.id} picture={section.picture} theme={theme} route={product.landing.href} />}
+        {section.picture && <PictureFrame id={product.id} picture={section.picture} theme={theme} page={product.id} route={product.landing.href} />}
         <Features section={section} onFollow={onFollow} />
         <Tail section={section} onFollow={onFollow} />
       </div>
@@ -100,7 +100,7 @@ export function ProductLanding({ product, page }) {
             {first.links.map((link) => <LeadLink key={link.href} link={link} area="first" onFollow={onFollow} />)}
           </div>
           <p className="product-trust">{first.trust}</p>
-          <PictureFrame id={product.id} picture={first.picture} theme={theme} route={product.landing.href} className="product-hero" />
+          <PictureFrame id={product.id} picture={first.picture} theme={theme} page={product.id} route={product.landing.href} className="product-hero" />
         </div>
       </section>
 

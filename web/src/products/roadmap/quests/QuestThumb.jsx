@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
 import { layoutTree, pageLayoutEngine } from '../layout/index.js';
 import { KIND_CSS, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.js';
+import './questThumb.css';
 
 const LOCKED_INK = 0.28;
 const HALO_RADIUS = NODE_SIZE * 1.15;

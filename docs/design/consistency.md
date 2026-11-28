@@ -678,8 +678,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
-  the system tells the room nothing of its rename; the system's *Rename* tile draws no pencil, where 01.3 draws one,
-  since a title menu gives a tile of the room's own no rename to call; a long name in the menu wraps onto a second line
+  the system tells the room nothing of its rename; 01.3 draws the *Rename* tile with a pencil, and no stock tile both
+  carries one and starts the system's rename, so the tile is built as the system draws it, the word alone on iOS 18.6,
+  26.5 and 27: `RenameButton` takes a label style's words but never its symbol, and a tile of the room's own finds no
+  rename to call, neither in `@Environment(\.rename)` nor up the responder chain (`rename:`), so 01.3 is to be redrawn
+  without the pencil for the owner's approval; a long name in the menu wraps onto a second line
   where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
   at the domain's 200 characters with no counter, and no board
@@ -1006,9 +1009,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   - there is no hairline under the bar or on the foot;
   - a dialog dims less;
   - the medium sheet sits higher.
-
-  NOTE 12 says renaming is the in-bar field iOS 26 has, once the title is a binding. The app passes a string there, so
-  its title menu has no Rename on iOS 18 (plan step `m6-the-room-on-ios-18-renames-and-its-captures-pass`).
 - **Roadmap · iOS · a sheet's close word on iOS 18.** The built Kinds, Guide and Set Aside sheets close with *Done* on
   iOS 18; board 12.10 and NOTE 12 say *Close*. To check against the iOS 26 boards and the Journal and Gym sheets, and
   settle on one word.
@@ -2372,8 +2372,14 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   `/instrument.css` leaves the text in the browser's default face with the header unlaid, a failed `/appearance.js` leaves
   no switch and a failed `/events.js` tells nothing, and none of it reaches Sentry. Give the static pages a failure
   report, or say which of these the site accepts.
-- **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
+- **The offline precache is near its limit.** The build's precache holds 4,089,409 of its 4,194,304-byte budget (97.5%,
   `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
+- **Roadmap page boards draw earlier pictures.** On the Marketing file's Roadmap page boards (section `290:2508`) the
+  path cards' thumbnails are a five-step mini tree where the page draws the room's own constellation thumbnails
+  (`QuestThumb`), and the trees and thumbnails draw a step's ring in the lighter base colour where the page uses the
+  kind's ring colour. The Journal and Gym page boards have not been compared picture by picture. Redraw what differs:
+  the page, built from the rooms' own components and words, is the one to match. The state sheets in the Picture motion
+  section (`380:2535`) copy these boards.
 - **Superseded landing boards.** The Marketing file's superapp landing boards, among them `98:2538`
   (three product bands with per-room platform lines), and its boards for the earlier `/roadmap`, `/journal` and `/gym`
   landings describe pages the Instrument pages replaced. Archive them (🗄 Archived prefix and tag).

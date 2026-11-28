@@ -9,14 +9,17 @@ const React = (await import('react')).default;
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { RoadmapPicture } = await import('../../../../src/products/roadmap/marketing/RootPicture.jsx');
 
-const CSS = ['roadmapRootPicture.css', 'composedTree.css'].map((sheet) => readFileSync(new URL(`../../../../src/products/roadmap/marketing/${sheet}`, import.meta.url), 'utf8')).join('\n');
+const file = (name) => readFileSync(new URL(`../../../../src/products/roadmap/marketing/${name}`, import.meta.url), 'utf8');
+const CSS = ['roadmapRootPicture.css', 'composedTree.css'].map(file).join('\n');
+const SHEETS = ['roadmapRootPicture.css', 'composedTree.css', 'landingPictures.css'].map(file).join('\n');
+const SOURCES = ['RootPicture.jsx', 'ComposedTree.jsx', 'LandingPictures.jsx'].map(file).join('\n');
 const drawn = (stage) => renderToStaticMarkup(React.createElement(RoadmapPicture, { stage }));
 const html = drawn('row');
 const text = (markup) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const treeOf = (markup) => markup.slice(markup.indexOf('<div class="rmTree"'));
 const WIDE = treeOf(html);
 const NARROW = treeOf(drawn('narrow'));
-const stateOf = (tree, name) => new RegExp(`class="nd nd-(\\w+)"[^>]*></div><div class="ndlabel[^"]*"[^>]*>${name}<`).exec(tree)?.[1];
+const stateOf = (tree, name) => new RegExp(`class="nd nd-(\\w+)[^"]*"[^>]*></div><div class="ndlabel[^"]*"[^>]*>${name}<`).exec(tree)?.[1];
 
 test('the picture is the request beside the sail tree: seventeen steps wide, nine narrow', () => {
   assert.equal(text(html.slice(0, html.indexOf('<div class="rmTree"'))), 'Request Plan how I learn to sail');
@@ -28,7 +31,7 @@ test('the picture is the request beside the sail tree: seventeen steps wide, nin
 });
 
 test('the plaque counts the steps the tree draws as done', () => {
-  assert.deepEqual(['done', 'avail', 'dim'].map((state) => (WIDE.match(new RegExp(`class="nd nd-${state}"`, 'g')) ?? []).length), [6, 7, 4]);
+  assert.deepEqual(['done', 'avail', 'dim'].map((state) => (WIDE.match(new RegExp(`class="nd nd-${state}[" ]`, 'g')) ?? []).length), [6, 7, 4]);
   assert.match(WIDE, /<span class="ct">6<\/span>\/17 done/);
 });
 
@@ -44,8 +47,36 @@ test('an edge is lit where it leaves a step that is done, and dormant out of one
   assert.deepEqual([WIDE, NARROW].map((tree) => (tree.match(/class="rmTree-edge is-lit"/g) ?? []).length), [15, 8]);
 });
 
-test('the picture is still and holds nothing a person could press', () => {
+test('the crowned root is the one step that breathes, and every branch has a reach to answer the pointer', () => {
+  assert.deepEqual([WIDE, NARROW].map((tree) => tree.match(/class="nd [^"]*is-crowned[^"]*"/g)), [['class="nd nd-done is-crowned"'], ['class="nd nd-done is-crowned"']]);
+  assert.match(WIDE, /<div class="rmTree" data-arrival="frontier"/);
+  assert.deepEqual([WIDE, NARROW].map((tree) => (tree.match(/<g class="rmTree-branch"><path class="rmTree-reach" d="([^"]+)"><\/path><path class="rmTree-edge[^"]*" d="\1">/g) ?? []).length), [24, 9]);
+});
+
+// Every rule of Roadmap's picture sheets that declares an animation, by its selectors.
+const animated = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .filter(([, , body]) => /(^|;)\s*animation(-name)?\s*:/.test(body))
+  .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim()));
+
+// Every selector of a sheet's rules that answer the pointer.
+const hovered = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*\}/g)]
+  .flatMap(([, selectors]) => selectors.split(',').map((selector) => selector.trim())).filter((selector) => selector.includes(':hover'));
+
+test('the picture holds nothing a person could press, names no raw colour, and moves nothing at rest', () => {
   assert.ok(!/<(a|button|input|details|summary)[ >]|tabindex|onclick|href=/i.test(html), 'the picture draws a control');
-  assert.ok(!/animation|@keyframes/.test(CSS), 'the picture moves');
+  assert.deepEqual(SOURCES.match(/\son[A-Z]\w*=\{/g), null, 'a picture listens for a press or the pointer itself');
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(CSS), 'the sheet names a raw colour');
+  assert.deepEqual(hovered(SHEETS).filter((selector) => !selector.startsWith('[data-pointed] ')), [], 'a part answers a pointer the frame does not count, a finger');
+  assert.deepEqual(hovered(SHEETS), ['[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmTree-branch:hover .rmTree-edge:not(.is-lit)', '[data-pointed] .rmTree .nd:hover', '[data-pointed] .rmPaths-card:hover .quest-thumb-halo', '[data-pointed] .rmStep-subtasks li:hover::before']);
+  const selectors = animated(SHEETS);
+  assert.deepEqual(selectors.filter((selector) => !/^\[data-(pointed|beat)\] /.test(selector)), [], 'an animation runs before the pointer arrives');
+  assert.deepEqual(selectors, [
+    '[data-pointed] .rmTree .nd-done.is-crowned',
+    '[data-beat] .rmTree[data-arrival="frontier"] .nd-avail',
+    '[data-beat] .rmTree[data-arrival="unlock"] .nd-done',
+    '[data-beat] .rmTree[data-arrival="unlock"] .nd.is-opened',
+    '[data-beat] .rmTree-travel',
+    '[data-beat] .rmTree-travel path',
+    '[data-pointed] .rmPaths-card:hover .quest-thumb-halo',
+  ]);
 });
