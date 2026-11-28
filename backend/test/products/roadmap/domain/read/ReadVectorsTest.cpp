@@ -380,7 +380,8 @@ const std::set<std::string> kDevices{"board.json",             "landing.json",  
                                      "steps-actions.json",     "kinds-actions.json",     "progress-actions.json",
                                      "workspace-actions.json", "landing-actions.json",   "undo.json",
                                      "conversation-actions.json",                        "apply-actions.json",
-                                     "rules.json",             "values.json"};
+                                     "turn-records-actions.json",                        "rules.json",
+                                     "values.json"};
 
 }
 
