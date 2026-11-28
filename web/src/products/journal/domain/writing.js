@@ -213,10 +213,12 @@ export class JournalWriteState {
     this.firstPullComplete = read.firstPullComplete();
     this.clock = read.device('contentClock');
     this.page = read.confirmed(Page, Id.ofDay(day, Page));
-    this.drawn = read.repository(Page).find(Id.ofDay(day, Page), 'drawn')?.document ?? null;
     this.state = read.repository(JournalState).find(new Id('journalState', JournalState), 'drawn') ?? new JournalStateValue();
     const devices = read.devices('pendingClaim:');
     this.pending = PendingClaim.of(devices);
+    // The day's page as the device holds it: its pending claim's latest, else the drawn page.
+    this.held = this.pending.find((claim) => claim.day.text === day.text)?.latest
+      ?? read.repository(Page).find(Id.ofDay(day, Page), 'drawn')?.document ?? null;
     const draft = devices[EditorDraft.key];
     this.hasEditorDraft = draft !== undefined && EditorDraft.fromJSON(draft).day.text === day.text;
     this.commands = read.commands();
@@ -297,7 +299,7 @@ export class SavePage {
   }
 }
 
-// Words alone: the save carries the day's ratings as the device holds them now, another surface's included; an emptied page goes whole.
+// Words alone over the day's page as the device holds it: its ratings, another surface's included, and its source when spoken; an emptied page goes whole.
 export class SaveWords {
   scope = JOURNAL_SCOPE;
   refusals = JournalRefusals;
@@ -315,8 +317,8 @@ export class SaveWords {
 
   /** @param {JournalWriteState} loaded @param {IDSource} ids */
   decide(loaded, ids) {
-    const held = loaded.pending.find((claim) => claim.day.text === this.day.text)?.latest ?? loaded.drawn;
-    const doc = new PageDocument({ body: this.body, mood: held?.mood ?? null, energy: held?.energy ?? null, source: this.source });
+    const { held } = loaded;
+    const doc = new PageDocument({ body: this.body, mood: held?.mood ?? null, energy: held?.energy ?? null, source: this.source }).keepingSpoken(held);
     return new SavePage({ day: this.day, document: doc, retiring: this.retiring }).decide(loaded, ids);
   }
 }

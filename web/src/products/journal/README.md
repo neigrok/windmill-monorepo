@@ -29,6 +29,9 @@ words on the screen, unsaved: only the person's next change saves them, under th
 Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
 energy change, the page hiding and the editor unmounting save a staged body at once; a local day
 change carries it into today and saves it.
+The editor saves what it holds as typed: a page the device holds as `spoken` stays spoken under it
+(`PageDocument.keepingSpoken`), and a page emptied of words goes as typed. Words carried into a new day are
+typed on its page, which is `spoken` only when Talk has written into it.
 
 An anonymous save, or typing before an account's first read without a confirmed page, queues a
 receipt-protected contribution claim. Anonymous replacements retain cumulative retirements.

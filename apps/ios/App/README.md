@@ -948,7 +948,8 @@ and Talk are not built. The room counts no words and draws no saved state: while
 shows. While writing, the keyboard's own bar, UIKit's toolbar since SwiftUI's keyboard toolbar never
 reaches the UIKit editor, holds Done alone, trailing. A save the phone could not make says so in ink
 under the page with its cloud symbol, and a borderless *Try again* while the writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
-holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
+holds for it at that moment, another surface's included, and its source when it is `spoken`; a page emptied of words
+is removed whole.
 An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
 presenter holds one sheet.
 The room seat is a native menu of the rooms the build carries (`AppModel.rooms`), Journal · Gym and Roadmap where its room
@@ -969,7 +970,8 @@ suffix exercises the journal's Reduce Motion scroll.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
 `journal` screen, without page content. When the local day changes at
 midnight or after a timezone change, the whole open draft, including its saved prefix, carries into
-today and is combined with today's existing page. Yesterday's saved page stays intact. The draft is
+today and is combined with today's existing page. Yesterday's saved page stays intact. The carried words are typed on
+today's page, which is `spoken` only when Talk has written into it. The draft is
 persisted on each edit in the active replica before autosave, and is restored across backgrounding,
 termination and relaunch. An over-limit combined page stays as a durable draft until shortened.
 

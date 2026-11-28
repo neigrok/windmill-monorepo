@@ -2,7 +2,8 @@
 
 These shared expectations are written from [domain-kit Appendix C](../../../../docs/foundation/domain-kit.md#appendix-c-example-the-journal-page)
 and [engine A.3](../../../../docs/foundation/engine.md#a3-journal), with the kit's §3–§4 and §8 defining
-validation and gesture forms. The specification is the oracle. An implementation disagreement changes
+validation and gesture forms, and a page's source from [Journal Talk §5.3](../../../../docs/foundation/journal-talk.md#53-words).
+The specification is the oracle. An implementation disagreement changes
 the implementation, never an expectation to accommodate a surface. Every surface carrying journal
 must claim every file. Swift and web runners fail on an unclaimed file. Web also replays every
 value/action scene with its records reversed.
@@ -13,7 +14,7 @@ value/action scene with its records reversed.
 |---|---|
 | `rules.json` | One complete rule book: two entity facts and 18 rules |
 | `values.json` | 170 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation, draft adoption and Talk's mark |
-| `page-actions.json` | 44 cases: bound and anonymous saves, retirements, supersession, retained edits, confirmation proofs and reconciliation |
+| `page-actions.json` | 57 cases: bound and anonymous saves, words over a page's ratings and source, retirements, supersession, retained edits, confirmation proofs and reconciliation |
 | `echo-quotes.json` | 17 cases: NFC-equivalent quotations, original-body UTF-16 anchors, occurrence selection and real edits |
 
 `rules.json` is the gym corpus's `{entities,rules}` object. The other files are arrays of
@@ -117,7 +118,7 @@ in that result's epoch. A drawn prediction alone is never a confirmed joined row
 | Action | Input | Result |
 |---|---|---|
 | `SavePage`, `ClaimPage` | `{day,document,retiring?}` | Claim id for anonymous or retained pending work; null for an ordinary bound save |
-| `SaveWords` | `{day,body,source,retiring?}` | As `SavePage`, saving the words with the day's ratings as the phone holds them: the pending claim's latest for its day, else the drawn page, else none. A body with no text removes the page, ratings included |
+| `SaveWords` | `{day,body,source,retiring?}` | As `SavePage`, saving the words over the day's page as the device holds it: the pending claim's latest for its day, else the drawn page, else none. The save keeps that page's ratings, and its source when it is `spoken`; otherwise it saves the source it is handed. A body with no text removes the page whole: no ratings, source `typed` |
 | `RetireJournalInvitation` | `{field}` | null |
 | `ReconcileClaim` | `{day,claimId}` | true once reconciled or confirmed without edits; false while waiting, refusing unsafe reconciliation, or replaying an old-epoch receipt |
 
@@ -167,6 +168,10 @@ its companion delta into the same atomic intent.
 - **Reconciled body cap (C.1, C.3, A.3).** Account prose and the latest contribution can each fit
   while their join exceeds 131072 bytes. Refuse that full save without removing the pending row
   or committing the candidate clock; the retained writing remains available.
+- **Source (Journal Talk §5.3).** A page Talk has written into is `spoken`, and typing keeps it: `SaveWords`
+  over a page the device holds as `spoken` saves `spoken`, whatever source it is handed, until a save with no
+  text removes the page. Words carried in from another day are typed: only the day's own page can be spoken.
+  `SavePage` and `ClaimPage` save the document they are handed whole, its source included.
 - **Draft adoption (owner ruling).** Sign-in carries every draft into the account or retains it
   recoverably on the device. Recovery does not override current writing. Keeping an authoritative
   destination and a distinct incoming recovery preserves both documents without duplication.
@@ -184,9 +189,9 @@ and echo-quotation expectation; no surface supplies expected values.
 |---|---:|
 | `rules.json` | 1 |
 | `values.json` | 170 |
-| `page-actions.json` | 44 |
+| `page-actions.json` | 57 |
 | `echo-quotes.json` | 17 |
-| Total | 232 |
+| Total | 245 |
 
 The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 
@@ -196,6 +201,7 @@ The web domain applies the rulings throughout its commands, editor actions and r
 - Text input retires `placeholder`; scale-only answers and Not now preserve a pending placeholder.
   Anonymous replacement retains all earlier retirements even after clearing the page.
 - Editor saves enforce local today; historical claim and reconciliation commands remain legal.
+- `SaveWords` and the editor's whole-document saves keep a page the device holds as `spoken` spoken.
 - NUL and clock exhaustion return declared refusals. Oversized reconciled bodies retain pending
   writing and the durable clock.
 - Refused pending edits retain their receipt and latest document without queueing a new appending claim.

@@ -318,6 +318,48 @@ import Synchronization
     }
   }
 
+  // Words another surface spoke into the page arrive mid-edit, and the phone's typing over them keeps the page spoken.
+  @Test func typingOverWordsSpokenElsewhereKeepsThePageSpoken() throws {
+    let (harness, model) = try fixture(account: "account-a")
+    model.account = "account-a"
+    let talk = harness.device()
+    harness.sync(); model.refresh()
+    model.journal.editing = true
+    model.journal.type("Morning."); #expect(model.journal.save())
+    harness.sync()
+    let day = model.journal.editorDay
+    _ = try talk.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.\n\nSpoken words.", source: "spoken")))
+    harness.sync(); model.refresh()
+    #expect(model.journal.document.source == "typed", "The open editor still holds the page as it opened")
+    model.journal.type("Morning.\n\nSpoken words. Typed after."); #expect(model.journal.save())
+    harness.sync()
+    for runner in [harness.runner, talk.runner] {
+      let page = try runner.read(Journal.scope, JournalRoom.init).days.first { $0.day == day }?.document
+      #expect(page == PageDocument(body: "Morning.\n\nSpoken words. Typed after.", source: "spoken"))
+    }
+  }
+
+  // Another surface puts the page back to typed, as Talk's Undo does, while the editor still holds it spoken; typing saves it typed.
+  @Test func typingAfterThePageIsTypedBackElsewhereSavesItTyped() throws {
+    let (harness, model) = try fixture(account: "account-a")
+    model.account = "account-a"
+    let talk = harness.device()
+    harness.sync(); model.refresh()
+    let day = model.journal.editorDay
+    _ = try talk.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.\n\nSpoken words.", source: "spoken")))
+    harness.sync(); model.refresh()
+    #expect(model.journal.document.source == "spoken", "The editor opens the page as Talk left it")
+    model.journal.editing = true
+    _ = try talk.runner.run(SavePage(day: day, document: PageDocument(body: "Morning.", source: "typed")))
+    harness.sync(); model.refresh()
+    model.journal.type("Morning. Typed."); #expect(model.journal.save())
+    harness.sync()
+    for runner in [harness.runner, talk.runner] {
+      let page = try runner.read(Journal.scope, JournalRoom.init).days.first { $0.day == day }?.document
+      #expect(page == PageDocument(body: "Morning. Typed.", source: "typed"))
+    }
+  }
+
   // Erasing every word removes the page whole, so ratings another surface set go with it; the domain keeps that rule.
   @Test func erasingTheWordsRemovesThePageWithItsRatings() throws {
     let (harness, model) = try fixture(account: "account-a")
@@ -392,10 +434,9 @@ import Synchronization
   @Test func refusedSaveRetainsDocumentAsUnsavedAndCountsItsReason() throws {
     let recorder = TelemetryRecorder()
     let (_, model) = try fixture(telemetry: recorder)
-    model.journal.type("Writing to retain"); model.journal.saveTask?.cancel()
-    model.journal.document.source = "dictated"
+    model.journal.type("Writing\u{0}to retain"); model.journal.saveTask?.cancel()
     #expect(!model.journal.save())
-    #expect(model.journal.dirty && model.journal.error != nil)
+    #expect(model.journal.dirty && model.journal.error != nil && model.journal.document.body == "Writing\u{0}to retain")
     #expect(model.journal.room?.days.isEmpty == true)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "journal_save_refused" }.map(\.properties) } == [["reason": "invalid"]])
   }

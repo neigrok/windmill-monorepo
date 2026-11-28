@@ -108,9 +108,10 @@ public struct JournalWriteState: Sendable {
   let anonymous: Bool
   let clock: JSON?
   let page: Record?
-  let drawn: PageDocument?
   let state: JournalState
   let pending: [PendingClaim]
+  // The day's page as the device holds it: its pending claim's latest, else the drawn page.
+  let held: PageDocument?
   let hasEditorDraft: Bool
   let commands: [QueuedCommand]
   let checkpoint: ScopeCheckpoint
@@ -118,10 +119,10 @@ public struct JournalWriteState: Sendable {
   public init(_ read: Reader, day: LocalDay) throws {
     moment = read.moment; actor = read.actor; anonymous = read.isAnonymous
     clock = try read.device("contentClock"); page = try read.confirmed(Page.self, ID(day))
-    drawn = try read.repository(Page.self).find(ID(day), in: .drawn)?.document
     state = try read.repository(JournalState.self).find(ID(RecordID("journalState")), in: .drawn) ?? JournalState()
     let deviceRows = try read.devices(prefix: "pendingClaim:")
     pending = try deviceRows.members.filter { $0.key != EditorDraft.key }.map { try PendingClaim(json: $0.value) }
+    held = try pending.first(where: { $0.day == day })?.latest ?? read.repository(Page.self).find(ID(day), in: .drawn)?.document
     hasEditorDraft = deviceRows[EditorDraft.key] != nil
     commands = try read.commands(); checkpoint = try read.checkpoint()
   }
@@ -200,7 +201,7 @@ public struct SavePage: Action {
   }
 }
 
-// Words alone: the save carries the day's ratings as the phone holds them now, another surface's included; an emptied page goes whole.
+// Words alone over the day's page as the device holds it: its ratings, another surface's included, and its source when spoken; an emptied page goes whole.
 public struct SaveWords: Action {
   public typealias Refusal = JournalRefusal
   public let scope = Journal.scope
@@ -214,8 +215,9 @@ public struct SaveWords: Action {
   public func load(_ read: Reader) throws -> JournalWriteState { try JournalWriteState(read, day: day) }
 
   public func decide(_ loaded: JournalWriteState, ids: IDSource) throws(Violation) -> Decision<String?, JournalRefusal> {
-    let held = loaded.pending.first(where: { $0.day == day })?.latest ?? loaded.drawn
-    let document = PageDocument(body: body, mood: held?.mood, energy: held?.energy, source: source)
+    let held = loaded.held
+    // A page Talk has written into stays spoken under typing (Journal Talk §5.3).
+    let document = PageDocument(body: body, mood: held?.mood, energy: held?.energy, source: held?.source == "spoken" ? "spoken" : source)
     return try SavePage(day: day, document: document, retiring: retirements).decide(loaded, ids: ids)
   }
 }

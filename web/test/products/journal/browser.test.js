@@ -510,6 +510,37 @@ test('Chromium: a transaction abort after the save decision keeps the latest edi
   } finally { await context.close(); }
 });
 
+// The editor's writing over a spoken page stays unsaved while another surface puts the page back to typed, as Talk's Undo
+// does; the person's next typing saves the page typed.
+test('Chromium: typing after the page is typed back elsewhere saves it typed, though the editor wrote over it spoken', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-typed-back');
+    const pull = (seq, text, source) => page.evaluate(async ({ seq, text, source }) => {
+      const { localDay } = await import('/src/products/journal/localDay.js');
+      await engine.write(null, (device) => device.activeReplica.putConfirmed('self/journal', {
+        t: 'page', id: localDay(), seq, rc: 1, ru: seq,
+        f: { mood: [0, `${seq}:0:srv`], energy: [null, `${seq}:0:srv`], source: [source, `${seq}:0:srv`],
+          documentStamp: [{ ms: seq, counter: 0, actor: 'srv' }, `${seq}:0:srv`] },
+        x: { body: { text, rev: seq, base: null } },
+      }), ['self/journal']);
+    }, { seq, text, source });
+    await pull(2, 'account text\n\nspoken words', 'spoken');
+    await body(page, 'account text\n\nspoken words');
+    await page.evaluate(() => { window.abortJournalSave = true; });
+    await page.getByRole('button', { name: 'Mood', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('main').dataset.saveState === 'unsaved');
+    await pull(3, 'account text', 'typed');
+    await page.getByRole('textbox', { name: 'Body' }).fill('account text, typed');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    assert.deepEqual(await page.evaluate(() => {
+      const { body, mood, energy, source } = engine.device.activeReplica.entries('self/journal').at(-1).intent.cmd.args;
+      return { body, mood, energy, source };
+    }), { body: 'account text, typed', mood: 4, energy: null, source: 'typed' });
+  } finally { await context.close(); }
+});
+
 test('Chromium: midnight carries unsaved words once into today with explicit zero and null answers', async () => {
   await ready;
   const context = await browser.newContext({ timezoneId: 'UTC' });
