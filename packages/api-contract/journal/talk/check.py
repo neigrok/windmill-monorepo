@@ -17,6 +17,20 @@ spec.loader.exec_module(wire)
 
 SAMPLES, PAUSE, MIN_TURN, SPEECH_MIN = 2400, 7, 10, 10737
 PAGE_MAX = 131072
+TAKE_MAX, END_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, RESULT_POLL, RECOVER_FOR, KEPT_MAX = 600000, 15000, 10000, 2000, 5000, 600000, 100
+# First failures §4 and §5.5 name that ai/wire/fixtures.json `liveFirstFailures` does not hold yet. They wait on the
+# node `widen-live-first-failures` of the AI service's tree. Until it lands such a message is held to that list's
+# shape and its code to the fixtures' `refusals`; once the fixtures hold a code, the check refuses it here.
+WAITING_FIRST_FAILURES = {'concurrency_exhausted'}
+# What `unopened` carries when no door of the AI wire answered.
+DOOR_CODES = {'offline'}
+ORDERS = ['microphone', 'close', 'open', 'read']
+PHASES = {
+    None: {'connecting', 'ended', 'recovering', 'recovered'}, 'connecting': {'connecting', 'listening', 'ended'},
+    'listening': {'listening', 'bridging', 'ending', 'ended'}, 'bridging': {'bridging', 'listening', 'ending', 'ended'},
+    'ending': {'ending', 'ended'}, 'ended': {'ended', 'recovering', 'recovered'},
+    'recovering': {'recovering', 'recovered'}, 'recovered': {'recovered'},
+}
 # ECMAScript's WhiteSpace and LineTerminator, as the journal corpus trims: U+0085 is content.
 WHITESPACE = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 # The mark's value as the Talk contract's §2 gives it. It stands in for the registry's `talkTake` row only until
@@ -69,6 +83,12 @@ PINS = {
         '§5.6 writes only while the page has the digest': ['a guarded save writes while the page has the digest',
                                                          'a guarded save changes nothing once the page has changed'],
         'domain kit Appendix C, pending edits': ['a bound day with a pending claim keeps the words in its claim, with the mark'],
+    },
+    'takes': {
+        '§5.1 steps 2 and 3, open': ['open-and-end', 'open-refused', 'open-provider-unavailable', 'open-unopened'],
+        '§5.1 step 5, the day\'s end': ['open-near-day-end'],
+        '§5.4 an end before the first `started`': ['end-while-connecting'],
+        '§5.5 a first session lost before `started`': ['open-lost'],
     },
 }
 
@@ -244,18 +264,299 @@ def check_saves(document, shape):
     return len(document)
 
 
+def utf16(text):
+    return len(text.encode('utf-16-le')) // 2
+
+
+# A session's last message, held to the fixtures: the key of the `liveTerminals` entry it equals but for its words,
+# or null for a first message that refuses.
+def last_message(message, first, fixtures):
+    for key, fixture in fixtures['liveTerminals'].items():
+        if dict(fixture, text=message.get('text')) == message:
+            return key
+    require(first and message.get('text') == '', 'a last message the live fixtures do not hold')
+    code = message.get('code')
+    if code in fixtures['liveFirstFailures']:
+        require(message == fixtures['liveFirstFailures'][code], 'a first failure differs from its fixture')
+        return None
+    require(code in WAITING_FIRST_FAILURES, 'a first failure the live fixtures do not hold')
+    wire.fields(message, 'type code text seconds charged allowance')
+    require(message['type'] == 'failed' and message['seconds'] == 0 and message['charged'] is None, 'a first failure is uncharged')
+    require(code in {entry['body']['code'] for entry in fixtures['refusals']}, 'a first failure is a public refusal')
+    wire.allowance(message['allowance'], nullable=True)
+    return None
+
+
+# One story, step by step. What it derives here it derives from the script alone: where commits fall, what each
+# session's `heardAt` is, which deadline `wakeAt` names, why the take ended and what it counted.
+def check_take(story, shape, fixtures, played):
+    wire.fields(story, 'format name given steps end recovered')
+    require(story['format'] == 'journal-take/v1', 'unknown story format')
+    given, steps = story['given'], story['steps']
+    wire.fields(given, 'offsetSeconds page mark callIds')
+    require(all(re.fullmatch(r'([A-Z])\1{21}', call) for call in given['callIds']), 'a made-up callId is one letter 22 times')
+    require(steps and next(iter(steps[0]['in'])) in {'press', 'recover'}, 'a story begins with a press or a recovery')
+    took = 'press' in steps[0]['in']
+    require(took == (given['mark'] is None), 'a take begins with no mark, a recovery with one')
+    offset, start = given['offsetSeconds'] * 1000, steps[0]['at']
+    day_of = lambda at: time.strftime('%Y-%m-%d', time.gmtime((at + offset) // 1000))
+    day_end = start - (start + offset) % 86400000 + 86400000
+    before = given['page']['body'] if given['page'] else ''
+    refusals = {entry['body']['code'] for entry in fixtures['refusals']}
+    saved, mark, phase, previous, clock = given['page'], given['mark'], None, None, start
+    another_hand = mark is not None and digest(before) != mark['pageDigest']
+    order, sessions, current, captured, sent, microphone = [], {}, None, [], 0, False
+    limit = bridge = retry = end_wait = None
+    polls, gone, reading, answered, cause, code, dropped = {}, set(), {}, set(), None, None, False
+
+    for step in steps:
+        wire.fields(step, 'at in out')
+        at, out = step['at'], step['out']
+        require(type(at) is int and at >= clock and isinstance(step['in'], dict) and len(step['in']) == 1, 'a step is one input, no earlier than the last')
+        wire.fields(out, 'phase do send page saved mark wakeAt')
+        (name, value), = step['in'].items()
+        require(out['phase'] in PHASES[phase], f'no step leads from {phase} to {out["phase"]}')
+        ends = out['phase'] in {'ending', 'ended'} and phase in {None, 'connecting', 'listening', 'bridging'}
+        recovery = out['phase'] in {'recovering', 'recovered'}
+        message = None
+
+        if name in {'press', 'end', 'undo', 'background', 'microphoneTaken', 'captureFailed', 'clock', 'recover'}:
+            require(value is True and (name != 'press' or phase is None) and (name != 'undo' or phase == 'ended'), 'an act out of place')
+            require(name != 'recover' or (phase in {None, 'ended'} and mark is not None), 'a recovery needs a mark and no take running')
+        elif name == 'frames':
+            energies = expand(value)
+            require(all(0 <= level <= 32768 * 32768 for level in energies), 'an energy is a frame\'s')
+            if microphone:
+                captured += energies
+            at += 100 * max(0, len(energies) - 1)
+        elif name == 'heard':
+            wire.fields(value, 'callId message')
+            session, message = sessions[value['callId']], value['message']
+            if message['type'] in {'started', 'text', 'turn'}:
+                wire.live_event(message)
+            if not session['closed']:
+                session['heard'] = at
+                if message['type'] == 'started':
+                    require(message == dict(fixtures['liveEvents'][0], callId=value['callId']), 'a `started` differs from its fixture')
+                    require(not session['started'] or out['phase'] == 'ended', 'a second `started` ends the take')
+                    session['started'], current, bridge, retry = True, value['callId'], None, None
+                elif message['type'] in {'text', 'turn'}:
+                    require(session['started'], 'words before `started`')
+                    session['turns'].add(message['turn'])
+                else:
+                    key = last_message(message, not session['started'], fixtures)
+                    played.add(key)
+                    session['last'], session['closed'] = message, message['code'] != 'concurrency_exhausted'
+                    session['refused'] = message['code']
+                    if message['code'] == 'concurrency_exhausted' and bridge is not None and at + BRIDGE_RETRY < bridge:
+                        retry = at + BRIDGE_RETRY
+        elif name in {'lost', 'unreadable'}:
+            wire.fields(value, 'callId')
+            sessions[value['callId']]['closed'] = True
+        elif name == 'unopened':
+            wire.fields(value, 'callId code')
+            require(value['callId'] in sessions and value['code'] in refusals | DOOR_CODES, 'a door\'s code is the wire\'s or `offline`')
+            sessions[value['callId']]['closed'] = True
+        elif name == 'result':
+            call = value['callId']
+            require(mark is not None and call in [session['callId'] for session in mark['sessions']], 'a result of a session the mark does not name')
+            if set(value) == {'callId', 'message'}:
+                played.add(last_message(value['message'], False, fixtures))
+                answered.add(call)
+            elif value == {'callId': call, 'unread': True} or value == {'callId': call, 'code': 'conflict'}:
+                polls[call] = at + RESULT_POLL
+            elif value == {'callId': call, 'code': 'result_gone'} and call not in gone:
+                gone.add(call)
+                polls[call] = at + RESULT_POLL
+            else:
+                require(value in ({'callId': call, 'code': 'result_gone'}, {'callId': call, 'code': 'call_unknown'}), 'an answer the result door does not give')
+            require({'conflict', 'result_gone', 'call_unknown'} <= refusals, 'the wire no longer refuses a result so')
+            if call in answered or value.get('code') == 'call_unknown' or (value.get('code') == 'result_gone' and call not in polls):
+                reading.pop(call, None)
+                polls.pop(call, None)
+        else:
+            require(name == 'changed' and (value is None or (set(value) == {'body', 'source'} and value['source'] in {'typed', 'spoken'})), 'unknown input')
+
+        kinds = [next(iter(item)) for item in out['do']]
+        require(all(len(item) == 1 for item in out['do']) and kinds == sorted(kinds, key=ORDERS.index), 'orders are the microphone\'s, then close, open and read')
+        require(not recovery or set(kinds) <= {'read'}, 'a recovery opens nothing and records nothing')
+        for item in out['do']:
+            (kind, target), = item.items()
+            if kind == 'microphone':
+                require(target in {'open', 'closed'} and (target == 'open') != microphone, 'the microphone is opened once and closed once')
+                microphone = target == 'open'
+            elif kind == 'open' and target in sessions:
+                require(not sessions[target]['started'] and sessions[target]['refused'] == 'concurrency_exhausted', 'a session is opened again only after `concurrency_exhausted`')
+                sessions[target]['refused'], retry = None, None
+            elif kind == 'open':
+                require(len(order) < len(given['callIds']) and target == given['callIds'][len(order)], 'callIds are used in order')
+                order.append(target)
+                sessions[target] = {'opened': at, 'heard': None, 'started': False, 'closed': False, 'last': None, 'refused': None,
+                                    'audio': [], 'commits': [], 'turns': set(), 'end': False}
+            elif kind == 'close':
+                require(target in sessions, 'a connection that was never opened')
+            else:
+                require(mark is not None and target in [session['callId'] for session in mark['sessions']] + order, 'a read of a session the mark does not name')
+                polls.pop(target, None)
+
+        for item in out['send']:
+            require(current is not None and sessions[current]['started'] and not sessions[current]['end'], 'a frame with no session to take it')
+            if set(item) == {'audio'}:
+                first, final = item['audio']
+                require(first == sent + 1 and first <= final <= len(captured), 'audio is sent once, in the order captured')
+                sessions[current]['audio'] += captured[first - 1:final]
+                sent = final
+            elif item == {'type': 'commit'}:
+                sessions[current]['commits'].append(len(sessions[current]['audio']))
+            else:
+                require(item == {'type': 'end'} and name != 'frames', 'a frame the caller does not send')
+                sessions[current]['end'], end_wait = True, min(at + END_WAIT, day_end - 1)
+            require(set(item) == {'audio'} or item in fixtures['liveFrames'], 'a control frame differs from its fixture')
+        require(len(captured) - sent <= KEPT_MAX, 'more than BRIDGE_WAIT of audio is kept')
+        require(out['phase'] != 'listening' or sent == len(captured), 'a frame captured while listening is not sent')
+        require(not recovery or out['send'] == [], 'a recovery sends nothing')
+
+        if ends:
+            last = message is not None and message['type'] in {'ended', 'failed'}
+            first_session = len(order) < 2
+            if name in {'end', 'background', 'microphoneTaken', 'captureFailed'}:
+                cause = {'end': 'person', 'background': 'background', 'microphoneTaken': 'microphone', 'captureFailed': 'capture'}[name]
+            elif name == 'clock':
+                cause = 'bridge' if at == bridge else 'dayEnd' if at == day_end - END_WAIT else 'limit'
+                require(at in {bridge, limit}, 'no deadline fell at this instant')
+            elif name == 'press':
+                cause = 'dayEnd' if at >= day_end - END_WAIT else 'pageFull'
+                room = utf8(before.rstrip(WHITESPACE))
+                require(cause == 'dayEnd' or (room > 0 and room + 3 > PAGE_MAX), 'a press that should have opened a take')
+            elif name == 'heard' and not last:
+                cause = 'defect' if message['type'] == 'started' else 'pageFull'
+            elif last and sessions[value['callId']]['started']:
+                cause, code = 'service', message['code']
+            elif name in {'heard', 'unopened'}:
+                cause, code = 'refused' if first_session else 'bridge', value['code'] if name == 'unopened' else message['code']
+            else:
+                cause = 'defect' if name == 'unreadable' else 'refused' if first_session and not sessions[order[0]]['started'] else 'bridge'
+        if name == 'press' and out['phase'] == 'connecting':
+            limit = min(at + TAKE_MAX, day_end - END_WAIT)
+        if out['phase'] == 'bridging' and phase != 'bridging':
+            bridge = at + BRIDGE_WAIT
+        if out['phase'] == 'ended':
+            bridge = retry = end_wait = None
+            polls = {}
+            require(not microphone, 'an ended take leaves the microphone open')
+            for session in sessions.values():
+                session['closed'] = True
+        if name == 'recover':
+            dropped = day_of(at) != mark['day'] or not mark['sessions']
+            reading = {} if dropped else {session['callId']: session['heardAt'] + RECOVER_FOR for session in mark['sessions'] if at < session['heardAt'] + RECOVER_FOR}
+            polls, gone, answered = {}, set(), set()
+            require(out['do'] == [{'read': call} for call in reading], 'a recovery reads each session heard from within RECOVER_FOR, on the mark\'s day')
+            require(out['phase'] == ('recovering' if reading else 'recovered'), 'a recovery with nothing to read is over')
+            require(not dropped or (out['mark'] is None and out['saved'] == saved), 'a mark whose day has passed, or that names no session, is cleared and nothing is written')
+        reading = {call: expiry for call, expiry in reading.items() if expiry > at} if out['phase'] == 'recovering' else {}
+        if out['phase'] == 'recovered':
+            polls = {}
+        deadlines = list(polls.values()) + list(reading.values())
+        deadlines += [limit] if out['phase'] in {'connecting', 'listening', 'bridging'} else []
+        deadlines += [bridge] if bridge is not None and out['phase'] in {'bridging', 'ending'} else []
+        deadlines += [retry] if retry is not None else []
+        deadlines += [end_wait] if end_wait is not None and out['phase'] == 'ending' else []
+        require(out['wakeAt'] == min(deadlines, default=None), f'wakeAt is not the earliest deadline standing at {at}')
+        require(out['wakeAt'] is None or out['wakeAt'] > at, 'a deadline already due')
+
+        silent = name == 'frames' or (message is not None and (message['type'] == 'text' or (message['type'] == 'started' and out['phase'] != 'ended')))
+        require(not silent or (out['saved'] == saved and out['mark'] == mark), 'a frame, a `started` and a `text` delta write nothing')
+        body = out['saved']['body'] if out['saved'] else ''
+        require(out['saved'] is None or (set(out['saved']) == {'body', 'source'} and out['saved']['source'] in {'typed', 'spoken'}), 'a saved page is its body and source')
+        require(utf8(body) <= PAGE_MAX and (out['saved'] is None or body.strip(WHITESPACE)), 'a saved page holds text, within the limit')
+        if name == 'changed':
+            require(out == dict(previous, saved=value, do=[], send=[]), 'a page changed by another hand changes nothing else')
+            another_hand = True
+        else:
+            if out['saved'] != saved:
+                another_hand = False
+                require(out['saved'] == given['page'] if name == 'undo' else out['saved']['source'] == 'spoken', 'a take saves as spoken, and Undo as the page was')
+            if out['mark'] is not None and not another_hand:
+                located(body, out['mark'], shape)
+            if out['mark'] is not None and out['mark'] != mark:
+                calls = [session['callId'] for session in out['mark']['sessions']]
+                heard = [session['heardAt'] for session in out['mark']['sessions']]
+                if recovery or not took:
+                    kept = [mark['day'], mark['bytesBefore'], [session['callId'] for session in mark['sessions']], [session['heardAt'] for session in mark['sessions']]]
+                    require([out['mark']['day'], out['mark']['bytesBefore'], calls, heard] == kept, 'a recovery changes a mark\'s lengths and digest alone')
+                else:
+                    require(out['mark']['day'] == day_of(start) and out['mark']['bytesBefore'] == utf8(before.rstrip(WHITESPACE)), 'the mark\'s day or first length differs')
+                    require(calls == order, 'the mark names the sessions opened, in order')
+                    require(heard == [sessions[call]['heard'] or sessions[call]['opened'] for call in order], 'heardAt is not the session\'s last message')
+            wire.fields(out['page'], 'text unsettled')
+            edge = -1
+            for low, high in out['page']['unsettled']:
+                require(edge < low < high <= utf16(out['page']['text']), 'unsettled ranges lie in the text, in order and apart')
+                edge = high
+            if out['phase'] in {'ended', 'recovering', 'recovered'}:
+                require(out['page']['unsettled'] == [], 'nothing is unsettled once a take has ended')
+                require(another_hand and not recovery or out['page']['text'] == body, 'what is shown after a take is the page as stored')
+        saved, mark, phase, previous, clock = out['saved'], out['mark'], out['phase'], out, at
+
+    for session in sessions.values():
+        require(commits(session['audio']) == session['commits'], 'a commit is not where §5.2 puts it')
+    require(order == given['callIds'], 'a callId given and never used')
+    ended = any(step['out']['phase'] in {'ended', 'recovering', 'recovered'} for step in steps) and took
+    require((story['end'] is not None) == ended, 'a take that ended says how')
+    if ended:
+        final = sessions[order[-1]] if order else None
+        counted = {
+            'cause': cause, 'code': code, 'heard': bool(final and final['started'] and final['last']),
+            'turns': sum(len(session['turns']) for session in sessions.values()),
+            'forcedTurns': sum(max(0, max(session['turns'], default=1) - 1 - len(session['commits'])) for session in sessions.values()),
+            'bridges': max(0, len(order) - 1)}
+        require(story['end'] == counted, 'the end differs from the script: ' + json.dumps(counted))
+    require((story['recovered'] is not None) == (phase == 'recovered'), 'a recovery that finished says how')
+    if phase == 'recovered':
+        require(mark is None, 'a finished recovery leaves no mark')
+        require(story['recovered'] == {'cause': 'dropped' if dropped else 'recovered', 'answered': len(answered)}, 'the recovery\'s end differs from the script')
+    return len(steps)
+
+
+def check_takes(documents, shape):
+    fixtures = json.loads((CONTRACT / 'ai' / 'wire' / 'fixtures.json').read_text())
+    require(not WAITING_FIRST_FAILURES & set(fixtures['liveFirstFailures']), 'the live fixtures hold a waiting first failure now: take it off WAITING_FIRST_FAILURES')
+    pinned = [name for clause in PINS['takes'].values() for name in clause]
+    require(all(PINS['takes'].values()) and len(set(pinned)) == len(pinned), 'a clause has no story, or a story two clauses')
+    require({f'takes/{name}.json' for name in pinned} == set(documents), 'clauses and stories differ: ' + ', '.join(sorted({f'takes/{name}.json' for name in pinned} ^ set(documents))))
+    played, steps = set(), 0
+    for path, story in documents.items():
+        try:
+            require(path == f'takes/{story.get("name")}.json', 'a story is named for its file')
+            steps += check_take(story, shape, fixtures, played)
+        except (KeyError, IndexError, TypeError) as error:
+            raise ValueError(path + ': malformed story') from error
+        except ValueError as error:
+            raise ValueError(path + ': ' + str(error)) from error
+    return len(documents), steps
+
+
 def check(documents):
-    require(set(documents) == set(PINS), 'story files differ: ' + ', '.join(sorted(set(documents) ^ set(PINS))))
+    takes = {path: story for path, story in documents.items() if path.startswith('takes/')}
+    require(set(documents) - set(takes) == {'pauses.json', 'saves.json'}, 'story files differ: ' + ', '.join(sorted(set(documents) - set(takes))))
     shape, source = mark_shape()
-    return {'pause cases': check_pauses(documents['pauses.json']), 'save scenes': check_saves(documents['saves.json'], shape)}, source
+    stories, steps = check_takes(takes, shape)
+    return {'pause cases': check_pauses(documents['pauses.json']), 'save scenes': check_saves(documents['saves.json'], shape),
+            'take stories': stories, 'steps': steps}, source
 
 
-def negative_probes(documents):
+def negative_probes(documents, reasons=None):
     def pauses(change):
         return lambda docs: change(docs['pauses.json'])
 
     def save(name, change):
         return lambda docs: change(next(case for case in docs['saves.json'] if case['name'] == name))
+
+    def take(name, change):
+        return lambda docs: change(docs[f'takes/{name}.json'])
+
+    def step(story, given):
+        return next(step for step in story['steps'] if given in step['in'] or step['in'].get('heard', {}).get('message', {}).get('type') == given)
 
     probes = [
         ('a commit one frame late', pauses(lambda cases: next(case for case in cases if case['expect'] == {'commits': [27]})['expect'].update(commits=[28]))),
@@ -269,15 +570,26 @@ def negative_probes(documents):
         ('a mark with a fifth session', save('a bridge adds its session to the mark alone', lambda case: case['input']['input']['mark']['sessions'].extend([case['input']['input']['mark']['sessions'][1]] * 3))),
         ('a mark with a field the row does not hold', save('the press writes the mark alone', lambda case: case['input']['input']['mark'].update(seat='bound'))),
         ('a save that drops the mark', save('the last save writes the page and clears the mark', lambda case: case['expect']['decision']['write']['gesture']['local'].pop())),
-        ('a guarded save that writes over a changed page', save('a guarded save changes nothing once the page has changed', lambda case: case['input']['input'].update(whilePage=None))),
+        ('a guarded save that writes over a changed page', lambda docs: docs['saves.json'][10]['expect'].update(decision=docs['saves.json'][9]['expect']['decision'])),
         ('a save into another day', save('a day that is no longer today is refused and nothing is written', lambda case: case['expect'].update(decision={'unchanged': {'result': None}}))),
+        ('a part one byte longer than the mark says', take('open-and-end', lambda story: step(story, 'turn')['out']['mark']['sessions'][0].update(bytesSaved=21))),
+        ('a mark with the digest of another page', take('open-and-end', lambda story: step(story, 'turn')['out']['mark'].update(pageDigest='0' * 16))),
+        ('a mark written with no session', take('open-and-end', lambda story: step(story, 'press')['out']['mark'].update(sessions=[]))),
+        ('a mark written for a text delta', take('open-and-end', lambda story: step(story, 'text')['out']['mark']['sessions'][0].update(heardAt=step(story, 'text')['at']))),
+        ('an audio frame sent twice', take('open-and-end', lambda story: story['steps'][6]['out']['send'][0].update(audio=[29, 47]))),
+        ('a commit one frame early', take('open-and-end', lambda story: step(story, 'frames')['out'].update(send=[{'audio': [1, 28]}, {'type': 'commit'}, {'audio': [29, 29]}]))),
+        ('a context frame', take('open-and-end', lambda story: step(story, 'frames')['out']['send'].insert(0, {'type': 'context', 'keywords': ['river']}))),
+        ('an end that counts a bridge it did not make', take('open-and-end', lambda story: story['end'].update(bridges=1))),
+        ('a callId that is not made up', take('open-and-end', lambda story: story['given'].update(callIds=['abcdefghijklmnopqrstuv']))),
     ]
     for name, mutate in probes:
         invalid = copy.deepcopy(documents)
         mutate(invalid)
         try:
             check(invalid)
-        except ValueError:
+        except ValueError as refusal:
+            if reasons is not None:
+                reasons.append(f'{name}: {refusal}')
             continue
         raise ValueError(f'checker accepted {name}')
     return len(probes)

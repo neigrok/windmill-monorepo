@@ -159,8 +159,184 @@ def save_scenes():
     ]
 
 
+TAKE_MAX, END_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, RESULT_POLL, RECOVER_FOR = 600000, 15000, 10000, 2000, 5000, 600000
+COMMIT, END = {'type': 'commit'}, {'type': 'end'}
+MIC_OPEN, MIC_CLOSED = {'microphone': 'open'}, {'microphone': 'closed'}
+KEEP = object()
+FIRST = 'Walked to the river.'
+
+
+class U(str):
+    """Words shown and not saved."""
+
+
+def audio(first, last):
+    return {'audio': [first, last]}
+
+
+def door(call):
+    return {'open': call}
+
+
+def shut(call):
+    return {'close': call}
+
+
+def started(call):
+    return dict(WIRE['liveEvents'][0], callId=call)
+
+
+def text(turn, delta):
+    return {'type': 'text', 'turn': turn, 'delta': delta}
+
+
+def turn(number, words):
+    return {'type': 'turn', 'turn': number, 'text': words}
+
+
+# A session's last message: the fixture's, with these words.
+def last(key, words):
+    return dict(copy.deepcopy(WIRE['liveTerminals'][key]), text=words)
+
+
+# A first message that refuses. A code the live fixtures do not hold yet takes their shape and the public refusal's allowance.
+def refusal(code):
+    if code in WIRE['liveFirstFailures']: return copy.deepcopy(WIRE['liveFirstFailures'][code])
+    public = next(entry['body'] for entry in WIRE['refusals'] if entry['body']['code'] == code)
+    return {'type': 'failed', 'code': code, 'text': '', 'seconds': 0, 'charged': None, 'allowance': copy.deepcopy(public['allowance'])}
+
+
+def heard(call, message):
+    return {'heard': {'callId': call, 'message': message}}
+
+
+def lost(call):
+    return {'lost': {'callId': call}}
+
+
+# One story. Every argument of `step` states what that step's outputs are; what a step does not name stands as the
+# step before left it. The methods measure and join: `shown` and `saved` are each session's part, `heard` each
+# session's last message, and a step that names `saved`, `heard` or `marked` is a write of the mark.
+class Story:
+    def __init__(self, name, body=None, source='typed', offset=0, calls=(A,)):
+        self.name, self.before, self.calls = name, body or '', list(calls)
+        self.given = {'offsetSeconds': offset, 'page': None if body is None else {'body': body, 'source': source}, 'mark': None, 'callIds': list(calls)}
+        self.steps, self.end, self.recovered = [], None, None
+        self.phase, self.shown, self.parts, self.heard, self.marked, self.mark, self.wake = None, [], [], [], False, None, None
+        self.stored, self.source = body, source
+
+    def step(self, at, given, phase=None, do=(), send=(), shown=None, saved=None, source=None, heard=None, marked=None, stored=KEEP, wake=KEEP):
+        if phase is not None: self.phase = phase
+        if shown is not None: self.shown = shown
+        if source is not None: self.source = source
+        if saved is not None: self.parts, self.stored = saved, placed(self.before, saved) or None
+        if stored is not KEEP: self.stored = stored
+        if heard is not None: self.heard = heard
+        if marked is not None: self.marked = marked
+        if saved is not None or heard is not None or marked is not None:
+            self.mark = mark_of(self.before, self.parts, self.heard, self.calls, self.stored or '') if self.marked else None
+        if wake is not KEEP: self.wake = wake
+        self.steps.append({'at': at, 'in': given, 'out': {
+            'phase': self.phase, 'do': list(do), 'send': list(send), 'page': self.steps[-1]['out']['page'] if 'changed' in given else self.page(),
+            'saved': None if self.stored is None else {'body': self.stored, 'source': self.source},
+            'mark': copy.deepcopy(self.mark), 'wakeAt': self.wake}})
+
+    # What is shown: the stored page once a recovery reads it, and before that the page with every word of the take.
+    def page(self):
+        if self.phase in ('recovering', 'recovered'): return {'text': self.stored or '', 'unsettled': []}
+        runs = [run for part in self.shown for run in part if run]
+        if not runs: return {'text': self.before, 'unsettled': []}
+        head = head_of(self.before)
+        words, ranges = head + '\n\n' if head else '', []
+        for index, run in enumerate(runs):
+            if index: words += ' '
+            if isinstance(run, U): ranges.append([utf16(words), utf16(words) + utf16(run)])
+            words += run
+        return {'text': words, 'unsettled': ranges}
+
+    def ends(self, cause, code=None, heard=True, turns=0, forced=0, bridges=0):
+        self.end = {'cause': cause, 'code': code, 'heard': heard, 'turns': turns, 'forcedTurns': forced, 'bridges': bridges}
+
+    def recovers(self, cause='recovered', answered=0):
+        self.recovered = {'cause': cause, 'answered': answered}
+
+    def document(self):
+        return {'format': 'journal-take/v1', 'name': self.name, 'given': self.given, 'steps': self.steps, 'end': self.end, 'recovered': self.recovered}
+
+
+def pressed(name, body='Up early.\n', calls=(A,), at=NOON, **given):
+    story = Story(name, body, calls=calls, **given)
+    story.step(at, {'press': True}, phase='connecting', do=[door(A)], heard=[at], marked=True, wake=at + TAKE_MAX)
+    return story
+
+
+def opening(name, body='Up early.\n', calls=(A,), at=NOON, **given):
+    story = pressed(name, body, calls, at, **given)
+    story.step(at + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN])
+    return story
+
+
+def open_stories():
+    T, out = NOON, []
+    s = opening('open-and-end')
+    s.step(T + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(T + 3400, heard(A, text(1, 'Walked to')), shown=[[U('Walked to')]])
+    s.step(T + 3500, heard(A, text(1, ' the river')), shown=[[U('Walked to the river')]])
+    s.step(T + 3900, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[T + 3900])
+    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5800, heard(A, text(2, 'Cold')), shown=[[FIRST, U('Cold')]])
+    s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
+    s.step(T + 6800, heard(A, last('completed', FIRST + ' Cold water.')), phase='ended', shown=[[FIRST + ' Cold water.']], saved=[FIRST + ' Cold water.'], marked=False, wake=None)
+    s.ends('person', turns=2); out.append(s)
+
+    s = pressed('open-refused')
+    s.step(T + 300, heard(A, refusal('funding_required')), phase='ended', marked=False, wake=None)
+    s.ends('refused', 'funding_required', heard=False); out.append(s)
+
+    s = pressed('open-provider-unavailable')
+    s.step(T + 10300, heard(A, last('provider_unavailable', '')), phase='ended', marked=False, wake=None)
+    s.ends('refused', 'provider_unavailable', heard=False); out.append(s)
+
+    s = pressed('open-unopened')
+    s.step(T + 300, {'unopened': {'callId': A, 'code': 'offline'}}, phase='ended', marked=False, wake=None)
+    s.ends('refused', 'offline', heard=False); out.append(s)
+
+    s = pressed('open-lost')
+    s.step(T + 2300, lost(A), phase='ended', marked=False, wake=None)
+    s.ends('refused', heard=False); out.append(s)
+
+    s = Story('open-near-day-end', 'Up early.\n', calls=())
+    s.step(T + 43200000 - END_WAIT, {'press': True}, phase='ended')
+    s.ends('dayEnd', heard=False); out.append(s)
+
+    s = pressed('end-while-connecting')
+    s.step(T + 200, {'end': True}, phase='ended', do=[shut(A)], marked=False, wake=None)
+    s.ends('person', heard=False); out.append(s)
+    return out
+
+
+def story_text(story):
+    line = lambda value: json.dumps(value, ensure_ascii=False)
+    lines = ['{', f'  "format": {line(story["format"])},', f'  "name": {line(story["name"])},', f'  "given": {line(story["given"])},', '  "steps": [']
+    for index, step in enumerate(story['steps']):
+        out = step['out']
+        lines += [f'    {{"at": {step["at"]}, "in": {line(step["in"])},',
+                  f'     "out": {{"phase": {line(out["phase"])}, "do": {line(out["do"])}, "send": {line(out["send"])},',
+                  f'             "page": {line(out["page"])},',
+                  f'             "saved": {line(out["saved"])},',
+                  f'             "mark": {line(out["mark"])},',
+                  f'             "wakeAt": {line(out["wakeAt"])}}}}}' + (',' if index + 1 < len(story['steps']) else '')]
+    lines += ['  ],', f'  "end": {line(story["end"])},', f'  "recovered": {line(story["recovered"])}', '}']
+    written = '\n'.join(lines) + '\n'
+    if json.loads(written) != story: raise ValueError(story['name'] + ': the story does not read back as written')
+    return written
+
+
 def documents():
-    return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes())}
+    stories = [story.document() for story in open_stories()]
+    if len({story['name'] for story in stories}) != len(stories): raise ValueError('story names repeat')
+    return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes()),
+            **{'takes/' + story['name'] + '.json': story_text(story) for story in stories}}
 
 
 if __name__ == '__main__':
