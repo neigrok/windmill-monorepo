@@ -283,6 +283,12 @@ def first_turn(story, at=NOON + 500):
     story.step(at + 3400, heard(A, turn(1, FIRST)), shown=[[FIRST]], saved=[FIRST], source='spoken', heard=[at + 3400])
 
 
+# Speech under way and a second turn's first word.
+def second_words(story, at=NOON + 4000):
+    story.step(at, {'frames': [[SPEECH, 5]]}, send=[audio(30, 34)])
+    story.step(at + 450, heard(A, text(2, 'Cold')), shown=[[FIRST, U('Cold')]])
+
+
 def two_commits(story, at=NOON + 500):
     story.step(at, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7], [SPEECH, 11], [QUIET, 7]]}, send=[audio(1, 29), COMMIT, audio(30, 47), COMMIT])
 
@@ -406,6 +412,107 @@ def word_stories():
     return out
 
 
+# A take the person ends whose `ended` never comes: its last words are saved as they arrived and its mark stays.
+def unsettled_end(name):
+    T = NOON
+    s = opening(name); first_turn(s)
+    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5800, heard(A, text(2, 'Cold water')), shown=[[FIRST, U('Cold water')]])
+    s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
+    s.step(T + 21000, {'clock': True}, phase='ended', do=[shut(A)], shown=[[FIRST + ' Cold water']], saved=[FIRST + ' Cold water'], heard=[T + 5800], wake=None)
+    s.ends('person', heard=False, turns=2)
+    return s
+
+
+# A take the person ends after one settled turn, whose `ended` comes.
+def ended_take(name):
+    T = NOON
+    s = opening(name); first_turn(s)
+    s.step(T + 4000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4000 + END_WAIT)
+    s.step(T + 4700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
+    s.ends('person', turns=1)
+    return s
+
+
+def end_stories():
+    T, out = NOON, []
+    s = opening('end-at-take-max'); first_turn(s)
+    s.step(T + TAKE_MAX, {'clock': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + TAKE_MAX + END_WAIT)
+    s.step(T + TAKE_MAX + 700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
+    s.ends('limit', turns=1); out.append(s)
+
+    # 23:50 where the phone is, two hours behind UTC: the day in the mark is the phone's.
+    press = T + 49800000
+    midnight = press + 600000
+    s = Story('end-before-day-end', 'Up early.\n', offset=-7200)
+    s.step(press, {'press': True}, phase='connecting', do=[door(A)], heard=[press], marked=True, wake=midnight - END_WAIT)
+    s.step(press + 400, heard(A, started(A)), phase='listening', do=[MIC_OPEN])
+    s.step(press + 500, {'frames': [[QUIET, 10], [SPEECH, 12], [QUIET, 7]]}, send=[audio(1, 29), COMMIT])
+    s.step(press + 3400, heard(A, text(1, 'Late walk')), shown=[[U('Late walk')]])
+    s.step(midnight - END_WAIT, {'clock': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=midnight - 1)
+    s.step(midnight - 1, {'clock': True}, phase='ended', do=[shut(A)], shown=[['Late walk']], saved=['Late walk'], source='spoken', heard=[press + 3400], wake=None)
+    s.ends('dayEnd', heard=False, turns=1)
+    s.step(midnight + 1000, {'recover': True}, phase='recovered', marked=False)
+    s.recovers('dropped'); out.append(s)
+
+    s = opening('end-background'); first_turn(s)
+    s.step(T + 4000, {'frames': [[SPEECH, 5]]}, send=[audio(30, 34)])
+    s.step(T + 4500, {'background': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4500 + END_WAIT)
+    s.step(T + 4600, {'frames': [[SPEECH, 3]]})
+    s.step(T + 5200, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
+    s.ends('background', turns=1); out.append(s)
+
+    for name, given, cause in [('end-microphone-taken', 'microphoneTaken', 'microphone'), ('end-capture-failed', 'captureFailed', 'capture')]:
+        s = opening(name); first_turn(s)
+        s.step(T + 4000, {given: True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 4000 + END_WAIT)
+        s.step(T + 4700, heard(A, last('completed', FIRST)), phase='ended', marked=False, wake=None)
+        s.ends(cause, turns=1); out.append(s)
+
+    out.append(unsettled_end('end-no-ended'))
+
+    s = opening('end-lost'); first_turn(s)
+    s.step(T + 4000, {'frames': [[SPEECH, 11], [QUIET, 7]]}, send=[audio(30, 47), COMMIT])
+    s.step(T + 5800, heard(A, text(2, 'Cold water')), shown=[[FIRST, U('Cold water')]])
+    s.step(T + 6000, {'end': True}, phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 6000 + END_WAIT)
+    s.step(T + 6500, lost(A), phase='ended', shown=[[FIRST + ' Cold water']], saved=[FIRST + ' Cold water'], heard=[T + 5800], wake=None)
+    s.ends('person', heard=False, turns=2); out.append(s)
+
+    s = ended_take('end-undo')
+    s.step(T + 9000, {'undo': True}, shown=[[]], saved=[], source='typed')
+    s.step(T + 9500, {'undo': True})
+    out.append(s)
+
+    s = unsettled_end('end-undo-mark-standing')
+    s.step(T + 25000, {'undo': True}, shown=[[]], saved=[], source='typed', marked=False)
+    out.append(s)
+
+    typed = placed('Up early.\n', [FIRST]) + ' And home.'
+    s = ended_take('end-undo-after-typing')
+    s.step(T + 9000, {'changed': {'body': typed, 'source': 'spoken'}}, stored=typed)
+    s.step(T + 12000, {'undo': True})
+    out.append(s)
+
+    for name, key, at in [('cut-idle', 'idle', T + 184000), ('cut-funding-required', 'funding_required', T + 60000), ('cut-paused', 'paused', T + 9000),
+                          ('cut-restarting', 'restarting', T + 9000), ('cut-unnamed', 'session_limit', T + 9000),
+                          ('failed-accounting-unavailable', 'accounting_unavailable', T + 60000), ('failed-invalid-request', 'invalid_request', T + 9000)]:
+        s = opening(name); first_turn(s)
+        s.step(at, heard(A, last(key, FIRST)), phase='ended', do=[MIC_CLOSED], marked=False, wake=None)
+        s.ends('service', key, turns=1); out.append(s)
+
+    s = opening('cut-subject-exhausted'); first_turn(s); second_words(s)
+    s.step(T + 60000, heard(A, last('subject_exhausted', FIRST + ' Cold water.')), phase='ended', do=[MIC_CLOSED], shown=[[FIRST + ' Cold water.']], saved=[FIRST + ' Cold water.'], marked=False, wake=None)
+    s.ends('service', 'subject_exhausted', turns=2); out.append(s)
+
+    s = opening('defect-unreadable'); first_turn(s); second_words(s)
+    s.step(T + 4500, {'unreadable': {'callId': A}}, phase='ended', do=[MIC_CLOSED, shut(A)], shown=[[FIRST + ' Cold']], saved=[FIRST + ' Cold'], heard=[T + 4450], wake=None)
+    s.ends('defect', heard=False, turns=2); out.append(s)
+
+    s = opening('defect-started-twice')
+    s.step(T + 600, heard(A, started(A)), phase='ended', do=[MIC_CLOSED, shut(A)], heard=[T + 600], wake=None)
+    s.ends('defect', heard=False); out.append(s)
+    return out
+
+
 def story_text(story):
     line = lambda value: json.dumps(value, ensure_ascii=False)
     lines = ['{', f'  "format": {line(story["format"])},', f'  "name": {line(story["name"])},', f'  "given": {line(story["given"])},', '  "steps": [']
@@ -424,7 +531,7 @@ def story_text(story):
 
 
 def documents():
-    stories = [story.document() for story in open_stories() + word_stories()]
+    stories = [story.document() for story in open_stories() + word_stories() + end_stories()]
     if len({story['name'] for story in stories}) != len(stories): raise ValueError('story names repeat')
     return {'pauses.json': vectors(pause_cases()), 'saves.json': vectors(save_scenes()),
             **{'takes/' + story['name'] + '.json': story_text(story) for story in stories}}

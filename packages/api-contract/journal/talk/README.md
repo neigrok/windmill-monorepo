@@ -20,7 +20,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 13 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 19 stories, 92 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 39 stories, 236 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -307,6 +307,13 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `open-empty-page`, `page-trailing-whitespace` | §5.3: the passage and the page before it |
 | `page-full`, `open-page-full` | §5.3: the page's size limit |
 | `other-device-meanwhile` | INV-2: the later save stands |
+| `end-at-take-max`, `end-before-day-end`, `end-background`, `end-microphone-taken`, `end-capture-failed` | §5.4: the causes of an end, and the day's last millisecond |
+| `end-no-ended`, `end-lost` | §5.4 step 3 |
+| `end-undo`, `end-undo-mark-standing`, `end-undo-after-typing` | §5.4 step 4 |
+| `cut-idle`; `cut-subject-exhausted`, `cut-funding-required`; `cut-paused`, `cut-restarting` | §5.4's table, rows 1 to 3 |
+| `failed-accounting-unavailable`, `failed-invalid-request` | §5.4's table, row 5 |
+| `cut-unnamed` | §5.4: a cut the table does not name |
+| `defect-unreadable`, `defect-started-twice` | §4: a defect |
 
 Every frame sequence of a story begins its session with a quiet second and sets speech at 1,000,000 against a
 quiet of 0, so a revised floor does not move a commit here.
