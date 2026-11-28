@@ -1,5 +1,3 @@
-// Reads /v1/subscription and hands products one signal, `windmillOne`.
-
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { fetchSubscription, holdsWindmillOne } from './subscription.js';
@@ -12,35 +10,72 @@ export function useEntitlements() {
   return value;
 }
 
+export function useOptionalEntitlements() {
+  return useContext(EntitlementsContext);
+}
+
 export default function EntitlementsProvider({ children }) {
-  const { status } = useAuth();
-  // Tagged with the session state it was computed for; `loading` is derived at render, not in an
-  // effect, so a ghost→signed-in flip reports loading in the same commit.
-  const [state, setState] = useState({ windmillOne: false, settledFor: null });
-  // Only the newest read may land.
+  const { status, user, account } = useAuth();
+  const accountId = user?.id ?? (typeof account === 'string' ? account : account?.id) ?? null;
+  const seatKey = status === 'signed-in' ? (accountId ?? 'signed-in') : status;
+  const [state, setState] = useState({
+    windmillOne: false,
+    subscription: null,
+    readStatus: 'loading',
+    settledFor: null,
+  });
   const reqRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ pending = false } = {}) => {
     const id = ++reqRef.current;
     if (status !== 'signed-in') {
-      if (id === reqRef.current) setState({ windmillOne: false, settledFor: status });
+      if (id === reqRef.current) {
+        setState({ windmillOne: false, subscription: null, readStatus: 'ready', settledFor: seatKey });
+      }
       return false;
+    }
+    if (pending) {
+      setState((prev) => ({ ...prev, readStatus: 'loading', settledFor: null }));
     }
     const subscription = await fetchSubscription();
     const windmillOne = holdsWindmillOne(subscription);
-    if (id === reqRef.current) setState({ windmillOne, settledFor: 'signed-in' });
+    if (id === reqRef.current) {
+      setState({
+        windmillOne,
+        subscription,
+        readStatus: subscription ? 'ready' : 'error',
+        settledFor: seatKey,
+      });
+    }
     return windmillOne;
-  }, [status]);
+  }, [status, seatKey]);
 
   useEffect(() => {
     refresh();
-    if (status !== 'signed-in') return undefined;
+    if (status !== 'signed-in') {
+      return () => { reqRef.current += 1; };
+    }
     const onFocus = () => refresh();
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [status, refresh]);
+    return () => {
+      reqRef.current += 1;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [status, seatKey, refresh]);
 
-  const loading = status === 'signed-in' && state.settledFor !== 'signed-in';
-  const value = { loading, windmillOne: state.windmillOne, refresh };
+  const loading = status === 'signed-in' && state.settledFor !== seatKey;
+  const subscriptionStatus = status === 'loading' || loading
+    ? 'loading'
+    : status !== 'signed-in'
+      ? 'ready'
+      : state.readStatus;
+  const subscription = status === 'signed-in' && !loading ? state.subscription : null;
+  const value = {
+    loading,
+    windmillOne: status === 'signed-in' && !loading ? state.windmillOne : false,
+    subscription,
+    subscriptionStatus,
+    refresh,
+  };
   return <EntitlementsContext.Provider value={value}>{children}</EntitlementsContext.Provider>;
 }

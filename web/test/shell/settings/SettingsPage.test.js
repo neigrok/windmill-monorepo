@@ -59,6 +59,8 @@ test('signed in, the page is the account\'s: its own sections around every produ
   assert.deepEqual(read, [
     '# Account settings',
     'ProfileSection',
+    'PlanSection',
+    'AllowanceSection',
     'roadmap · Reminder',
     'roadmap · Tending',
     'gym · Your training log',
