@@ -212,8 +212,7 @@ empty name, so the old one stays there too; and a name of blanks alone is writte
 roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
 the band holds *Undo* for the hold's nine seconds. *Share* and *Export* are `Sharing/`'s. While several steps are
 selected the title counts them, with no progress and no menu. Before iOS 26 the name and the progress stand in the bar's
-principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu's tiles or tried its
-rename.
+principal slot (`roomTitle`) with the same menu attached, its tiles and its rename as on iOS 26.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
 checked. That order is by when a server last received each, or, for a roadmap no server has received, by the newest
