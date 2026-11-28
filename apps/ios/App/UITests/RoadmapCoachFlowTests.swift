@@ -31,8 +31,9 @@ import XCTest
     let app = launch()
     ask("What’s next?", in: app)
     XCTAssertTrue(answer(in: app).waitForExistence(timeout: 30))
-    XCTAssertEqual(answer(in: app).label, "Read the wind. It’s open now, and Tie a bowline can wait.")
-    XCTAssertTrue(element("roadmap-coach-read", in: app).exists)
+    // The answer streams in word by word, so it is read once it has all come.
+    XCTAssertTrue(answer(in: app).waitForLabel("Read the wind. It’s open now, and Tie a bowline can wait.", timeout: 30))
+    XCTAssertTrue(element("roadmap-coach-read", in: app).waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["roadmap-coach-question"].exists)
     element("roadmap-coach-close", in: app).tap()
     XCTAssertTrue(element("roadmap-coach-field", in: app).waitForHittable(timeout: 10), "the composer is back at the room's foot")
@@ -75,13 +76,14 @@ import XCTest
     ask("How do I start?", in: app)
     XCTAssertTrue(answer(in: app).waitForExistence(timeout: 30))
     XCTAssertTrue(app.staticTexts["About Read the wind"].exists || app.navigationBars.staticTexts["About Read the wind"].exists)
-    XCTAssertTrue(element("roadmap-coach-receipt", in: app).exists)
+    XCTAssertTrue(element("roadmap-coach-receipt", in: app).waitForExistence(timeout: 10))
   }
 
   func testHistoryAndWhatCoachReadReadTheConversationFromThePhone() {
     let app = launch()
     ask("What’s next?", in: app)
     XCTAssertTrue(answer(in: app).waitForExistence(timeout: 30))
+    XCTAssertTrue(element("roadmap-coach-read", in: app).waitForHittable(timeout: 30))
     element("roadmap-coach-read", in: app).tap()
     XCTAssertTrue(app.navigationBars["What Coach Read"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["8 steps · 3 done"].exists, "the context Coach was told, its steps and how many are done")
