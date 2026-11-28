@@ -22,22 +22,25 @@ on the pinned origin, with the pass as `Authorization`. URLSession gives a refus
 and never its body, so a 401 renews the pass and tries once more; a second 401, a 400, a redirect and
 a handshake that answers no subprotocol or another one are reported defects, and any other status is
 lost with that status. The opening answers `started` with an `AiLiveConnection`, a refusal, a first
-`failed`, or `lost` with its `AiLiveLoss`. The connection sends audio frames, `commit` and `end`,
-holds no audio, and from `started` on keeps one read of its socket outstanding, so each message is
-taken as it arrives. `next()` answers the next `text` or `turn`, then the session's `ended` or
-`failed`, or `lost`, and that last answer on every later call; callers waiting together share the
-stream, each message going to the one that asked first. A terminal's shape is validated field by
-field and its code need only have the service's form: a code the client does not know is reported
-once and the message still arrives with its words, here and from `liveResult`. A loss names its
-cause: the socket closed, the network or the transport failed, a wire defect, a ping unanswered for
-`livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or `close()`. A
+`failed`, or `lost` with its `AiLiveLoss`. The wait for `started` is the caller's to bound: nothing
+checks it, and cancelling the opening closes the socket. The connection sends audio frames, `commit`
+and `end`, holds no audio, and from `started` on keeps one read of its socket outstanding, so each
+message is taken as it arrives. `next()` answers the next `text` or `turn`, then the session's
+`ended` or `failed`, or `lost`, and that last answer on every later call; callers waiting together
+share the stream, each message going to the one that asked first. A terminal's shape is validated
+field by field and its code need only have the service's form: a code the client does not know is
+reported once and the message still arrives with its words, here and from `liveResult`. A loss names
+its cause: the socket closed, the network or the transport failed, a wire defect, a ping unanswered
+for `livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or `close()`. A
 terminal already taken from the socket is never replaced by a loss. The connection pings every
 `livenessMs` from `started` until `end`. A wire defect and a close with an abnormal code are
 reported; a socket the network drops, with a connection error and no close frame, is a quiet loss, as
 it is offline. Audio the door would refuse is thrown back to the caller, unsent and unreported. The
 client holds its connections weakly, and one nobody holds closes its socket. A finished connection
 lets go of its socket and the socket of its task, so nothing left behind reaches the pass; a seat
-change closes every connection of the old seat and fences its reads, finished ones too.
+change closes every connection of the old seat and fences its reads, finished ones too. The live
+types and `AiFailure` describe, debug-describe and mirror themselves by case and counts, without
+words, audio or money.
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
@@ -53,7 +56,8 @@ nonnegative decimal money and the started event's requested call ID. Allowance v
 wire types and enums; the service owns arithmetic, tier and capability policy. Money is validated as
 a decimal string without integer conversion. Non-service HTTP errors are ambiguous transport loss;
 they retry quietly after dispatch. A recovery `call_unknown` ends quietly because its mark may
-predate dispatch. Live `call_unknown` remains a defect.
+predate dispatch; a text call's own `call_unknown` remains a defect. `liveResult` answers `.unknown`
+quietly, and a caller that heard `started` for that session reports it.
 Admission certainty never moves backward. A pass-expired or picture-gone repair runs once under
 the same ID. A seat change cancels local transport, clears cached allowance and cannot authorize
 late replies to publish under another seat.

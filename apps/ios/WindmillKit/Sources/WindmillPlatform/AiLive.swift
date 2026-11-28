@@ -2,11 +2,22 @@ import Foundation
 import Agent
 import SyncCore
 
-public enum AiLiveOpening {
+nonisolated public enum AiLiveOpening: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case started(AiLiveConnection)
   case refused(AiFailure)
   case failed(AiLiveEnd)
   case lost(AiLiveLoss)
+
+  public var description: String {
+    switch self {
+    case .started: "started"
+    case .refused(let failure): "refused(\(failure))"
+    case .failed(let end): "failed(\(end))"
+    case .lost(let loss): "lost(\(loss))"
+    }
+  }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .enum) }
 }
 
 nonisolated public enum AiLiveLoss: Sendable, Equatable {
@@ -14,21 +25,43 @@ nonisolated public enum AiLiveLoss: Sendable, Equatable {
   case refused(status: Int)
 }
 
-nonisolated public enum AiLiveMessage: Sendable, Equatable {
+nonisolated public enum AiLiveMessage: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case text(turn: Int, delta: String)
   case turn(turn: Int, text: String)
   case end(AiLiveEnd)
   case lost(AiLiveLoss)
+
+  public var description: String {
+    switch self {
+    case .text(let turn, let delta): "text(turn: \(turn), \(delta.utf8.count) bytes)"
+    case .turn(let turn, let text): "turn(turn: \(turn), \(text.utf8.count) bytes)"
+    case .end(let end): "end(\(end))"
+    case .lost(let loss): "lost(\(loss))"
+    }
+  }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .enum) }
 }
 
-nonisolated public enum AiLiveResult: Sendable, Equatable {
+nonisolated public enum AiLiveResult: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case answered(AiLiveEnd)
   case open
   case gone
   case unknown
+
+  public var description: String {
+    switch self {
+    case .answered(let end): "answered(\(end))"
+    case .open: "open"
+    case .gone: "gone"
+    case .unknown: "unknown"
+    }
+  }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .enum) }
 }
 
-nonisolated public struct AiLiveEnd: Sendable, Equatable {
+nonisolated public struct AiLiveEnd: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   public enum Stop: String, Sendable { case completed, cut, failed }
   public let stop: Stop
   public let code: String?
@@ -36,6 +69,12 @@ nonisolated public struct AiLiveEnd: Sendable, Equatable {
   public let seconds: Int
   public let charged: String?
   public let allowance: JSON?
+
+  public var description: String { "\(stop.rawValue), code: \(code ?? "none"), \(text.utf8.count) bytes, \(seconds) s" }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror {
+    Mirror(self, children: ["stop": stop.rawValue, "code": code ?? "none", "textBytes": text.utf8.count, "seconds": seconds], displayStyle: .struct)
+  }
 }
 
 extension AiLiveEnd {

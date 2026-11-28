@@ -693,6 +693,24 @@ import SyncCore
     #expect(AiURLSessionTransport.classify(URLError(.badServerResponse)) == .transport)
   }
 
+  @Test func theLiveTypesDescribeThemselvesWithoutWhatTheyCarry() {
+    let end = AiLiveEnd(stop: .cut, code: "idle", text: "MARKER-WORD", seconds: 1, charged: "0.123456789", allowance: ["remaining": "MARKER-AMOUNT"])
+    let failure = AiFailure(source: .text, code: "subject_exhausted", allowance: ["remaining": "MARKER-AMOUNT"])
+    let values: [Any] = [AiLiveMessage.text(turn: 1, delta: "MARKER-WORD"), AiLiveMessage.turn(turn: 1, text: "MARKER-WORD"), AiLiveMessage.end(end),
+                         end, AiLiveOpening.failed(end), AiLiveOpening.refused(failure), AiLiveResult.answered(end), failure,
+                         AiSocketFrame.text("MARKER-WORD"), AiSocketFrame.binary([0xAB, 0xAB])]
+    for value in values {
+      var dumped = ""
+      dump(value, to: &dumped)
+      for text in [String(describing: value), String(reflecting: value), "\(value)", dumped] {
+        #expect(!text.contains("MARKER") && !text.contains("0.123456789") && !text.contains("171"), "\(type(of: value))")
+      }
+    }
+    #expect("\(AiLiveMessage.text(turn: 2, delta: "MARKER-WORD"))" == "text(turn: 2, 11 bytes)")
+    #expect("\(AiLiveResult.answered(end))" == "answered(cut, code: idle, 11 bytes, 1 s)")
+    #expect("\(failure)" == "AiFailure(source: text, code: subject_exhausted, admission: none)")
+  }
+
   static func wire() throws -> JSON {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

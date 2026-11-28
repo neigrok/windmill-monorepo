@@ -22,9 +22,18 @@ nonisolated public struct AiResponse: Sendable {
   }
 }
 
-nonisolated public enum AiSocketFrame: Sendable, Equatable {
+nonisolated public enum AiSocketFrame: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case text(String)
   case binary([UInt8])
+
+  public var description: String {
+    switch self {
+    case .text(let text): "text(\(text.utf8.count) bytes)"
+    case .binary(let bytes): "binary(\(bytes.count) bytes)"
+    }
+  }
+  public var debugDescription: String { description }
+  public var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .enum) }
 }
 
 @MainActor public protocol AiSocket: AnyObject, Sendable {
