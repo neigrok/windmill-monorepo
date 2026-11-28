@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use app_store::decoding::{self, Decoded};
-use app_store::server_api::{ApiFailure, ServerApi};
+use app_store::server_api::{ApiFailure, AppStoreApi, SendAttemptResult};
 use app_store::verification::{self, AccountToken};
 use axum::Json;
 use axum::body::Bytes;
@@ -27,6 +27,7 @@ use crate::telemetry::{self, Throttle};
 const CLAIM: &str = "store.claim";
 const REFRESH: &str = "store.refresh";
 const HINT: &str = "store.hint";
+const TEST_NOTIFICATION: &str = "store.test_notification";
 
 // `POST /internal/v1/app-store/claims`, which the backend sends for a person whose phone bought or restored (§5.3).
 #[derive(Deserialize)]
@@ -194,8 +195,10 @@ impl AppStoreDoor {
         let Some(api) = &self.api else {
             return Err(Outcome::StoreApiUnavailable);
         };
-        let (observation, account_token) =
-            self.pull(api, lineage).await.map_err(Outcome::PullFailed)?;
+        let (observation, account_token) = self
+            .pull(api.as_ref(), lineage)
+            .await
+            .map_err(Outcome::PullFailed)?;
         let observed = Observed {
             observation,
             // §4: an appAccountToken that is not a UUID names no account.
@@ -230,7 +233,7 @@ impl AppStoreDoor {
     // not sign, so the signed transaction must name the same one.
     async fn pull(
         &self,
-        api: &ServerApi,
+        api: &dyn AppStoreApi,
         lineage: &Lineage,
     ) -> Result<(Observation, Option<AccountToken>), PullFailure> {
         let signed = api
@@ -586,6 +589,123 @@ impl HintWritten {
             | HintWritten::Unrecorded(_) => {
                 hint_line!(error)
             }
+        }
+    }
+}
+
+// Requests a TEST notification from Apple and polls its delivery status until Apple records a send attempt or the
+// poll budget runs out. Never exposes the token, signed payload, key, or raw Apple error body.
+pub async fn run_test_notification(
+    api: &dyn AppStoreApi,
+    environment: Environment,
+    max_polls: usize,
+    poll_every: Duration,
+) -> TestNotificationOutcome {
+    let token = match api.request_test_notification(environment).await {
+        Ok(token) => token,
+        Err(failure) => return TestNotificationOutcome::RequestFailed(failure),
+    };
+    let polls = max_polls.max(1);
+    let mut last_server_error = None;
+    for poll in 0..polls {
+        match api.test_notification_status(environment, &token).await {
+            Ok(status) => {
+                last_server_error = None;
+                if let Some(last) = status.send_attempts.last() {
+                    if last.result == Some(SendAttemptResult::Success) {
+                        return TestNotificationOutcome::Delivered {
+                            attempts: status.send_attempts.len(),
+                        };
+                    }
+                    return TestNotificationOutcome::DeliveryFailed {
+                        attempts: status.send_attempts.len(),
+                        result: last.result,
+                    };
+                }
+            }
+            Err(ApiFailure::NotFound) => {
+                last_server_error = None;
+            }
+            Err(ApiFailure::ServerError) => {
+                last_server_error = Some(ApiFailure::ServerError);
+            }
+            Err(failure) => return TestNotificationOutcome::StatusFailed(failure),
+        }
+        if poll + 1 < polls {
+            tokio::time::sleep(poll_every).await;
+        }
+    }
+    match last_server_error {
+        Some(failure) => TestNotificationOutcome::StatusFailed(failure),
+        None => TestNotificationOutcome::Pending,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TestNotificationOutcome {
+    Delivered {
+        attempts: usize,
+    },
+    DeliveryFailed {
+        attempts: usize,
+        result: Option<SendAttemptResult>,
+    },
+    Pending,
+    RequestFailed(ApiFailure),
+    StatusFailed(ApiFailure),
+}
+
+impl TestNotificationOutcome {
+    pub fn succeeded(self) -> bool {
+        matches!(self, TestNotificationOutcome::Delivered { .. })
+    }
+
+    pub fn log(self, environment: Environment, elapsed: Duration) {
+        let store = Store::AppStore.name();
+        let environment = environment.name();
+        let duration_ms = (elapsed.as_secs_f64() * 100_000.0).round() / 100.0;
+        let (outcome, code, send_attempt_result, attempts) = match self {
+            TestNotificationOutcome::Delivered { attempts } => (
+                "delivered",
+                None,
+                Some(SendAttemptResult::Success.code()),
+                Some(attempts),
+            ),
+            TestNotificationOutcome::DeliveryFailed { attempts, result } => (
+                "delivery_failed",
+                None,
+                result.map(SendAttemptResult::code),
+                Some(attempts),
+            ),
+            TestNotificationOutcome::Pending => ("pending", None, None, Some(0)),
+            TestNotificationOutcome::RequestFailed(failure) => {
+                ("request_failed", Some(failure.code()), None, None)
+            }
+            TestNotificationOutcome::StatusFailed(failure) => {
+                ("status_failed", Some(failure.code()), None, None)
+            }
+        };
+        macro_rules! test_notification_line {
+            ($level:ident) => {
+                tracing::$level!(
+                    operation = TEST_NOTIFICATION,
+                    store,
+                    environment,
+                    outcome,
+                    code,
+                    send_attempt_result,
+                    attempts,
+                    duration_ms,
+                    "{TEST_NOTIFICATION}"
+                )
+            };
+        }
+        match self {
+            TestNotificationOutcome::Delivered { .. } => test_notification_line!(info),
+            TestNotificationOutcome::Pending => test_notification_line!(warn),
+            TestNotificationOutcome::DeliveryFailed { .. }
+            | TestNotificationOutcome::RequestFailed(_)
+            | TestNotificationOutcome::StatusFailed(_) => test_notification_line!(error),
         }
     }
 }
