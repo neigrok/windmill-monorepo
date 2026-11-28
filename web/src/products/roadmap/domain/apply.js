@@ -17,7 +17,7 @@ import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jc
 import { ProposalFold, baseMoved } from './abilities/proposals.js';
 import { StandingRoadmaps, readReached } from './abilities/standing.js';
 import { CoachProposal, pendingProposal } from './conversation.js';
-import { RoadmapKind, RoadmapKindValue, recolouring } from './kinds.js';
+import { KindRestore, RoadmapKind, RoadmapKindValue, recolouring } from './kinds.js';
 import { StepMark, StepMarkValue } from './progress.js';
 import { HeldRecord, Restore, RoadmapRefusals, RoadmapScopes, gone, restoring, writeIn } from './roadmapRules.js';
 import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue, importChunks, linkedNames, readNote } from './steps.js';
@@ -114,12 +114,14 @@ class AppliedAct {
     Object.freeze(this);
   }
 
-  // A kind's recolours are checked by the first alone: its Undo writes back the hue the copy holds.
   get plan() {
     const { recolours, kinds, nodes, links, marks } = this.reduced;
     const tree = RoadmapScopes.tree(this.treeId);
-    const commands = recolours.map(({ kind, hue, wearers }, index) => new ScopedPlan(tree, recolouring(this.treeId, this.kindOf(kind), hue,
-      wearers.map((id) => new Id(id, RoadmapStep)), { restored: true, checked: recolours.findIndex((each) => each.kind === kind) === index })));
+    const commands = recolours.map(({ kind, hue, wearers }, index) => {
+      const plan = recolouring(this.treeId, this.kindOf(kind), hue, wearers.map((id) => new Id(id, RoadmapStep)), { restored: true, checked: false });
+      if (index === 0) plan.undoCheckedBy(this.legendRestore);
+      return new ScopedPlan(tree, plan);
+    });
     const units = [...kinds.map((write) => this.kindUnit(write)), ...nodes.filter((write) => write.created || !write.removed).map((write) => this.stepUnit(write)),
       ...links.map((write) => this.linkUnit(write))];
     const structure = importChunks(units).filter((chunk) => chunk.length).map((chunk) => {
@@ -131,6 +133,15 @@ class AppliedAct {
     const deaths = removed.length ? [new ScopedPlan(tree, this.removing(removed))] : [];
     const overlay = marks.length ? [new ScopedPlan(RoadmapScopes.overlay(this.treeId), this.marking(marks))] : [];
     return new ActPlan([...commands, ...structure, ...deaths, ...overlay, new ScopedPlan(RoadmapScopes.account, this.rows(nodes, links))]);
+  }
+
+  // The one check the act's Undo asks, the legend as the whole Undo leaves it: each kind the act recolours back on the hue
+  // the copy holds, each kind it makes taken away, and no kind outside the act wearing a hue given back. A kind of the
+  // act's own that wears such a hue now, recoloured or made by it, stands in no Undo's way.
+  get legendRestore() {
+    const recoloured = [...new Set(this.reduced.recolours.map(({ kind }) => kind))];
+    return new KindRestore(this.treeId, recoloured.map((kind) => ({ kind, hue: this.kindOf(kind).hue })),
+      this.reduced.kinds.filter((write) => write.created).map((write) => write.id));
   }
 
   // A kind and a step as the copy holds them.
@@ -228,10 +239,19 @@ class AppliedAct {
   }
 }
 
-// §7 Apply, pressed by the person on the review: only a pending proposal moves; the roadmap must be the person's own and
-// held whole; a base that moved, or changes that no longer fold over the copy as it is now, mark the proposal `stale` and
-// write nothing to the roadmap; otherwise the act. It answers the state the proposal stands in, `applied` for the act,
-// whose receipt carries its Undo. It reads the proposal's roadmap and the roadmaps that roadmap's reading reaches, none else.
+// A state that passes by itself refuses an Apply and writes nothing, so it never makes a proposal stale: a roadmap the device
+// has not finished bringing (`roadmap-unavailable`), and changes that pass a cap only by the steps under a delete the person
+// can still undo, which free their slots when their hold ends (`roadmap-not-ready`).
+/** @param {string} treeId @param {string} code */
+function waiting(treeId, code) {
+  return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused(code, { t: 'tree', id: treeId }, null, 'predicted')));
+}
+
+// §7 Apply, pressed by the person on the review: only a pending proposal moves; the roadmap must be the person's own, else
+// it is gone, and held whole; a state that passes by itself refuses and writes nothing (`waiting`); a base that moved, or
+// changes that no longer fold over the copy as it is now, mark the proposal `stale` and write nothing to the roadmap;
+// otherwise the act. It answers the state the proposal stands in, `applied` for the act, whose receipt carries its Undo. It
+// reads the proposal's roadmap and the roadmaps that roadmap's reading reaches, none else.
 export class ApplyProposal {
   /** @param {Id<CoachProposalValue>} proposal */
   constructor(proposal) {
@@ -254,15 +274,16 @@ export class ApplyProposal {
     if (still !== null) return still;
     const proposal = /** @type {CoachProposalValue} */ (found.proposal);
     const treeId = /** @type {string} */ (proposal.treeId);
-    const opened = StandingRoadmaps.of(/** @type {Standing} */ (standing)).open(treeId, treeId);
-    if (!('roadmap' in opened)) {
-      if (!('refused' in opened) || opened.refused.code !== 'roadmap-unavailable') return gone('tree', treeId);
-      return ActDecision.refuse(RoadmapRefusals.ofRefused(new Refused('roadmap-unavailable', { t: 'tree', id: treeId }, null, 'predicted')));
+    const copy = /** @type {Required<Standing>} */ (standing);
+    const opened = StandingRoadmaps.of(copy).open(treeId, null);
+    if (!('roadmap' in opened)) return 'refused' in opened && opened.refused.code === 'roadmap-unavailable' ? waiting(treeId, 'roadmap-unavailable') : gone('tree', treeId);
+    if (baseMoved(copy, treeId, proposal.base)) return marked(proposal, 'stale', found.moment);
+    const changes = /** @type {any[]} */ ([...proposal.changes]);
+    const folded = ProposalFold.over(copy, treeId, changes);
+    if (!('fold' in folded)) {
+      const passesOnceHeld = 'refused' in folded && folded.refused.code === 'over-limit' && 'fold' in ProposalFold.over({ ...copy, held: [] }, treeId, changes);
+      return passesOnceHeld ? waiting(treeId, 'roadmap-not-ready') : marked(proposal, 'stale', found.moment);
     }
-    if (!opened.roadmap.tree.own) return gone('tree', treeId);
-    if (baseMoved(/** @type {Standing} */ (standing), treeId, proposal.base)) return marked(proposal, 'stale', found.moment);
-    const folded = ProposalFold.over(/** @type {Standing} */ (standing), treeId, /** @type {any[]} */ ([...proposal.changes]));
-    if (!('fold' in folded)) return marked(proposal, 'stale', found.moment);
     const act = new AppliedAct(this.proposal, treeId, folded.fold, /** @type {LandingNote} */ (note), found.moment);
     return ActDecision.write(act.plan, /** @type {ProposalState} */ ('applied'));
   }

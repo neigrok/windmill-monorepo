@@ -229,7 +229,7 @@ export const CoachProposal = new EntityType({
 
 // §7 The pending proposal about a roadmap, as the device draws its proposals: the latest born of those pending, by birth
 // and then id, so where two devices each minted one before they synced the later stands; null where none is pending. An
-// earlier pending one reads as replaced, which the next proposal minted about the roadmap writes.
+// earlier pending one reads as replaced, which the next proposal minted about the roadmap writes, or an Apply or a Reject of it.
 /** @param {Reader} read @param {string} treeId */
 export function pendingProposal(read, treeId) {
   const proposals = read.repository(CoachProposal);

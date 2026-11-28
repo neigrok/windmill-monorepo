@@ -91,13 +91,13 @@ struct AppliedAct {
     self.moment = moment
   }
 
-  // A kind's recolours are checked by the first alone: its Undo writes back the hue the copy holds.
   func plan() throws(Violation) -> ActPlan {
     var segments: [ScopedPlan] = []
     for (index, recolour) in reduced.recolours.enumerated() {
-      let first = reduced.recolours.firstIndex { $0.kind.utf8.elementsEqual(recolour.kind.utf8) } == index
-      segments.append(ScopedPlan(tree.tree, try RecolourKind.recolouring(kind(recolour.kind), to: recolour.hue, worn: recolour.wearers.map { ID(RecordID($0)) },
-                                                                        in: tree, restored: true, checked: first)))
+      var plan = try RecolourKind.recolouring(kind(recolour.kind), to: recolour.hue, worn: recolour.wearers.map { ID(RecordID($0)) }, in: tree,
+                                              restored: true, checked: false)
+      if index == 0 { plan.undoCheckedBy(legendRestore) }
+      segments.append(ScopedPlan(tree.tree, plan))
     }
     let units = reduced.kinds.map(kindUnit) + reduced.nodes.filter { $0.created || !$0.removed }.map(stepUnit) + reduced.links.map(linkUnit)
     for chunk in units.chunked() where !chunk.isEmpty {
@@ -110,6 +110,14 @@ struct AppliedAct {
     if !reduced.marks.isEmpty { segments.append(ScopedPlan(tree.overlay, try marking(reduced.marks))) }
     segments.append(ScopedPlan(Roadmap.scope, rows()))
     return ActPlan(segments)
+  }
+
+  // The one check the act's Undo asks, the legend as the whole Undo leaves it: each kind the act recolours back on the hue the
+  // copy holds, each kind it makes taken away, and no kind outside the act wearing a hue given back. A kind of the act's own
+  // that wears such a hue now, recoloured or made by it, stands in no Undo's way.
+  var legendRestore: KindRestore {
+    let recoloured = reduced.recolours.map(\.kind).unique.map { (kind: String) -> (kind: ID<RoadmapKind>, hue: String) in (ID(RecordID(kind)), self.kind(kind).hue) }
+    return KindRestore(tree: tree, restored: recoloured, removed: reduced.kinds.filter(\.created).map { ID(RecordID($0.id)) })
   }
 
   // A kind and a step as the copy holds them.
@@ -225,10 +233,11 @@ struct AppliedAct {
   }
 }
 
-// §7 Apply, pressed by the person on the review: only a pending proposal moves; the roadmap must be the person's own and held
-// whole; a base that moved, or changes that no longer fold over the copy as it is now, mark the proposal `stale` and write
-// nothing to the roadmap; otherwise the act. It answers the state the proposal stands in, `applied` for the act, whose
-// receipt carries its Undo. It reads the proposal's roadmap and the roadmaps that roadmap's reading reaches, none else.
+// §7 Apply, pressed by the person on the review: only a pending proposal moves; the roadmap must be the person's own, else it
+// is gone, and held whole; a state that passes by itself refuses and writes nothing (`waiting`); a base that moved, or changes
+// that no longer fold over the copy as it is now, mark the proposal `stale` and write nothing to the roadmap; otherwise the
+// act. It answers the state the proposal stands in, `applied` for the act, whose receipt carries its Undo. It reads the
+// proposal's roadmap and the roadmaps that roadmap's reading reaches, none else.
 public struct ApplyProposal: ActAction {
   public struct Loaded {
     let found: ProposalRead
@@ -257,16 +266,25 @@ public struct ApplyProposal: ActAction {
     }
     let tree = ID<RoadmapEntry>(RecordID(treeId))
     do throws(CoachRefusal) {
-      guard try standing.open(treeId, about: treeId).tree.own else { return .refuse(.gone(tree.ref, .predicted)) }
+      _ = try standing.open(treeId, about: nil)
     } catch {
-      guard error.code == .roadmapUnavailable else { return .refuse(.gone(tree.ref, .predicted)) }
-      return .refuse(RoadmapRefusal(Refused("roadmap-unavailable", subject: tree.ref, path: .predicted)))
+      return error.code == .roadmapUnavailable ? Self.waiting(tree, "roadmap-unavailable") : .refuse(.gone(tree.ref, .predicted))
     }
     if ProposalFold.baseMoved(pending.base, over: standing, treeId: treeId) { return try ProposalRead.marked(pending, .stale, at: loaded.found.moment) }
-    guard case .success(let fold) = ProposalFold.over(standing, treeId: treeId, changes: pending.changes) else {
-      return try ProposalRead.marked(pending, .stale, at: loaded.found.moment)
+    switch ProposalFold.over(standing, treeId: treeId, changes: pending.changes) {
+    case .success(let fold): return .write(try AppliedAct(proposal, of: tree, fold: fold, note: note, at: loaded.found.moment).plan(), .applied)
+    case .failure(let refusal):
+      let passesOnceHeld = refusal.code == .overLimit
+        && (try? ProposalFold.over(standing.releasingHolds, treeId: treeId, changes: pending.changes).get()) != nil
+      return passesOnceHeld ? Self.waiting(tree, "roadmap-not-ready") : try ProposalRead.marked(pending, .stale, at: loaded.found.moment)
     }
-    return .write(try AppliedAct(proposal, of: tree, fold: fold, note: note, at: loaded.found.moment).plan(), .applied)
+  }
+
+  // A state that passes by itself refuses an Apply and writes nothing, so it never makes a proposal stale: a roadmap the device
+  // has not finished bringing (`roadmap-unavailable`), and changes that pass a cap only by the steps under a delete the person
+  // can still undo, which free their slots when their hold ends (`roadmap-not-ready`).
+  static func waiting(_ tree: ID<RoadmapEntry>, _ code: RefusalCode) -> ActDecision<CoachProposalState, RoadmapRefusal> {
+    .refuse(RoadmapRefusal(Refused(code, subject: tree.ref, path: .predicted)))
   }
 }
 

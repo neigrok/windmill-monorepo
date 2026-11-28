@@ -60,6 +60,22 @@ struct ApplyTests {
     try phone.drawn(CoachProposal.self).first { $0.id == proposal }?.state.rawValue
   }
 
+  @Test func aMarkTheMintValidatedThroughTheRoadmapAStepOwnsAppliesApplyReadsThatRoadmapAsTheMintReadIt() throws {
+    let phone = RoadmapsTests.phone()
+    let (tree, ids, thread, coach) = try Self.roadmap(on: phone, [("a", "Rig the boat"), ("b", "Sail out")], links: [("a", "b")])
+    guard case .committed(let owned, _) = try phone.runner.runAct(CreateSubtree(tree: tree, step: ID(RecordID(ids["a"] ?? "")))) else {
+      throw ContractError("no subtree was made")
+    }
+    guard case .committed(let knot, _) = try phone.runner.runAct(CreateStep(tree: owned.subtree, step: .init(label: "Tie a bowline"))) else {
+      throw ContractError("no step was made")
+    }
+    _ = try phone.runner.runAct(MarkStep.complete(tree: owned.subtree, step: knot))
+    phone.sync()
+    let (proposal, _) = try Self.proposed(on: phone, tree, thread: thread, coach: coach, [["op": "set_progress", "nodeId": .string(ids["b"] ?? ""), "status": "complete"]])
+    guard case .committed(let applied, _) = try phone.runner.runAct(ApplyProposal(proposal)) else { throw ContractError("the Apply wrote nothing") }
+    #expect(applied == .applied, "the step after the one whose subtree is complete takes its mark")
+  }
+
   @Test func aSecondPressOfApplyWritesNothingAndTheSettleMakesTheProposalApplied() throws {
     let phone = RoadmapsTests.phone()
     let (tree, ids, thread, coach) = try Self.roadmap(on: phone, [("a", "Leave the dock"), ("b", "Tie a bowline")], links: [("a", "b")])
@@ -134,9 +150,11 @@ struct ApplyTests {
     #expect(try Self.state(on: a, proposal) == "applied" && Self.state(on: b, proposal) == "applied")
   }
 
-  // The device's copy as a case states it: a roadmap of 5,000 steps a proposal of 100 changes is about, `others` roadmaps of
-  // 2,000 beside it, and the conversation the proposal came from, minted by the domain over that copy.
-  static func copy(beside others: Int) throws -> Vector {
+  // The device's copy as a case states it: a roadmap of `count` steps, each after the one before, that a proposal of `changing`'s
+  // changes is about, `others` roadmaps of 2,000 beside it, and the conversation the proposal came from, minted by the domain over
+  // that copy; then `then` changes the copy's scopes, and the vector applies the proposal.
+  static func copy(_ count: Int = 5000, beside others: Int, changing: ((Int) -> String) -> [JSON],
+                   then: (inout JSON.Object, String) -> Void = { _, _ in }) throws -> Vector {
     let (s0, minted) = ("1700000000000:0:r_aaaaaaaaaaaa", "1700000001000:0:r_aaaaaaaaaaaa")
     let tree = "t_00000000000000bb"
     let id = { (step: Int) -> String in "s" + String(repeating: "0", count: 5 - String(step).count) + String(step) }
@@ -157,23 +175,17 @@ struct ApplyTests {
                                            ("replica", "rp_00000000000000000000000000000001"), ("state", "completed"), ("truncated", false), ("refusal", .null)])]
     var scopes = JSON.Object()
     for each in trees {
-      scopes["tree/\(each)"] = ["drawn": .array(rows(each == tree ? 5000 : 2000, title: "Roadmap \(each)"))]
+      scopes["tree/\(each)"] = ["drawn": .array(rows(each == tree ? count : 2000, title: "Roadmap \(each)"))]
       scopes["self/overlay/\(each)"] = ["drawn": []]
     }
-    let steps = (0..<5000).map { Step(id: id($0), label: "Step \($0)", ord: String(id($0).dropFirst())) }
+    let steps = (0..<count).map { Step(id: id($0), label: "Step \($0)", ord: String(id($0).dropFirst())) }
     let stamps = steps.map { RecordStamps(scope: "tree/\(tree)", t: "node", id: .string($0.id), life: s0, f: ["label": s0, "ord": s0]) }
-      + (1..<5000).map { RecordStamps(scope: "tree/\(tree)", t: "edge", id: [.string(id($0 - 1)), .string(id($0))], life: s0, f: [:]) }
+      + (1..<count).map { RecordStamps(scope: "tree/\(tree)", t: "edge", id: [.string(id($0 - 1)), .string(id($0))], life: s0, f: [:]) }
       + [RecordStamps(scope: "tree/\(tree)", t: "kind", id: "learn", life: s0, f: ["hue": s0, "label": s0, "description": s0, "ord": s0])]
     let standing = StandingRoadmaps(trees: [RoadmapTree(id: tree, own: true, meta: RoadmapTree.Metadata(title: "Roadmap \(tree)", root: tree), nodes: steps,
-      edges: (1..<5000).map { RoadmapTree.Edge(from: id($0 - 1), to: id($0), present: true) }, kinds: [Kind(id: "learn", hue: "olive", label: "Learn", description: "", ord: "a0")])],
+      edges: (1..<count).map { RoadmapTree.Edge(from: id($0 - 1), to: id($0), present: true) }, kinds: [Kind(id: "learn", hue: "olive", label: "Learn", description: "", ord: "a0")])],
       stamps: stamps)
-    let changes: [JSON] = (0..<10).map { ["op": "set_progress", "nodeId": .string(id($0)), "status": "complete"] }
-      + (0..<25).map { ["op": "add_step", "ref": .string("new:s\($0)"), "label": .string("New \($0)"), "kind": "learn", "prerequisites": [.string(id($0 * 10))]] }
-      + (0..<25).map { ["op": "rename", "nodeId": .string(id(1000 + $0)), "label": .string("Renamed \($0)")] }
-      + (0..<10).map { ["op": "describe", "nodeId": .string(id(2000 + $0)), "description": .string("Described \($0)")] }
-      + (0..<20).map { ["op": "connect", "nodeId": .string(id(2500 + $0 * 10)), "prerequisiteId": .string(id(2495 + $0 * 10))] }
-      + (0..<5).map { ["op": "merge", "nodeId": .string(id(3000 + $0 * 10)), "removeId": .string(id(3001 + $0 * 10))] }
-      + (0..<5).map { ["op": "remove_step", "nodeId": .string(id(4000 + $0 * 10))] }
+    let changes = changing(id)
     var drawn = ["proposal0003"] + (0..<25).map { "n" + String(repeating: "0", count: 15 - String($0).count) + String($0) }
     guard case .minted(let proposal, _) = RoadmapProposals.answer(["treeId": .string(tree), "changes": .array(changes)], over: standing, about: tree, ids: { _ in drawn.removeFirst() })
     else { throw ContractError("the proposal is refused") }
@@ -184,6 +196,7 @@ struct ApplyTests {
     account.append(["t": "coachProposal", "id": "proposal0003", "seq": 2, "born": .string(minted), "life": ["alive", .string(minted)],
                     "f": .object(JSON.Object(uniqueKeysWithValues: created.members.map { ($0.key, [$0.value, .string(minted)]) }))])
     scopes["self/roadmap"] = ["drawn": .array(account)]
+    then(&scopes, tree)
     return Vector(file: "scale", name: "apply", input: ["action": "ApplyProposal", "input": ["proposal": "proposal0003"], "scopes": .object(scopes),
                                                        "now": 1_800_000_000_000, "offsetSeconds": 0], expect: .null)
   }
@@ -192,12 +205,46 @@ struct ApplyTests {
   @Test func applyOfOneHundredChangesOverFiveThousandStepsTakesAboutAsLongBesideZeroFiveAndTwentyOtherRoadmaps() throws {
     var times: [Int: Duration] = [:]
     for others in [0, 5, 20] {
-      let vector = try Self.copy(beside: others)
+      let vector = try Self.copy(beside: others) { id in
+        (0..<10).map { ["op": "set_progress", "nodeId": .string(id($0)), "status": "complete"] }
+          + (0..<25).map { ["op": "add_step", "ref": .string("new:s\($0)"), "label": .string("New \($0)"), "kind": "learn", "prerequisites": [.string(id($0 * 10))]] }
+          + (0..<25).map { ["op": "rename", "nodeId": .string(id(1000 + $0)), "label": .string("Renamed \($0)")] }
+          + (0..<10).map { ["op": "describe", "nodeId": .string(id(2000 + $0)), "description": .string("Described \($0)")] }
+          + (0..<20).map { ["op": "connect", "nodeId": .string(id(2500 + $0 * 10)), "prerequisiteId": .string(id(2495 + $0 * 10))] }
+          + (0..<5).map { ["op": "merge", "nodeId": .string(id(3000 + $0 * 10)), "removeId": .string(id(3001 + $0 * 10))] }
+          + (0..<5).map { ["op": "remove_step", "nodeId": .string(id(4000 + $0 * 10))] }
+      }
       var decided: JSON = .null
       times[others] = try ContinuousClock().measure { decided = try RoadmapAct.decision(vector) }
       #expect(decided["decision"]?["write"]?["result"] == "applied")
     }
     print("Apply of 100 changes over 5,000 steps, beside 0, 5 and 20 other roadmaps of 2,000: \(times[0]!), \(times[5]!), \(times[20]!)")
     #expect(times[20]! < .seconds(30))
+  }
+
+  @Test func aCapThatOnlyThePersonsHeldDeletesPassRefusesApplyAndWritesNothingOnceTheHoldEndsItAppliesAndACapFilledForGoodMakesItStale() throws {
+    // 9,999 steps and a proposal adding one more; since its mint the person deleted `s00000`, still held or not, and added a step.
+    let later = "1700000002000:0:r_bbbbbbbbbbbb"
+    let added: JSON = ["t": "node", "id": "v", "seq": 1, "born": .string(later), "life": ["alive", .string(later)], "f": ["label": ["Added since", .string(later)]]]
+    func apply(deleting held: Bool?) throws -> JSON {
+      let vector = try Self.copy(9999, beside: 0, changing: { _ in [["op": "add_step", "ref": "new:last", "label": "One more"]] }) { scopes, tree in
+        var rows = (try? scopes["tree/\(tree)"]?.member("drawn").asArray()) ?? []
+        let stored = rows + [added]
+        if let held {
+          let at = rows.firstIndex { $0["id"] == "s00000" } ?? 0
+          guard case .object(var dead) = rows[at] else { return }
+          dead["life"] = ["dead", .string(later)]
+          rows[at] = .object(dead)
+          scopes["tree/\(tree)"] = ["drawn": .array(rows + [added]), "stored": .array(held ? stored : rows + [added])]
+        } else {
+          scopes["tree/\(tree)"] = ["drawn": .array(stored)]
+        }
+      }
+      return try RoadmapAct.decision(vector).member("decision")
+    }
+    #expect(try apply(deleting: true) == ["refuse": ["other": ["code": "roadmap-not-ready", "subject": ["t": "tree", "id": "t_00000000000000bb"], "detail": .null,
+                                                                "path": "predicted"]]])
+    #expect(try apply(deleting: false)["write"]?["result"] == "applied")
+    #expect(try apply(deleting: nil)["write"]?["result"] == "stale")
   }
 }

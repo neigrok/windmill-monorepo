@@ -138,7 +138,8 @@ public struct StandingRoadmaps: Sendable {
 
   // D-2 of one roadmap of the person's own and of the roadmaps its reading reaches, through an act's reader: the roadmaps
   // above it and those its steps own or open, and theirs in turn, each where the person's list holds it. An act that reads
-  // one roadmap so reads none of the others the device holds.
+  // one roadmap so reads none of the others the device holds. It carries no owner marks: those are what the room read of a
+  // roadmap the person only reads, which no reading of the person's own roadmap reaches.
   init(reaching treeId: String, reading read: ActReader) throws {
     let (entries, listRead) = try Self.list(from: read)
     let listed = ByText<Record>(entries.map { (Array($0.id.description.utf8), $0) }) { _, last in last }
@@ -192,6 +193,11 @@ public struct StandingRoadmaps: Sendable {
   init(copies: [Copy], listRead: Bool) {
     self.init(trees: copies.map(\.tree), held: copies.flatMap(\.held), subtasks: copies.flatMap(\.subtasks), listRead: listRead,
               stamps: copies.flatMap(\.stamps))
+  }
+
+  // These standing roadmaps as they stand once every delete the person can still undo has let go of its step's slot.
+  var releasingHolds: StandingRoadmaps {
+    StandingRoadmaps(trees: account.trees, held: [], subtasks: subtasks, listRead: listRead, stamps: stamps)
   }
 
   // These standing roadmaps with `tree` in place of the roadmap of its id, read among the roadmaps that roadmap's reading

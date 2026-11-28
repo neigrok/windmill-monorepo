@@ -240,7 +240,7 @@ public struct CoachProposal: ProductEntity, Writable, Removable, Equatable {
 
   // §7 The pending proposal about a roadmap, as the device draws its proposals: the latest born of those pending, by birth
   // and then id, so where two devices each minted one before they synced the later stands; none where none is pending. An
-  // earlier pending one reads as replaced, which the next proposal minted about the roadmap writes.
+  // earlier pending one reads as replaced, which the next proposal minted about the roadmap writes, or an Apply or a Reject of it.
   public static func pending(about treeId: String, in read: Reader) throws -> CoachProposal? {
     let proposals = read.repository(CoachProposal.self)
     var latest: (proposal: CoachProposal, born: Stamp)?

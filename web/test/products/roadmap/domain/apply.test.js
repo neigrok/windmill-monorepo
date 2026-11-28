@@ -1,8 +1,8 @@
 // @ts-check
 // A proposal's Apply beyond the shared cases and scenes, on the real engine: two tabs pressing Apply at once write it once,
 // an engine started again between the act and its settling settles it applied, a large proposal travels as several
-// intents under one Undo, two devices applying before they sync leave the later one's new step refused as taken, and a
-// roadmap the device does not hold whole is refused and leaves the proposal pending.
+// intents under one Undo, two devices applying before they sync leave the later one's new step refused as taken, and a cap
+// that only the person's held deletes pass refuses Apply and writes nothing.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,15 +12,18 @@ import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
 import { ProposalAbilities } from '../../../../src/products/roadmap/domain/abilities/proposals.js';
 import { readReached } from '../../../../src/products/roadmap/domain/abilities/standing.js';
-import { ApplyProposal, ApplyingRow, ProposalUndone, SettleApplying } from '../../../../src/products/roadmap/domain/apply.js';
+import { ApplyProposal, ApplyingRow, SettleApplying } from '../../../../src/products/roadmap/domain/apply.js';
 import { CoachMessage, CoachProposal, CoachThread, MintProposal, OpenTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { RoadmapKind } from '../../../../src/products/roadmap/domain/kinds.js';
-import { CreateRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
+import { Complete } from '../../../../src/products/roadmap/domain/progress.js';
+import { CreateRoadmap, CreateSubtree } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapRefusals, RoadmapScopes, refusalForm } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
+import { CreateStep, RoadmapStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
+import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
-import { roadmapRegistry } from './vectors.js';
+import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
+import { roadmapBook, roadmapRegistry, runAction } from './vectors.js';
 
 /** @typedef {{ kind: string, result?: any, receipt?: any, refusal?: any }} Outcome */
 
@@ -169,13 +172,79 @@ test('two devices that apply one proposal before they sync leave each new step o
   }
 });
 
-test('a proposal about a roadmap the device does not hold whole is refused, and stays pending', async () => {
-  const unread = { trees: [{ id: 't_0000000000000001', own: true, read: 'unread', meta: { title: 'Learn to sail' }, nodes: [{ id: 'a', label: 'Leave the dock' }] }],
-    stamps: [] };
-  const proposal = /** @type {any} */ ({ id: new Id('proposal0003', CoachProposal), treeId: 't_0000000000000001', state: 'pending', base: [], changes: [] });
-  const found = { proposal, pending: proposal, applying: false, moment: /** @type {any} */ (null) };
-  const decided = new ApplyProposal(found.proposal.id).decide({ found: /** @type {any} */ (found), standing: /** @type {any} */ (unread), note: /** @type {any} */ (null) });
-  assert.deepEqual(decided.kind === 'refuse' ? refusalForm(decided.refusal) : decided.kind,
-    { other: { code: 'roadmap-unavailable', subject: { t: 'tree', id: 't_0000000000000001' }, detail: null, path: 'predicted' } });
-  assert.equal(new ProposalUndone(found.proposal.id, { kind: 'pending', localChanged: true }).outcome, 'undone');
+test('a mark the mint validated through the roadmap a step owns applies: Apply reads that roadmap as the mint read it', async () => {
+  const a = await open();
+  try {
+    const { tree, ids, turn } = await roadmapOn(a, [['a', 'Rig the boat'], ['b', 'Sail out']]);
+    const { subtree } = /** @type {any} */ (await a.runner.runAct(new CreateSubtree(tree, ids.a))).result;
+    for (const scope of [RoadmapScopes.tree(subtree), RoadmapScopes.overlay(subtree)]) a.observe(scope);
+    const knot = /** @type {any} */ (await a.runner.runAct(new CreateStep(subtree, { label: 'Tie a bowline' }))).result;
+    await a.runner.runAct(Complete(subtree, knot));
+    await a.sync();
+    const { proposal } = await proposed(a.runner, tree, turn, [{ op: 'set_progress', nodeId: ids.b, status: 'complete' }]);
+    const applied = /** @type {Outcome} */ (await a.runner.runAct(new ApplyProposal(proposal)));
+    assert.deepEqual([applied.kind, applied.result], ['committed', 'applied'], 'the step after the one whose subtree is complete takes its mark');
+  } finally {
+    a.close();
+  }
+});
+
+// A roadmap at the steps cap's edge as a device's rows: 9,999 steps, a conversation, and a proposal adding one more, minted
+// over it by the domain; `then` changes the rows after the mint.
+/** @param {(scopes: Record<string, { drawn: any[], stored?: any[] }>) => void} then */
+function atTheCap(then) {
+  const T = 't_0000000000000001';
+  const S0 = '1700000000000:0:r_aaaaaaaaaaaa';
+  const LATER = '1700000002000:0:r_bbbbbbbbbbbb';
+  /** @param {string} t @param {any} id @param {Record<string, any>} f @param {string} [born] */
+  const row = (t, id, f, born = S0) => ({ t, id, seq: 1, born, life: ['alive', born], f: Object.fromEntries(Object.entries(f).map(([name, value]) => [name, [value, born]])) });
+  /** @type {Record<string, { drawn: any[], stored?: any[] }>} */
+  const scopes = {
+    [`tree/${T}`]: { drawn: [{ t: 'meta', id: 'meta', seq: 1, f: { title: ['Ten thousand steps', S0] } },
+      ...Array.from({ length: 9999 }, (_, index) => row('node', `s${index}`, { label: `Step ${index}`, ord: `a${String(index).padStart(5, '0')}` }))] },
+    [`self/overlay/${T}`]: { drawn: [] },
+    'self/roadmap': { drawn: [row('tree', T, {}), row('coachThread', 'thread0001', { treeId: T, stepId: null, title: 'More' }),
+      row('coachMessage', 'message0002', { threadId: 'thread0001', role: 'coach', text: '', at: 1700000000000, replica: 'rp_00000000000000000000000000000001',
+        state: 'completed', truncated: false, refusal: null })] },
+  };
+  const corpus = new ProductCorpus(roadmapBook, RoadmapRules.spec);
+  const copy = /** @type {any} */ (corpus.act({ refusals: RoadmapRefusals, load: (read) => readReached(read, T), decide: (standing) => ActDecision.unchanged(standing) },
+    /** @type {any} */ ({ name: 'copy', input: { scopes, now: 1800000000000, offsetSeconds: 0 } }), (standing) => /** @type {any} */ (standing), (refusal) => /** @type {any} */ (refusal)));
+  const ids = ['proposal0003', 'n000000000000001'];
+  const proposed = /** @type {any} */ (ProposalAbilities.propose_roadmap_change(copy.decision.unchanged.result,
+    { treeId: T, changes: [{ op: 'add_step', ref: 'new:last', label: 'One more' }] }, T, () => /** @type {string} */ (ids.shift())));
+  const mint = /** @type {any} */ (runAction(/** @type {any} */ ({ name: 'mint', input: { action: 'MintProposal', input: { proposal: 'proposal0003', treeId: T, thread: 'thread0001',
+    message: 'message0002', changes: proposed.proposal.changes, base: proposed.proposal.base }, scopes, now: 1800000000000, offsetSeconds: 0 } })));
+  const created = mint.decision.write.segments[0].gesture.changes[0];
+  scopes['self/roadmap']?.drawn.push({ t: 'coachProposal', id: 'proposal0003', seq: 2, born: S0, life: ['alive', S0],
+    f: Object.fromEntries(Object.entries(created.f).map(([name, value]) => [name, [value, S0]])) });
+  then(scopes);
+  const tree = /** @type {{ drawn: any[], stored?: any[] }} */ (scopes[`tree/${T}`]);
+  const added = row('node', 'v', { label: 'Added since', ord: 'b0' }, LATER);
+  tree.drawn.push(added);
+  if (tree.stored) tree.stored.push(added);
+  const decided = /** @type {any} */ (runAction(/** @type {any} */ ({ name: 'apply', input: { action: 'ApplyProposal', input: { proposal: 'proposal0003' }, scopes,
+    now: 1800000000000, offsetSeconds: 0 } }))).decision;
+  if (decided.refuse) return { refuse: decided.refuse };
+  return { kind: Object.keys(decided)[0], result: decided.write?.result ?? decided.unchanged?.result };
+}
+
+test('a cap that only the person\'s held deletes pass refuses Apply and writes nothing; once the hold ends it applies, and a cap filled for good makes it stale', () => {
+  const T = 't_0000000000000001';
+  /** @param {Record<string, { drawn: any[], stored?: any[] }>} scopes @param {boolean} held */
+  const deleting = (scopes, held) => {
+    const tree = /** @type {{ drawn: any[], stored?: any[] }} */ (scopes[`tree/${T}`]);
+    const gone = { ...tree.drawn[1], life: ['dead', '1700000002000:0:r_bbbbbbbbbbbb'] };
+    tree.stored = held ? [...tree.drawn] : [...tree.drawn.slice(0, 1), gone, ...tree.drawn.slice(2)];
+    tree.drawn = [...tree.drawn.slice(0, 1), gone, ...tree.drawn.slice(2)];
+  };
+  assert.deepEqual({
+    held: atTheCap((scopes) => deleting(scopes, true)),
+    released: atTheCap((scopes) => deleting(scopes, false)),
+    filled: atTheCap(() => {}),
+  }, {
+    held: { refuse: { other: { code: 'roadmap-not-ready', subject: { t: 'tree', id: T }, detail: null, path: 'predicted' } } },
+    released: { kind: 'write', result: 'applied' },
+    filled: { kind: 'write', result: 'stale' },
+  });
 });

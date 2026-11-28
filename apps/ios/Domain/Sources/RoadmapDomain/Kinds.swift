@@ -48,18 +48,28 @@ public struct RoadmapKind: Writable, Removable {
   var key: FractionalKey? { ord.flatMap { try? FractionalKey($0) } }
 }
 
-// What an Undo that brings a kind back onto the hue it wore must find standing, as a kind made or changed is checked (§4):
-// no other present kind wearing that hue. A kind's delete and its recolour name it beside their recipes, since the device
-// keeps no hue of a kind once its delete has reached it.
+// What an Undo that brings kinds back onto the hues they wore must find standing, as a kind made or changed is checked (§4):
+// no kind outside the Undo wearing a hue it gives back, the legend read as the whole Undo leaves it. `restored` are the kinds
+// the Undo brings back onto a hue, and `removed` those it takes away, which wear nothing after it. A kind's delete and its
+// recolour name their one kind beside their recipes, since the device keeps no hue of a kind once its delete has reached it;
+// a proposal's Apply names every kind it recolours and every kind it makes, in one check.
 struct KindRestore: UndoCheck {
   let tree: ID<RoadmapEntry>
-  let kind: ID<RoadmapKind>
-  let hue: String
+  let restored: [(kind: ID<RoadmapKind>, hue: String)]
+  let removed: [ID<RoadmapKind>]
+
+  init(tree: ID<RoadmapEntry>, restored: [(kind: ID<RoadmapKind>, hue: String)], removed: [ID<RoadmapKind>] = []) {
+    self.tree = tree
+    self.restored = restored
+    self.removed = removed
+  }
 
   var scope: ScopeRef { tree.tree }
 
   func check(_ read: Reader) throws {
-    try RoadmapKind(id: kind, hue: hue).checkHueUnworn(among: try read.repository(RoadmapKind.self).all(in: .drawn))
+    let undone = Set(restored.map(\.kind) + removed)
+    let outside = try read.repository(RoadmapKind.self).all(in: .drawn).filter { !undone.contains($0.id) }
+    for each in restored { try RoadmapKind(id: each.kind, hue: each.hue).checkHueUnworn(among: outside) }
   }
 }
 
@@ -259,7 +269,7 @@ extension RecolourKind {
     if restored {
       plan.undoBy(.fields(restoreCommand: Roadmap.Commands.restoreTree, targets: [UndoTarget.restored(kind.id, "hue")] + worn.map { UndoTarget.restored($0, "color") }))
     }
-    if checked { plan.undoCheckedBy(KindRestore(tree: tree, kind: kind.id, hue: kind.hue)) }
+    if checked { plan.undoCheckedBy(KindRestore(tree: tree, restored: [(kind.id, kind.hue)])) }
     return plan
   }
 }
@@ -283,7 +293,7 @@ public struct DeleteKind: ActAction {
     var plan = Plan()
     plan.remove(kind)
     plan.undoBy(.restoring(kind, life: true, by: Roadmap.Commands.restoreTree))
-    plan.undoCheckedBy(KindRestore(tree: tree, kind: kind, hue: drawn.hue))
+    plan.undoCheckedBy(KindRestore(tree: tree, restored: [(kind, drawn.hue)]))
     return .write(plan, in: tree.tree, ())
   }
 }

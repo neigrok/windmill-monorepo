@@ -97,7 +97,9 @@ export function readStanding(copies, { listRead = true, ownerMarks = new Map() }
 
 // D-2 of one roadmap of the person's own and of the roadmaps its reading reaches, from the device's copy through an act's
 // reader, as `readStanding` reads them: the roadmaps above it and those its steps own or open, and theirs in turn, each
-// where the person's list holds it. An act that reads one roadmap so reads none of the others the device holds.
+// where the person's list holds it. An act that reads one roadmap so reads none of the others the device holds. It carries no
+// owner marks: those are what the room read from the backend of a roadmap the person only reads, which no reading of the
+// person's own roadmap reaches.
 /**
  * @param {import('../../../../platform/domain-kit/acts.js').ActReader} read
  * @param {string} treeId
