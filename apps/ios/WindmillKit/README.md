@@ -15,17 +15,24 @@ A pass is fetched for an `AiUse`: a name, a version and the label its calls carr
 `Profile` gives one as `profile.use`; a product without a profile names its own, as Journal Talk's
 spec names `journal.talk`. `allowance(for:seat:)` reads the allowance under a use's pass, and
 `liveResult(callId:use:seat:)` reads a live session's last message, answering it or that the session
-is still open, gone or unknown. `openLive(callId:use:seat:livenessMs:)` upgrades
-`/v1/calls/{callId}/transcription` to `wm-live.v1` on the pinned origin, with the pass as
-`Authorization`. URLSession gives a refused upgrade's status and never its body, so a 401 renews the
-pass and tries once more, a second 401 or a 400 is a reported defect, and any other status is lost.
-The opening answers `started` with an `AiLiveConnection`, a refusal, a first `failed`, or lost. The
-connection sends audio frames, `commit` and `end`, holds no audio, and delivers `text`, `turn` and
-the session's `ended` or `failed`, each validated field by field, or lost. It is lost when it closes
-or errors first, when an audio frame has waited `livenessMs` to be sent, or when a ping goes
-unanswered that long; it pings every `livenessMs` from `started` until `end`. A wire defect is
-reported and loses it, a cancelled read closes it, and a seat change closes every connection and
-fences its reads.
+is still open, gone or unknown.
+
+`openLive(callId:use:seat:livenessMs:)` upgrades `/v1/calls/{callId}/transcription` to `wm-live.v1`
+on the pinned origin, with the pass as `Authorization`. URLSession gives a refused upgrade's status
+and never its body, so a 401 renews the pass and tries once more, a second 401 or a 400 is a reported
+defect, and any other status is lost with that status. The opening answers `started` with an
+`AiLiveConnection`, a refusal, a first `failed`, or `lost` with its `AiLiveLoss`. The connection sends
+audio frames, `commit` and `end`, holds no audio, and from `started` on keeps one read of its socket
+outstanding, so each message is taken as it arrives. `next()` answers the next `text` or `turn`, then
+the session's `ended` or `failed`, or `lost`, and that last answer on every later call; callers waiting
+together share the stream, each message going to the one that asked first. A terminal's shape is
+validated field by field and its code need only have the service's form: a code the client does not
+know is reported once and the message still arrives with its words, here and from `liveResult`. A
+loss names its cause: the socket closed, the network or the transport failed, a wire defect, a ping
+unanswered for `livenessMs`, an audio frame waiting that long to be sent, or a cancelled read or
+`close()`. A terminal already taken from the socket is never replaced by a loss. The connection pings
+every `livenessMs` from `started` until `end`. A wire defect is reported, and a seat change closes
+every connection and fences its reads.
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET

@@ -10,7 +10,7 @@ import SyncCore
     let wire = try Self.wire()
     let events = try wire.field("liveEvents").array
     for (name, terminal) in try wire.field("liveTerminals").asObject().members {
-      let socket = PlayedSocket([events[0], events[1], events[2], terminal].map { .success(.text($0.jcsText)) })
+      let socket = PlayedSocket([events[0], events[1], events[2]].map { .success(.text($0.jcsText)) })
       let diagnostics = PolicyDiagnostics()
       let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
                                    diagnostics: diagnostics, credentials: { _ in AiCredentials(session: "session") })
@@ -24,12 +24,13 @@ import SyncCore
       #expect(try await connection.next() == .text(turn: Int(try events[1].field("turn").integer), delta: try events[1].field("delta").string))
       #expect(try await connection.next() == .turn(turn: Int(try events[2].field("turn").integer), text: try events[2].field("text").string))
       connection.end()
+      socket.play(.text(terminal.jcsText))
       #expect(try await connection.next() == .end(try Self.end(terminal)), "\(name)")
       #expect(try await connection.next() == .end(try Self.end(terminal)), "\(name)")
       #expect(socket.closed)
       #expect(socket.sent == [.binary([UInt8](repeating: 1, count: 4_800)), .text(try wire.field("liveFrames").array[1].jcsText),
                               .text(try wire.field("liveFrames").array[2].jcsText)])
-      #expect(diagnostics.failures == (name == "invalid_request" ? ["ai-call"] : []), "\(name)")
+      #expect(diagnostics.reports == (name == "invalid_request" ? ["ai-call/refusal"] : []), "\(name)")
     }
   }
 
@@ -52,7 +53,7 @@ import SyncCore
       #expect(socket.closed)
       #expect(socket.sent == [])
       #expect(socket.pings.isEmpty)
-      #expect(diagnostics.failures == (["conflict", "invalid_request"].contains(name) ? ["ai-call"] : []), "\(name)")
+      #expect(diagnostics.reports == (["conflict", "invalid_request"].contains(name) ? ["ai-call/refusal"] : []), "\(name)")
     }
   }
 
@@ -66,8 +67,12 @@ import SyncCore
       ("a second started", .text(started.jcsText)),
       ("an unnamed field", .text(try wire.field("liveEvents").array[1].changed(["language"], to: "en").jcsText)),
       ("turn zero", .text(try wire.field("liveEvents").array[1].changed(["turn"], to: 0).jcsText)),
-      ("an unknown cut", .text(try wire.field("liveTerminals").field("idle").changed(["code"], to: "tired").jcsText)),
       ("a charge on a completed end", .text(try wire.field("liveTerminals").field("completed").changed(["charged"], to: 1).jcsText)),
+      ("a completed end with a code", .text(try wire.field("liveTerminals").field("completed").changed(["code"], to: "idle").jcsText)),
+      ("a cut with no code", .text(try wire.field("liveTerminals").field("idle").changed(["code"], to: .null).jcsText)),
+      ("a failure with no code", .text(try wire.field("liveTerminals").field("provider_failed").changed(["code"], to: .null).jcsText)),
+      ("a code not of the service's form", .text(try wire.field("liveTerminals").field("idle").changed(["code"], to: "Went-Away").jcsText)),
+      ("an empty code", .text(try wire.field("liveTerminals").field("provider_failed").changed(["code"], to: "").jcsText)),
     ]
     for (name, frame) in defects {
       let socket = PlayedSocket([.success(.text(started.jcsText)), .success(frame)])
@@ -78,12 +83,17 @@ import SyncCore
                                                                       seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
         Issue.record("\(name): the session did not start"); continue
       }
-      #expect(try await connection.next() == .lost, "\(name)")
+      #expect(try await connection.next() == .lost(.wire), "\(name)")
       #expect(socket.closed, "\(name)")
-      #expect(diagnostics.failures == ["ai-call"], "\(name)")
+      #expect(diagnostics.reports == ["ai-call/wire"], "\(name)")
     }
+    let refused = wire.field("liveFirstFailures").field("funding_required")
     for (name, first) in [("another call", try started.changed(["callId"], to: "bcdefghijklmnopqrstuvw")),
-                          ("a text first", try wire.field("liveEvents").array[1]), ("a negative budget", try started.changed(["remainingSeconds"], to: -1))] {
+                          ("a text first", try wire.field("liveEvents").array[1]), ("a negative budget", try started.changed(["remainingSeconds"], to: -1)),
+                          ("a charged first failure", try refused.changed(["charged"], to: "0")),
+                          ("a first failure that heard audio", try refused.changed(["seconds"], to: 1)),
+                          ("a first failure with words", try refused.changed(["text"], to: "Hello")),
+                          ("an ended first", wire.field("liveTerminals").field("completed"))] {
       let socket = PlayedSocket([.success(.text(first.jcsText))])
       let diagnostics = PolicyDiagnostics()
       let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
@@ -94,8 +104,93 @@ import SyncCore
       #expect(failure.source == .wire)
       #expect(failure.code == "invalid-answer")
       #expect(socket.closed)
-      #expect(diagnostics.failures == ["ai-call"], "\(name)")
+      #expect(diagnostics.reports == ["ai-call/wire"], "\(name)")
     }
+  }
+
+  @Test func aTerminalWithACodeTheClientDoesNotKnowStillDeliversItsWords() async throws {
+    let wire = try Self.wire()
+    let started = try wire.field("liveEvents").array[0]
+    let terminals = try [wire.field("liveTerminals").field("idle").changed(["code"], to: "conflict"),
+                         wire.field("liveTerminals").field("idle").changed(["code"], to: "invalid_request"),
+                         wire.field("liveTerminals").field("idle").changed(["code"], to: "budget_closed"),
+                         wire.field("liveTerminals").field("provider_failed").changed(["code"], to: "provider_hiccup")]
+    for terminal in terminals {
+      let socket = PlayedSocket([.success(.text(started.jcsText)), .success(.text(terminal.jcsText))])
+      let diagnostics = PolicyDiagnostics()
+      let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
+                                   diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+      guard case .started(let connection) = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                                      seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
+        Issue.record("The session did not start"); continue
+      }
+      #expect(try await connection.next() == .end(try Self.end(terminal)))
+      #expect(diagnostics.reports == ["ai-call/code"])
+      let reader = PolicyDiagnostics()
+      let reading = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass")), .success(ValidationTransport.json(terminal))]),
+                                    clock: LiveClock(), diagnostics: reader, credentials: { _ in AiCredentials() })
+      #expect(try await reading.liveResult(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                           seat: Seat(kind: .anon, key: "seat")) == .answered(try Self.end(terminal)))
+      #expect(reader.reports == ["ai-call/code"])
+    }
+    let first = try wire.field("liveFirstFailures").field("funding_required").changed(["code"], to: "new_refusal")
+    let socket = PlayedSocket([.success(.text(first.jcsText))])
+    let diagnostics = PolicyDiagnostics()
+    let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
+                                 diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                            seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
+    guard case .failed(let end) = opening else { Issue.record("\(opening)"); return }
+    #expect(end == (try Self.end(first)))
+    #expect(diagnostics.reports == ["ai-call/code"])
+  }
+
+  @Test func aTerminalTheSocketAlreadyHoldsIsNeverReplacedByLost() async throws {
+    let wire = try Self.wire()
+    let events = try wire.field("liveEvents").array
+    let cut = wire.field("liveTerminals").field("idle")
+    let socket = PlayedSocket([events[0], events[1], cut].map { .success(.text($0.jcsText)) })
+    let clock = LiveClock()
+    let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: clock,
+                                 diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials() })
+    guard case .started(let connection) = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                                    seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
+      Issue.record("The session did not start"); return
+    }
+    await Self.yields { connection.finished }
+    clock.advance(to: 60_000)
+    await Self.yields { false }
+    #expect(try await connection.next() == .text(turn: 1, delta: try events[1].field("delta").string))
+    #expect(try await connection.next() == .end(try Self.end(cut)))
+    #expect(socket.closed)
+  }
+
+  @Test func readersShareOneStreamInTheOrderTheyAsked() async throws {
+    let wire = try Self.wire()
+    let events = try wire.field("liveEvents").array
+    let completed = wire.field("liveTerminals").field("completed")
+    let socket = PlayedSocket([.success(.text(events[0].jcsText))])
+    let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
+                                 diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials() })
+    guard case .started(let connection) = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
+                                                                    seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
+      Issue.record("The session did not start"); return
+    }
+    let first = Task { try await connection.next() }
+    await Self.yields { connection.readers.count == 1 }
+    let second = Task { try await connection.next() }
+    await Self.yields { connection.readers.count == 2 }
+    let third = Task { try await connection.next() }
+    await Self.yields { connection.readers.count == 3 }
+    socket.play(.text(events[1].jcsText))
+    await Self.yields { connection.readers.count == 2 }
+    socket.play(.text(events[2].jcsText))
+    await Self.yields { connection.readers.count == 1 }
+    socket.play(.text(completed.jcsText))
+    #expect(try await first.value == .text(turn: 1, delta: try events[1].field("delta").string))
+    #expect(try await second.value == .turn(turn: 1, text: try events[2].field("text").string))
+    #expect(try await third.value == .end(try Self.end(completed)))
+    #expect(try await connection.next() == .end(try Self.end(completed)))
   }
 
   @Test func aTurnSettlesAfterTheNextTurnsTextBegan() async throws {
@@ -128,17 +223,18 @@ import SyncCore
     guard case .started = opening else { Issue.record("\(opening)"); return }
     #expect(door.requests.map(\.path) == ["/v1/ai/passes", "/v1/ai/passes"])
     #expect(door.upgraded.map(\.headers) == [["Authorization": "Bearer first"], ["Authorization": "Bearer second"]])
-    #expect(diagnostics.failures == [])
+    #expect(diagnostics.reports == [])
   }
 
   @Test func anUpgradeRefusedTwiceOrMalformedIsADefectAndAnyOtherStatusIsLost() async throws {
-    let cases: [(upgrades: [AiUpgrade], code: String?, failures: [String])] = [
-      ([.refused(status: 401), .refused(status: 401)], "invalid-answer", ["ai-call"]),
-      ([.refused(status: 400)], "invalid_request", ["ai-call"]),
-      ([.refused(status: 502)], nil, []),
-      ([.refused(status: 404)], nil, []),
+    let cases: [(upgrades: [AiUpgrade], code: String?, loss: AiLiveLoss?, reports: [String])] = [
+      ([.refused(status: 401), .refused(status: 401)], "invalid-answer", nil, ["ai-call/wire"]),
+      ([.refused(status: 400)], "invalid_request", nil, ["ai-call/wire"]),
+      ([.refused(status: 502)], nil, .refused(status: 502), []),
+      ([.refused(status: 404)], nil, .refused(status: 404), []),
+      ([.refused(status: 426)], nil, .refused(status: 426), []),
     ]
-    for (upgrades, code, failures) in cases {
+    for (upgrades, code, loss, reports) in cases {
       let diagnostics = PolicyDiagnostics()
       let door = PlayedLiveDoor([.success(Self.pass("first")), .success(Self.pass("second"))], upgrades: upgrades)
       let client = ServiceAiClient(transport: door, clock: LiveClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
@@ -146,24 +242,24 @@ import SyncCore
                                               seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
       switch opening {
       case .refused(let failure): #expect(failure.code == code); #expect(failure.source == .text)
-      case .lost: #expect(code == nil)
+      case .lost(let reason): #expect(reason == loss)
       default: Issue.record("\(opening)")
       }
       #expect(door.upgraded.count == upgrades.count)
       #expect(door.requests.count == upgrades.count)
-      #expect(diagnostics.failures == failures)
+      #expect(diagnostics.reports == reports)
     }
   }
 
   @Test func thePassDoorsAnswerEndsTheOpeningBeforeAnyUpgrade() async throws {
-    let cases: [(reply: Result<AiResponse, AiTransportFailure>, code: String?, failures: [String])] = [
-      (.success(ValidationTransport.json(["error": "Update", "code": "client-update-required"], status: 426)), "client-update-required", []),
-      (.success(ValidationTransport.json(["error": "Sign in", "code": "unauthenticated"], status: 401)), "unauthenticated", []),
-      (.success(ValidationTransport.json(["pass": "", "expiresIn": 600000])), "invalid-answer", ["ai-pass"]),
-      (.failure(.offline), nil, []),
-      (.failure(.transport), nil, ["ai-pass"]),
+    let cases: [(reply: Result<AiResponse, AiTransportFailure>, code: String?, loss: AiLiveLoss?, reports: [String])] = [
+      (.success(ValidationTransport.json(["error": "Update", "code": "client-update-required"], status: 426)), "client-update-required", nil, []),
+      (.success(ValidationTransport.json(["error": "Sign in", "code": "unauthenticated"], status: 401)), "unauthenticated", nil, []),
+      (.success(ValidationTransport.json(["pass": "", "expiresIn": 600000])), "invalid-answer", nil, ["ai-pass/wire"]),
+      (.failure(.offline), nil, .offline, []),
+      (.failure(.transport), nil, .transport, ["ai-pass/transport"]),
     ]
-    for (reply, code, failures) in cases {
+    for (reply, code, loss, reports) in cases {
       let diagnostics = PolicyDiagnostics()
       let door = PlayedLiveDoor([reply])
       let client = ServiceAiClient(transport: door, clock: LiveClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
@@ -171,17 +267,18 @@ import SyncCore
                                               seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
       switch opening {
       case .refused(let failure): #expect(failure.code == code)
-      case .lost: #expect(code == nil)
+      case .lost(let reason): #expect(reason == loss)
       default: Issue.record("\(opening)")
       }
       #expect(door.upgraded.isEmpty)
-      #expect(diagnostics.failures == failures)
+      #expect(diagnostics.reports == reports)
     }
   }
 
   @Test func aConnectionThatClosesOrFailsWithoutItsLastMessageIsLost() async throws {
     let started = try Self.wire().field("liveEvents").array[0]
-    for (end, failures) in [(Result<AiSocketFrame?, AiTransportFailure>.success(nil), [String]()), (.failure(.offline), []), (.failure(.transport), ["ai-call"])] {
+    for (end, loss, reports) in [(Result<AiSocketFrame?, AiTransportFailure>.success(nil), AiLiveLoss.closed, [String]()), (.failure(.offline), .offline, []),
+                                 (.failure(.transport), .transport, ["ai-call/transport"])] {
       let socket = PlayedSocket([.success(.text(started.jcsText)), end])
       let diagnostics = PolicyDiagnostics()
       let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
@@ -190,20 +287,20 @@ import SyncCore
                                                                       seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000) else {
         Issue.record("The session did not start"); continue
       }
-      #expect(try await connection.next() == .lost)
+      #expect(try await connection.next() == .lost(loss))
       try connection.send(audio: [0, 0])
       connection.commit()
-      #expect(try await connection.next() == .lost)
+      #expect(try await connection.next() == .lost(loss))
       #expect(socket.closed)
       #expect(socket.sent == [])
-      #expect(diagnostics.failures == failures)
+      #expect(diagnostics.reports == reports)
     }
     let socket = PlayedSocket([.success(nil)])
     let client = ServiceAiClient(transport: PlayedLiveDoor([.success(Self.pass("pass"))], upgrades: [.open(socket)]), clock: LiveClock(),
                                  diagnostics: PolicyDiagnostics(), credentials: { _ in AiCredentials() })
     let opening = try await client.openLive(callId: "abcdefghijklmnopqrstuv", use: AiUse(name: "journal.talk", version: 1, label: "talk"),
                                             seat: Seat(kind: .anon, key: "seat"), livenessMs: 2_000)
-    guard case .lost = opening else { Issue.record("\(opening)"); return }
+    guard case .lost(.closed) = opening else { Issue.record("\(opening)"); return }
   }
 
   @Test func audioWaitingToBeSentForLivenessLosesTheConnection() async throws {
@@ -238,11 +335,11 @@ import SyncCore
     clock.advance(to: 2_500)
     await Self.yields { connection.finished }
     try #require(connection.finished)
-    #expect(try await connection.next() == .lost)
+    #expect(try await connection.next() == .lost(.backlog))
     #expect(socket.closed)
     #expect(socket.sent == [.binary([UInt8](repeating: 2, count: 4_800)), .binary([UInt8](repeating: 3, count: 4_800))])
     #expect(socket.pings.count == 2)
-    #expect(diagnostics.failures == [])
+    #expect(diagnostics.reports == [])
   }
 
   @Test func aPingUnansweredForLivenessLosesTheConnectionAndNoPingFollowsEnd() async throws {
@@ -266,7 +363,7 @@ import SyncCore
         clock.advance(to: 2_000)
         await Self.yields { connection.finished }
         try #require(connection.finished)
-        #expect(try await connection.next() == .lost)
+        #expect(try await connection.next() == .lost(.ping))
         #expect(socket.closed)
         continue
       }
@@ -322,7 +419,7 @@ import SyncCore
     #expect(socket.sent == [])
     #expect(client.pass == nil)
     #expect(client.connections.isEmpty)
-    #expect(diagnostics.failures == [])
+    #expect(diagnostics.reports == [])
   }
 
   @Test func aSessionsResultAnswersItsLastMessageOrThatItIsOpenGoneOrUnknown() async throws {
@@ -349,13 +446,13 @@ import SyncCore
                                           seat: Seat(kind: .anon, key: "seat")) == result)
       #expect(door.requests.filter { $0.path != "/v1/ai/passes" }.map(\.path) == Array(repeating: "/v1/calls/abcdefghijklmnopqrstuv/result",
                                                                                          count: replies.count / 2))
-      #expect(diagnostics.failures == [])
+      #expect(diagnostics.reports == [])
     }
     let defects: [(reply: AiResponse, code: String, failures: [String])] = [
       (try refusal("rate_limited"), "rate_limited", []),
-      (try refusal("pass_signature"), "pass_signature", ["ai-call"]),
-      (ValidationTransport.event("ended", completed), "invalid-answer", ["ai-call"]),
-      (ValidationTransport.json(try wire.field("liveEvents").array[1]), "invalid-answer", ["ai-call"]),
+      (try refusal("pass_signature"), "pass_signature", ["ai-call/wire"]),
+      (ValidationTransport.event("ended", completed), "invalid-answer", ["ai-call/wire"]),
+      (ValidationTransport.json(try wire.field("liveEvents").array[1]), "invalid-answer", ["ai-call/wire"]),
     ]
     for (reply, code, failures) in defects {
       let diagnostics = PolicyDiagnostics()
@@ -366,7 +463,7 @@ import SyncCore
                                         seat: Seat(kind: .anon, key: "seat"))
         Issue.record("\(code) answered")
       } catch let failure as AiFailure { #expect(failure.code == code) }
-      #expect(diagnostics.failures == failures, "\(code)")
+      #expect(diagnostics.reports == failures, "\(code)")
     }
   }
 
@@ -385,7 +482,7 @@ import SyncCore
     }
     try connection.send(audio: [UInt8](repeating: 0, count: 65_536))
     #expect(socket.sent == [.binary([UInt8](repeating: 0, count: 65_536))])
-    #expect(diagnostics.failures == ["ai-call", "ai-call", "ai-call"])
+    #expect(diagnostics.reports == ["ai-call/wire", "ai-call/wire", "ai-call/wire"])
   }
 
   @Test func theLiveDoorAndTheResultCarryOnlyThePass() async throws {
@@ -451,7 +548,7 @@ import SyncCore
     #expect(door.frames.filter { $0.opcode != 9 }.map(\.payload) == [[UInt8](repeating: 7, count: 4_800),
       Array(try wire.field("liveFrames").array[1].jcsText.utf8), Array(try wire.field("liveFrames").array[2].jcsText.utf8)])
     #expect(door.frames.filter { $0.opcode == 9 }.count == 1)
-    #expect(diagnostics.failures == [])
+    #expect(diagnostics.reports == [])
   }
 
   @Test func urlSessionReadsARefusedUpgradeByItsStatusAndFollowsNoRedirect() async throws {

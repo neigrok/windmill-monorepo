@@ -174,7 +174,11 @@ import SyncCore
 
 @MainActor final class PolicyDiagnostics: AiDiagnostics {
   var failures: [String] = []
-  func failure(operation: String, kind: String) { failures.append(operation) }
+  var reports: [String] = []
+  func failure(operation: String, kind: String) {
+    failures.append(operation)
+    reports.append(operation + "/" + kind)
+  }
 }
 
 @MainActor final class OfflineAiTransport: AiTransport {

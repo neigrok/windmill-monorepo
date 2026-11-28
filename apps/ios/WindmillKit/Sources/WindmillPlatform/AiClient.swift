@@ -143,15 +143,17 @@ extension AiClock {
     while true {
       let token: String
       do { token = try await self.token(use: use, seat: seat, epoch: epoch) }
-      catch let failure as AiFailure { return failure.source == .transport ? .lost : .refused(failure) }
+      catch let failure as AiFailure where failure.source == .transport { return .lost(failure.code == nil ? .offline : .transport) }
+      catch let failure as AiFailure { return .refused(failure) }
       let upgrade: AiUpgrade
       do {
         upgrade = try await transport.upgrade(AiRequest(method: "GET", path: "/v1/calls/\(callId)/transcription?\(use.labelQuery)",
           headers: ["Authorization": "Bearer " + token]), subprotocol: "wm-live.v1")
       } catch {
         try fence(epoch)
-        if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
-        return .lost
+        guard error as? AiTransportFailure != .offline else { return .lost(.offline) }
+        diagnostics.failure(operation: "ai-call", kind: "transport")
+        return .lost(.transport)
       }
       do { try fence(epoch) } catch {
         if case .open(let socket) = upgrade { socket.close() }
@@ -170,7 +172,7 @@ extension AiClock {
         pass = nil
       case .refused(status: 401): return .refused(defect("invalid-answer", source: .text))
       case .refused(status: 400): return .refused(defect("invalid_request", source: .text))
-      case .refused: return .lost
+      case .refused(let status): return .lost(.refused(status: status))
       }
     }
   }
@@ -189,7 +191,10 @@ extension AiClock {
     guard response.status == 200 else { throw defect("invalid-answer", source: .wire) }
     let value = try await body(response, operation: "ai-call", epoch: epoch)
     try fence(epoch)
-    do { return .answered(try AiLiveEnd(value, opening: false)) } catch { throw defect("invalid-answer", source: .wire) }
+    let end: AiLiveEnd
+    do { end = try AiLiveEnd(value, opening: false) } catch { throw defect("invalid-answer", source: .wire) }
+    if !end.isKnown(failures: AiLiveEnd.failures.union(AiLiveEnd.refusals)) { diagnostics.failure(operation: "ai-call", kind: "code") }
+    return .answered(end)
   }
 
   func round(id: String, body: [UInt8]?, use: AiUse, seat: Seat, pictures: [Picture], recover: Bool,
