@@ -813,6 +813,16 @@ function retire() {
   ];
 }
 
+// One atomic gesture: a lap about the run a `probe.start` in the same entry predicts, beside an independent card edit and its
+// guard. The start also predicts a put of the day, which carries the life the day's death wrote, so a fold of that death takes
+// the command, and with it the lap that names the run the command predicts.
+const lapOfAStart = (deviceNow) => ({ op: 'commit', scope: 'self/probe', deviceNow, changes: [
+  { op: 'create', t: 'lap', id: 'lap0000c1', f: { runId: 'run0000c1', weight: 10 } },
+  { op: 'update', t: 'card', id: 'card0001', f: { title: 'Kept' } }],
+opts: { atomic: true, cmd: { name: 'probe.start', args: { id: 'run0000c1', startedAt: deviceNow, join: true } },
+  predict: [{ op: 'create', t: 'run', id: 'run0000c1', f: { startedAt: deviceNow } }, { op: 'put', t: 'day', id: '2026-09-01', f: { score: 2 } }],
+  guard: [{ t: 'card', id: 'card0001', field: 'title' }] } });
+
 function supersede() {
   const create = commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'First' } }]);
   const replace = commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'Latest' } }], { supersede: ['g1'] }, 5001);
@@ -853,6 +863,13 @@ function supersede() {
         commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0011', f: { title: 'Guarded' } }], { guard: [{ t: 'run', id: 'run00009', field: 'startedAt' }] }),
         commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'Latest' } }, { op: 'put', t: 'day', id: DAY, f: { score: 9 } }],
           { supersede: ['g1'], retire: [{ t: 'day', id: DAY }] }, 5001)],
+    }),
+    stepsVector('a supersede of a death folds silently, as a replacement, the command that inherits its life and the lap its own entry writes about the run it predicts', {
+      device: device(anon({ confirmed: { 'self/probe': [row({ t: 'day', id: DAY, life: ['alive', st(1000)], f: { score: [1, st(1000)] }, seq: 1 }), row({ t: 'card', id: 'card0001', life: ['alive', st(1001)], born: st(1001), f: { title: ['Card 1', st(1001)] }, seq: 2 })] } })),
+      steps: [
+        commitStep('self/probe', [{ op: 'delete', t: 'day', id: DAY }]),
+        lapOfAStart(5001),
+        commitStep('self/probe', [{ op: 'put', t: 'day', id: DAY, f: { score: 9 } }], { supersede: ['g1'] }, 5002)],
     }),
     stepsVector('superseding multiple gestures follows commit order', {
       device: device(anon()),

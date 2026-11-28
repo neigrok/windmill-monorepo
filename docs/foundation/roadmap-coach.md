@@ -612,7 +612,7 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
   answer adds or discards (§11). A subtree whose creation the server answers with the subtree its step
   already owns takes that subtree's id; by [sync engine](engine.md) §7.7 a global type's mapping renames
   its id in every scope, and `treeId` is a reference to `tree`, so the conversations and proposals
-  queued about it follow. No test runs that case for Coach's records.
+  queued about it follow, as a vector of the sync corpus's `roadmap/client.json` holds.
 
 ## §8 The turn
 
@@ -737,10 +737,12 @@ Coach goes live, on the web and on the iPhone, only when it works signed out too
   them from its unsent work. At sign-in the sync engine's lineage rule ([sync engine](engine.md)
   §7.10) adds or discards roadmap's signed-out work as one: Add sends the records with the roadmaps
   they name, which keep their ids, and a proposal stays as it was, pending among them; Discard takes
-  them from the device with roadmap's device rows, a running turn's mark among them. One exception is
-  known: a roadmap carried over from the old bundle whose creation the server refuses at sign-in loses
-  its Coach records when the work is sent in more than one push (node
-  `m7-a-refused-carried-roadmap-keeps-its-coach-records`).
+  them from the device with roadmap's device rows, a running turn's mark among them. A roadmap
+  carried over from the old bundle whose creation the server refuses at sign-in keeps them too: the
+  refusal's notice holds them, and where the carry-over places the roadmap again it writes again, in
+  the same act, what the device lost of the conversations and proposals about it, with their
+  messages and write fates, and the notice goes once they are written ([Roadmap on the sync
+  engine](roadmap-on-the-engine.md) §8.2).
 - **The sign-in question.** Where the work holds conversations, it counts them beside the roadmaps
   (board 10.4 on the web, 10.7 on the iPhone), as [Roadmap on the sync engine](roadmap-on-the-engine.md)
   §5 says. Work that changes no roadmap of the device's own joins the account without a question, its

@@ -457,7 +457,55 @@ function clientVectors() {
   const redirected = stepsVector('a step that already owns a subtree answers it: the write map renames the proposed subtree, and the work queued in it follows', {
     device, steps: [...queued, { op: 'pushResponse', deviceNow: 6000, response: owner.response }, { op: 'push', deviceNow: 6001 }],
   });
-  return [settled, redirected];
+
+  const followed = conversationAbout(NEW, 5001);
+  const asked = [planted('ownership', R, NEW, 5000), followed.opened, followed.proposed, { op: 'push', deviceNow: 5003 }];
+  const joined = served(server, runSteps({ device, steps: asked }, roadmapRegistry).returns.at(-1), 6000);
+  const following = stepsVector('a conversation and a pending proposal queued about a proposed subtree follow the write map to the subtree the step owns', {
+    device, steps: [...asked, { op: 'pushResponse', deviceNow: 6000, response: joined.response }, { op: 'push', deviceNow: 6001 }],
+  });
+
+  const lost = conversationAbout(Z, 5001);
+  const everyRoadmap = { op: 'commit', scope: 'self/roadmap', deviceNow: 5003, changes: [
+    { op: 'create', t: 'coachThread', id: 'thread0010', f: { treeId: null, stepId: null, title: 'What next?' } }] };
+  const refusing = [planted('basics', R, Z, 5000), lost.opened, lost.ended, everyRoadmap, { op: 'push', deviceNow: 5004 }];
+  const spent = served(server, runSteps({ device, steps: refusing }, roadmapRegistry).returns.at(-1), 6000);
+  const folded = stepsVector('a refused subtree folds the conversation about it with the messages its own entry holds and a later update of one, and the next push sends only the conversation about every roadmap', {
+    device, steps: [...refusing, { op: 'pushResponse', deviceNow: 6000, response: spent.response }, { op: 'push', deviceNow: 6001 }],
+  });
+
+  const chain = [planted('basics', R, Z, 5000),
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5001, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachThread', id: 'thread0019', f: { treeId: Z, stepId: null, title: 'Chain' } },
+      { op: 'create', t: 'coachMessage', id: 'message0019', f: { threadId: 'thread0019', role: 'coach', replica: REPLICA, at: 5001 } },
+      { op: 'create', t: 'coachWriteFate', id: 'fate00000019', f: { messageId: 'message0019', receipt: 1, fate: 'undone' } },
+      { op: 'create', t: 'coachThread', id: 'thread0020', f: { treeId: null, stepId: null, title: 'Free' } },
+      { op: 'create', t: 'coachMessage', id: 'message0020', f: { threadId: 'thread0020', role: 'person', text: 'Hi', at: 5001 } }] },
+    { op: 'commit', scope: 'self/roadmap', deviceNow: 5002, opts: { atomic: true }, changes: [
+      { op: 'update', t: 'coachWriteFate', id: 'fate00000019', f: { code: 'x' } },
+      { op: 'update', t: 'coachMessage', id: 'message0020', f: { text: 'Hello' } }] },
+    { op: 'push', deviceNow: 5003 }];
+  const chainAnswer = served(server, runSteps({ device, steps: chain }, roadmapRegistry).returns.at(-1), 6000);
+  const chained = stepsVector('a chain of three Coach records in one entry folds whole with a later update of its last; the independent conversation and its message stay and are sent', {
+    device, steps: [...chain, { op: 'pushResponse', deviceNow: 6000, response: chainAnswer.response }, { op: 'push', deviceNow: 6001 }],
+  });
+  return [settled, redirected, following, folded, chained];
+}
+
+// A turn about `tree` as roadmap's domain writes it: the conversation with the person's question and Coach's message in
+// one act, then Coach's answer ending the turn, or a pending proposal on it in one act.
+function conversationAbout(tree, deviceNow) {
+  const thread = { op: 'create', t: 'coachThread', id: 'thread0009', f: { treeId: tree, stepId: null, title: 'What goes in here?' } };
+  const question = { op: 'create', t: 'coachMessage', id: 'message0008', f: { threadId: 'thread0009', role: 'person', text: 'What goes in here?', at: deviceNow } };
+  const answer = { op: 'create', t: 'coachMessage', id: 'message0009', f: { threadId: 'thread0009', role: 'coach', replica: REPLICA, at: deviceNow } };
+  return {
+    opened: { op: 'commit', scope: 'self/roadmap', deviceNow, opts: { atomic: true }, changes: [thread, question, answer] },
+    ended: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
+      { op: 'update', t: 'coachMessage', id: 'message0009', f: { state: 'completed', text: 'Start with the clouds.' } }] },
+    proposed: { op: 'commit', scope: 'self/roadmap', deviceNow: deviceNow + 1, opts: { atomic: true }, changes: [
+      { op: 'create', t: 'coachProposal', id: 'proposal0009', f: { treeId: tree, threadId: 'thread0009', messageId: 'message0009', base: [], changes: [], state: 'pending' } },
+      { op: 'update', t: 'coachMessage', id: 'message0009', f: { proposalId: 'proposal0009' } }] },
+  };
 }
 
 export function files() {
