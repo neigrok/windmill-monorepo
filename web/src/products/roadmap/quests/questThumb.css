@@ -1,0 +1,3 @@
+/* A quest thumbnail's crown breathing, on the room's shelf and on the site's path cards, read by both from here: opacity
+   .28 to .56 of its glow. */
+@keyframes quest-halo-breathe { 0%,100% { opacity:.28; } 50% { opacity:.56; } }

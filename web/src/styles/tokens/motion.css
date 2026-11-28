@@ -74,9 +74,6 @@
   50% { transform: scale(1.02); }
 }
 
-/* A quest thumbnail's crown breathing, on the shelf and on the site's path cards: opacity .28 to .56 of its glow. */
-@keyframes quest-halo-breathe { 0%,100% { opacity:.28; } 50% { opacity:.56; } }
-
 /* Reduced motion keeps each event visible without movement. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes wm-fade-in-up {

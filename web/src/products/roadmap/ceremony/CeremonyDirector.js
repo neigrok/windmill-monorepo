@@ -1,9 +1,8 @@
 import { TIER_COMPLETE } from '../theme.js';
+import { HANDOFF, IGNITE } from './beats.js';
 
 // Milliseconds.
-const IGNITE = 280;
 const BLOSSOM = 620; // matches the shader bloom window
-const HANDOFF = 0.85;
 const DEPEND_AT = 0.90;
 const TOAST_GAP = 120;
 const YIELD = 150;

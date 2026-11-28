@@ -6,6 +6,7 @@
 import React from 'react';
 import { Icon } from '../../../design-system';
 import { KIND_CSS } from '../theme.js';
+import { HANDOFF, IGNITE } from '../ceremony/beats.js';
 import { t } from '../i18n/entry/index.js';
 import './composedTree.css';
 
@@ -95,9 +96,7 @@ function branchLength([x1, y1], [x2, y2]) {
 // The room's unlock (motion language §2, ceremony #4) on a world whose finished steps open others. Each finished step
 // blossoms at once; when its ignite ends a head travels every lit branch into an open step, at 540px a second within
 // 180–420ms; the open step wakes at 85% of the way, and when the last wake settles every opened step pulses.
-const IGNITE_MS = 280;
 const WAKE_MS = 480;
-const HANDOFF = 0.85;
 const travelMs = (length) => Math.round(Math.min(420, Math.max(180, (length / 540) * 1000)));
 
 function unlockOf(world, state) {
@@ -106,7 +105,7 @@ function unlockOf(world, state) {
     return { from, to, length, duration: travelMs(length) };
   });
   const wakeAt = {};
-  for (const { to, duration } of travels) wakeAt[to] = Math.min(wakeAt[to] ?? Infinity, Math.round(IGNITE_MS + HANDOFF * duration));
+  for (const { to, duration } of travels) wakeAt[to] = Math.min(wakeAt[to] ?? Infinity, Math.round(IGNITE + HANDOFF * duration));
   const pulseAt = Math.max(...Object.values(wakeAt)) + WAKE_MS;
   const opened = Object.fromEntries(Object.entries(wakeAt).map(([id, at]) => [id, { '--wake-at': `${at}ms`, '--pulse-at': `${pulseAt}ms` }]));
   return { travels, opened };
@@ -129,7 +128,7 @@ export function ComposedTree({ steps = SAIL, needs = SAIL_NEEDS, world, arrival 
           </g>
         ))}
         {unlock?.travels.map(({ from, to, length, duration }) => (
-          <g key={`${from}-${to}`} className="rmTree-travel" style={{ '--length': `${length}px`, '--travel-at': `${IGNITE_MS}ms`, '--travel': `${duration}ms` }}>
+          <g key={`${from}-${to}`} className="rmTree-travel" style={{ '--length': `${length}px`, '--travel-at': `${IGNITE}ms`, '--travel': `${duration}ms` }}>
             <path className="rmTree-tail" d={branchPath(seats[from], seats[to])} />
             <path className="rmTree-head" d={branchPath(seats[from], seats[to])} />
           </g>
