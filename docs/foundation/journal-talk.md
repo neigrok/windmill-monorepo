@@ -76,7 +76,7 @@ person is told. Then the retirement of the backend's transcription route.
 | Microphone capture and conversion | the app's journal room | `web/src/products/journal/talk/` |
 
 - The journal's registry gains the device row `talkTake`, kept on the device only. The registry's
-  version rises with it and its minimum does not.
+  version does not rise for it: a device row is never sent, so no server reads it.
 - The AI client MUST offer a pass for a named use without a Coach profile, and the live connection
   MUST obey the client's rules for a pass: memory only, dropped when the seat changes
   (Coach engine INV-1).
@@ -231,8 +231,9 @@ refused one.
 When the journal room opens or returns to the foreground, or a take ends with its mark standing,
 and a mark exists, the device recovers it, once it has pulled the journal's scope whole.
 
-- A mark whose day is no longer today is cleared and nothing is written. A mark is a row of the
-  replica that ran its take, so a device reads only the mark of the seat it holds.
+- A mark whose day is no longer today, or that names no session, is cleared and nothing is written.
+  A mark is a row of the replica that ran its take, so a device reads only the mark of the seat it
+  holds.
 - Otherwise the device reads the result of each marked session heard from within `RECOVER_FOR`, as
   §5.5 step 5 reads one. A session that answers with its text has its part replaced by it; one
   whose result is gone or unknown keeps its part.
