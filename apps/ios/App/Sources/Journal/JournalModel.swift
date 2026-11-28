@@ -132,8 +132,8 @@ final class JournalModel {
       }
       let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""
       let wasFirst = room?.state.firstPage == "pending"
-      // The phone writes words alone; the page's ratings stay as the log holds them at the save.
-      switch try runner.run(SaveWords(day: editorDay, body: document.body, source: document.source, retiring: retiring)) {
+      // The phone types words alone; the domain keeps the page's ratings, and its source when Talk has written into it.
+      switch try runner.run(SaveWords(day: editorDay, body: document.body, retiring: retiring)) {
       case .committed, .unchanged:
         if document.isWritten && editorDay == today && document.body != previousBody { telemetry.event("journal_line_saved", properties: ["day_kind": "today"]) }
         dirty = false; error = nil

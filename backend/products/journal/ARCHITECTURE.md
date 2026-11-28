@@ -118,7 +118,9 @@ replacement that archives a non-empty outgoing head, even when its text is ident
 its text revision. It replaces the writer's words without merging a competing page, and the stored
 body is never marked as a conflict merge. A blank winning body is stored as an empty body with null
 scores and typed source. Clients normalize blank drafts before validation and do not queue new blank
-pages; clearing a pending anonymous page cancels its claim and retains invitation state.
+pages; clearing a pending anonymous page cancels its claim and retains invitation state. The server saves
+the `source` a save hands it: keeping a spoken page spoken under typing is the clients' rule, in the
+[journal domain corpus](../../../packages/api-contract/journal/domain/README.md).
 
 `journal.claimPage(day, body, mood, energy, source, claimId)` moves a page written signed-out into
 the account at sign-in, keeping A.3's account-first concatenation: the account's text, a blank line,

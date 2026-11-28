@@ -31,7 +31,7 @@ export function usePages() {
   const binding = replica?.binding ?? null;
   const engine = replica?.engine ?? null;
   const pages = engine ? pagesOf(engine, records) : [];
-  const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null, source: 'typed' };
+  const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null };
   const shown = editor?.binding === binding && !editor.saved && !editor.recovered ? editor.doc : held;
   const show = useCallback((writing) => {
     clearTimeout(staged.current?.timer);
@@ -110,13 +110,12 @@ export function usePages() {
     const carriedFrom = current.day !== today ? current.day : previous?.carriedFrom;
     const priorDraft = current.day !== today && retained?.day === current.day ? retained
       : retained?.day === today ? null : previous?.priorDraft ?? null;
-    const doc = { day: today, body: current.body, mood: current.mood, energy: current.energy,
-      source: current.source,
+    const doc = { day: today, body: current.body, mood: current.mood, energy: current.energy, source: 'typed',
       ...(current.day !== today ? { body: JournalWriting.claimBody(destination.body, current.body) } : {}), [field]: value };
     const writing = { binding, doc, saved: false, carriedFrom, priorDraft };
     if (field === 'body') stage(writing, sentBefore(previous));
     else persist(writing, sentBefore(previous));
-  }, [engine, binding, today, held.body, held.mood, held.energy, held.source, stage, persist, sentBefore]);
+  }, [engine, binding, today, held.body, held.mood, held.energy, stage, persist, sentBefore]);
   useEffect(() => {
     if (!engine) return;
     let writing = drafts.current.get(binding);

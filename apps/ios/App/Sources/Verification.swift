@@ -98,9 +98,9 @@ enum BoardFixture {
       if board.hasPrefix("journal-history") {
         model.journal.type("Short walk, then an early night."); model.journal.save(); model.journal.done()
       }
-      // Journal · iOS 01.5P: a page the log's rules refuse, here by a source no surface writes, so every save is refused.
+      // Journal · iOS 01.5P: a page the log's rules refuse, here by a pasted U+0000 the words keep, so every save is refused.
       if board.hasPrefix("journal-history-refused") {
-        model.journal.type("Short walk, then an early night. A line for the review."); model.journal.document.source = "dictated"
+        model.journal.type("Short walk, then an early night. A line for the review.\u{0}")
         model.journal.save()
       }
       return

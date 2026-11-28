@@ -927,7 +927,8 @@ and Talk are not built. The room counts no words and draws no saved state: while
 shows. While writing, the keyboard's own bar, UIKit's toolbar since SwiftUI's keyboard toolbar never
 reaches the UIKit editor, holds Done alone, trailing. A save the phone could not make says so in ink
 under the page with its cloud symbol, and a borderless *Try again* while the writing waits unsaved. A save sends the words alone (`SaveWords`): the page keeps the ratings the phone
-holds for it at that moment, another surface's included, and a page emptied of words is removed whole.
+holds for it at that moment, another surface's included, and its source when it is `spoken`; a page emptied of words
+is removed whole.
 An echo sheet up when an account sheet is asked for steps aside first (`AppModel.roomSheetUp`), since one
 presenter holds one sheet.
 The room seat is a native menu of the rooms the build carries (`AppModel.rooms`), Journal · Gym and Roadmap where its room

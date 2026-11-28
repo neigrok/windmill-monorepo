@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { adoptDeviceRows, pendingClaimWork, recoveredDrafts, retireInvitation } from '../../../src/products/journal/pages.js';
 import { EditorDraft } from '../../../src/products/journal/domain/writing.js';
-import { ReconcileClaim } from '../../../src/products/journal/domain/writing.js';
+import { ReconcileClaim, SavePage } from '../../../src/products/journal/domain/writing.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { pagesOf, savePage, watchClaims, onSyncResult, SCOPE } from '../../../src/products/journal/pages.js';
@@ -295,6 +295,30 @@ test('keeping the first page leaves its scale invitation due until an answer or 
   await converge(engine);
   state = engine.observe(SCOPE).getSnapshot().drawn.find((row) => row.t === 'journalState');
   assert.equal(state.f.scales[0], 'retired');
+  engine.close();
+});
+
+// A save that hands `spoken`, as Talk's does, marks the page; the editor's typing over it keeps it spoken until its words are gone.
+test('the editor typing over a spoken page keeps it spoken, and an emptied page goes typed', async () => {
+  const { engine, env } = await setup();
+  env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
+  const page = () => {
+    const row = engine.device.activeReplica.confirmedRow(SCOPE, 'page', day);
+    return { body: row.x.body.text, source: row.f.source[0] };
+  };
+  const spoken = { ...doc('Morning.\n\nSpoken words.'), source: 'spoken' };
+  await new ActionRunner(new EngineReplica(engine), journalRegistry, new FixedZone(0)).run(new SavePage({ day, document: spoken }));
+  await converge(engine);
+  await savePage(engine, doc('Morning.\n\nSpoken words. Typed after.')); await converge(engine);
+  const typedOver = page();
+  await savePage(engine, doc(' \n')); await converge(engine);
+  const emptied = page();
+  await savePage(engine, doc('New words.')); await converge(engine);
+  assert.deepEqual({ typedOver, emptied, written: page() }, {
+    typedOver: { body: 'Morning.\n\nSpoken words. Typed after.', source: 'spoken' },
+    emptied: { body: '', source: 'typed' },
+    written: { body: 'New words.', source: 'typed' },
+  });
   engine.close();
 });
 

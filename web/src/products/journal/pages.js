@@ -103,7 +103,9 @@ export async function savePage(engine, doc, binding = engine.activeBinding(), re
       return { state: action.load(read), retained };
     },
     decide: ({ state: loaded, retained }, ids) => {
-      const saved = decision(action, loaded, ids);
+      // The editor types: the page it writes over keeps its source when Talk has written into it.
+      const typed = new SavePage({ day: action.day, document: action.document.keepingSpoken(loaded.held), retiring: action.retiring });
+      const saved = decision(typed, loaded, ids);
       if (saved.kind !== 'refuse') {
         if (retained && saved.kind === 'write') {
           const draft = EditorDraft.fromJSON(retained);
