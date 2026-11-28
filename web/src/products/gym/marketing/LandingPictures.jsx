@@ -1,6 +1,6 @@
-// Gym's pictures on its landing, each still and drawn at the stage the shell names: the set logger, the remembered set
-// and the estimated-strength line on the room's night stage, the connect card an assistant is granted on, and a
-// routine on the room's own ground.
+// Gym's pictures on its landing, each drawn at the stage the shell names: the set logger, the remembered set and the
+// estimated-strength line on the room's night stage, the connect card an assistant is granted on, and a routine on the
+// room's own ground.
 
 import React from 'react';
 import { Check, Plus } from 'lucide-react';
@@ -48,14 +48,32 @@ export function RememberedSet({ stage }) {
   );
 }
 
+// The line's vertices on its 240 × 90 plot. Each owns the slot of the plot nearer to it than to either neighbour by x,
+// and holds the room's focus ring there.
+const LINE = [[8, 74], [28, 71], [48, 66], [68, 67], [88, 60], [108, 55], [128, 56], [148, 48], [168, 43], [188, 44], [208, 36], [232, 28]];
+const SLOTS = LINE.map(([x, y], index) => {
+  const left = index ? (LINE[index - 1][0] + x) / 2 : 0;
+  const right = index < LINE.length - 1 ? (x + LINE[index + 1][0]) / 2 : 240;
+  return { x, y, left, width: right - left };
+});
+
 export function StrengthLine({ stage }) {
+  const [endX, endY] = LINE.at(-1);
   return (
     <NightScene stage={stage}>
       <div className="gyLine">
         <p className="gyLine-head"><span className="gyCaption">{t('gym.landing.how.lineLift')}</span><span>{t('gym.landing.how.lineWindow')}</span></p>
         <svg viewBox="0 0 240 90" width="100%" height="90">
-          <path d="M8,74 L28,71 L48,66 L68,67 L88,60 L108,55 L128,56 L148,48 L168,43 L188,44 L208,36 L232,28" />
-          <circle cx="232" cy="28" r="3.4" />
+          <path d={`M${LINE.map(([x, y]) => `${x},${y}`).join(' L')}`} />
+          <circle cx={endX} cy={endY} r="3.4" />
+          <g className="gyLine-plot">
+            {SLOTS.map(({ x, y, left, width }) => (
+              <g key={x} className="gyLine-slot">
+                <rect x={left} y="0" width={width} height="90" />
+                <circle className="gyLine-ring" cx={x} cy={y} r="6.8" />
+              </g>
+            ))}
+          </g>
         </svg>
         <p className="gyCaption gyLine-note">{t('gym.landing.how.lineCaption')}</p>
       </div>
