@@ -30,7 +30,7 @@
 
 /* ---- under the pointer: the room's feedback on a step and a branch, a disc 48px across and a band 24px wide ---- */
 .rmTree .nd::before { content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; translate: -50% -50%; border-radius: 50%; }
-.rmTree-reach { fill: none; stroke: transparent; stroke-width: 24; pointer-events: stroke; }
+.rmTree-reach { fill: none; stroke: transparent; stroke-width: 24; visibility: hidden; pointer-events: stroke; }
 @media (hover: hover) {
   .rmTree .nd:hover { filter: brightness(1.12); }
   .rmTree-branch:hover .rmTree-edge:not(.is-lit) { stroke: var(--connector-active); stroke-opacity: .95; }
