@@ -6,12 +6,14 @@ import Testing
 
 // The runner of Roadmap Coach's ability vectors, `packages/api-contract/roadmap/abilities/`: each case's call through its
 // ability over the case's roadmaps, its answer compared whole by canonical text. A direct write and a proposal draw their new
-// ids from the case's `ids`, in order; a proposal's record is folded again over the case's roadmaps for what it leaves.
+// ids from the case's `ids`, in order; a proposal's record is folded again over the case's roadmaps for what it leaves; and
+// each context case through the context.
 struct AbilitiesCorpusTests {
   static var claimed: [String] { RoadmapAbilities.names.map { "roadmap/abilities/\($0).json" } }
   static let proposals = "roadmap/abilities/\(RoadmapProposals.name).json"
+  static let contextFile = "roadmap/abilities/context.json"
 
-  @Test func everyAbilityOfTheCatalogRunsOrProposesOnTheCopyEveryReadAnswersWithinItsCapAndEveryFileButTheContextsIsClaimed() throws {
+  @Test func everyAbilityOfTheCatalogRunsOrProposesOnTheCopyEveryReadAnswersWithinItsCapAndEveryFileIsClaimed() throws {
     let runs = Catalog.roadmap.abilities.filter { $0.agent == .runs }
     #expect(runs.map(\.name) == RoadmapAbilities.names)
     #expect(Catalog.roadmap.abilities.filter { $0.agent == .proposes }.map(\.name) == [RoadmapProposals.name])
@@ -19,7 +21,42 @@ struct AbilitiesCorpusTests {
     #expect(reads.map { $0.result["maxBytes"] } == reads.map { _ in 16384 })
     let files = try Contract.files(under: "roadmap/abilities")
     #expect(files.filter { Self.claimed.contains($0) } == Self.claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
-    #expect(files.filter { !Self.claimed.contains($0) && $0 != Self.proposals } == ["roadmap/abilities/context.json"], "only the context goes unclaimed")
+    #expect(files.filter { !Self.claimed.contains($0) && $0 != Self.proposals && $0 != Self.contextFile } == [], "every file is claimed")
+    let bounds = try Contract.json("roadmap/limits.json").member("context")
+    let pinned = try ["bytes", "steps", "recent", "frontier", "prerequisites"].map { Int(try bounds.member($0).member("max").asInteger()) }
+    #expect([RoadmapContext.Bounds.bytes, RoadmapContext.Bounds.steps, RoadmapContext.Bounds.recent, RoadmapContext.Bounds.frontier,
+             RoadmapContext.Bounds.prerequisites] == pinned, "the context's bounds are limits.json's")
+  }
+
+  // §5: each context case, its roadmaps given as records or as a table of them, read through the context.
+  @Test(arguments: try Contract.json(contextFile).asArray().indices)
+  func contextCase(_ index: Int) throws {
+    let each = try Contract.json(Self.contextFile).asArray()[index]
+    let given = try each.member("given")
+    let spelled = { (records: JSON?) throws -> JSON in
+      guard case .object(let table)? = records else { return records ?? .array([]) }
+      let columns = try table.member("columns").asArray().map { try $0.asString() }
+      return .array(try table.member("rows").asArray().map { row in
+        .object(JSON.Object(uniqueKeysWithValues: zip(columns, try row.asArray())))
+      })
+    }
+    let trees = try given.member("trees").asArray().map { tree -> RoadmapTree in
+      var record = try tree.asObject()
+      for key in ["nodes", "edges", "marks"] where record[key] != nil { record[key] = try spelled(record[key]) }
+      return try RoadmapTree(form: .object(record))
+    }
+    let held = try (given["held"]?.asArray() ?? []).map {
+      StandingRoadmaps.Held(tree: try $0.member("tree").asString(), step: try $0.member("step").asString())
+    }
+    let about = try each["about"].flatMap { $0.isNull ? nil : try $0.asString() }
+    let step = try each["step"].flatMap { $0.isNull ? nil : try $0.asString() }
+    let answer: JSON = switch RoadmapContext.read(StandingRoadmaps(trees: trees, held: held), about: about, step: step) {
+    case .success(let context): ["result": context]
+    case .failure(let refusal): ["refused": refusal.form]
+    }
+    let expect = try each.member("expect")
+    let title = try each.member("case").asString()
+    #expect(answer == expect, "\(title)\n  got    \(answer.jcsText.prefix(2000))\n  expect \(expect.jcsText.prefix(2000))")
   }
 
   @Test(arguments: try claimed.flatMap { try AbilityCase.all(in: $0) })

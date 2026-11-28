@@ -176,16 +176,7 @@ struct ListTrees: RoadmapAbility {
   func answer(over standing: StandingRoadmaps, about: String?, ids: () -> String) throws(CoachRefusal) -> AbilityResponse {
     guard standing.listRead else { throw CoachRefusal(.roadmapUnavailable) }
     let rows = standing.account.list()
-    let line = { (row: ListedRoadmap) -> JSON.Object in
-      guard let roadmap = try? standing.open(row.id, about: nil) else {
-        return ["id": .string(row.id), "title": .of(row.title ?? standing.account.byId[row.id]?.meta?.title), "counts": .null, "frontier": .null,
-                "lastCompletedAt": .null]
-      }
-      let frontier = roadmap.order().filter { roadmap.state($0) == .available }.map { JSON.string(roadmap.shown($0)?.label ?? "") }
-      return ["id": .string(row.id), "title": .of(row.title), "counts": .object(roadmap.counts), "frontier": .array(frontier),
-              "lastCompletedAt": .of(roadmap.lastCompletedAt)]
-    }
-    let pages = ReadPages(lists: ["trees"], entries: rows.map { row in ReadPages.Entry(under: "trees") { line(row) } },
+    let pages = ReadPages(lists: ["trees"], entries: rows.map { row in ReadPages.Entry(under: "trees") { standing.row(row) } },
                           read: .array(rows.map { .string($0.id) }))
     return try pages.answer(at: cursor, naming: nil)
   }
