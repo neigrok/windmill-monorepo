@@ -437,8 +437,10 @@ code), so no arbitrary network string reaches logs.
 
 The environment picks the host, `Hosts::apple()`: `https://api.storekit.apple.com` for production and
 `https://api.storekit-sandbox.apple.com` for sandbox; a test deployment hands both one address of its own
-([Configuration](#configuration)). Path segments are percent-encoded through `Url::path_segments_mut` and empty
-path segments, revisions or pagination tokens fail before any request is sent with `ApiFailure::BadRequest`. A
+([Configuration](#configuration)). Path segments are percent-encoded through `Url::path_segments_mut`, and empty
+or dot path segments (`""`, `"."`, `".."`), empty cursors, or invalid `NotificationHistoryRequest` filter
+combinations (`start_date > end_date`, empty filter strings, `notification_subtype` without `notification_type`, or
+`notification_type` beside `transaction_id`) fail before any request is sent with `ApiFailure::BadRequest`. A
 request ends within 3 s, connecting included, under the internal listener's request bound; it follows no redirect,
 and no error message Apple sends is read. An answer that is not a success is one `ApiFailure`, whose `code` is all
 a line carries. Each code starts `api_`, so none reads as the verifier's or the ledger's code beside it in a line,
@@ -451,8 +453,8 @@ a Sentry fingerprint or a throttle's slot:
 | `RateLimited` | `api_rate_limited` | 429 | yes |
 | `ServerError` | `api_server_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable: 4040002, 4040004 or 4040006 | yes |
 | `NotFound` | `api_not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
-| `BadRequest` | `api_bad_request` | Any other answer that is not a success, a redirect among them, or an empty required id/cursor | no |
-| `Malformed` | `api_malformed` | A success whose body is not the shape Apple documents, or `hasMore: true` with no cursor | no |
+| `BadRequest` | `api_bad_request` | Any other answer that is not a success, a redirect among them, or an invalid request input | no |
+| `Malformed` | `api_malformed` | A success whose body is not the shape Apple documents, or `hasMore: true` with no cursor or the same cursor passed in | no |
 
 `of_the_api()` is true of a failure any request would meet now, whatever it asks: the sweep stops writing
 hints at one rather than try each ([The sweep](#the-sweep)). The client verifies nothing it pulls: the door

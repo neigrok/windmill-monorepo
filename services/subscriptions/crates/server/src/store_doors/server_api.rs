@@ -606,9 +606,11 @@ pub async fn run_test_notification(
         Err(failure) => return TestNotificationOutcome::RequestFailed(failure),
     };
     let polls = max_polls.max(1);
+    let mut last_server_error = None;
     for poll in 0..polls {
         match api.test_notification_status(environment, &token).await {
             Ok(status) => {
+                last_server_error = None;
                 if let Some(last) = status.send_attempts.last() {
                     if last.result == Some(SendAttemptResult::Success) {
                         return TestNotificationOutcome::Delivered {
@@ -621,14 +623,22 @@ pub async fn run_test_notification(
                     };
                 }
             }
-            Err(ApiFailure::NotFound) => {}
+            Err(ApiFailure::NotFound) => {
+                last_server_error = None;
+            }
+            Err(ApiFailure::ServerError) => {
+                last_server_error = Some(ApiFailure::ServerError);
+            }
             Err(failure) => return TestNotificationOutcome::StatusFailed(failure),
         }
         if poll + 1 < polls {
             tokio::time::sleep(poll_every).await;
         }
     }
-    TestNotificationOutcome::Pending
+    match last_server_error {
+        Some(failure) => TestNotificationOutcome::StatusFailed(failure),
+        None => TestNotificationOutcome::Pending,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

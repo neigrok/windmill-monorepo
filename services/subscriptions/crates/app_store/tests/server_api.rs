@@ -574,12 +574,20 @@ async fn notification_history_posts_filters_and_optional_pagination_token() {
         only_failures: None,
         transaction_id: None,
     };
-    let filtered = NotificationHistoryRequest {
+    let by_type = NotificationHistoryRequest {
         start_date: 1_794_000_000_000,
         end_date: 1_794_614_400_000,
         notification_type: Some("DID_RENEW".to_owned()),
         notification_subtype: Some("BILLING_RECOVERY".to_owned()),
         only_failures: Some(true),
+        transaction_id: None,
+    };
+    let by_transaction = NotificationHistoryRequest {
+        start_date: 1_794_000_000_000,
+        end_date: 1_794_614_400_000,
+        notification_type: None,
+        notification_subtype: None,
+        only_failures: Some(false),
         transaction_id: Some("2000000000000001".to_owned()),
     };
 
@@ -587,17 +595,23 @@ async fn notification_history_posts_filters_and_optional_pagination_token() {
         .notification_history(Environment::Production, &minimal, None)
         .await;
     let second = api
-        .notification_history(Environment::Sandbox, &filtered, Some("tok+1/2"))
+        .notification_history(Environment::Sandbox, &by_type, Some("tok+1/2"))
+        .await;
+    let third = api
+        .notification_history(Environment::Sandbox, &by_transaction, None)
         .await;
 
     let mut prod_asked = production.asked();
     let (_, claims) = token(&prod_asked[0].authorization.take().unwrap(), &public_key);
     let mut sandbox_asked = sandbox.asked();
-    sandbox_asked[0].authorization.take().unwrap();
+    for asked in &mut sandbox_asked {
+        asked.authorization.take().unwrap();
+    }
     assert_eq!(
         (
             first,
             second,
+            third,
             prod_asked,
             sandbox_asked,
             claims["aud"].clone()
@@ -629,6 +643,11 @@ async fn notification_history_posts_filters_and_optional_pagination_token() {
                 pagination_token: None,
                 has_more: false,
             }),
+            Ok(NotificationHistoryPage {
+                entries: vec![],
+                pagination_token: None,
+                has_more: false,
+            }),
             vec![Asked {
                 method: Method::POST,
                 path: "/inApps/v1/notifications/history".to_owned(),
@@ -641,22 +660,37 @@ async fn notification_history_posts_filters_and_optional_pagination_token() {
                 })
                 .to_string(),
             }],
-            vec![Asked {
-                method: Method::POST,
-                path: "/inApps/v1/notifications/history".to_owned(),
-                query: Some("paginationToken=tok%2B1%2F2".to_owned()),
-                authorization: None,
-                content_type: Some("application/json".to_owned()),
-                body: json!({
-                    "startDate": 1_794_000_000_000_i64,
-                    "endDate": 1_794_614_400_000_i64,
-                    "notificationType": "DID_RENEW",
-                    "notificationSubtype": "BILLING_RECOVERY",
-                    "onlyFailures": true,
-                    "transactionId": "2000000000000001",
-                })
-                .to_string(),
-            }],
+            vec![
+                Asked {
+                    method: Method::POST,
+                    path: "/inApps/v1/notifications/history".to_owned(),
+                    query: Some("paginationToken=tok%2B1%2F2".to_owned()),
+                    authorization: None,
+                    content_type: Some("application/json".to_owned()),
+                    body: json!({
+                        "startDate": 1_794_000_000_000_i64,
+                        "endDate": 1_794_614_400_000_i64,
+                        "notificationType": "DID_RENEW",
+                        "notificationSubtype": "BILLING_RECOVERY",
+                        "onlyFailures": true,
+                    })
+                    .to_string(),
+                },
+                Asked {
+                    method: Method::POST,
+                    path: "/inApps/v1/notifications/history".to_owned(),
+                    query: None,
+                    authorization: None,
+                    content_type: Some("application/json".to_owned()),
+                    body: json!({
+                        "startDate": 1_794_000_000_000_i64,
+                        "endDate": 1_794_614_400_000_i64,
+                        "onlyFailures": false,
+                        "transactionId": "2000000000000001",
+                    })
+                    .to_string(),
+                },
+            ],
             json!("appstoreconnect-v1"),
         )
     );
@@ -732,7 +766,8 @@ async fn test_notification_requests_a_token_and_reads_its_status() {
 }
 
 #[tokio::test]
-async fn empty_inputs_are_refused_before_any_request_and_path_segments_are_encoded() {
+async fn invalid_inputs_and_dot_segments_are_refused_before_any_request_and_path_segments_are_encoded()
+ {
     let (apple, url) = Apple::answering(
         StatusCode::OK,
         json!({"hasMore": false, "signedTransactions": []}).to_string(),
@@ -747,29 +782,41 @@ async fn empty_inputs_are_refused_before_any_request_and_path_segments_are_encod
         only_failures: None,
         transaction_id: None,
     };
-    let empty_tx_history_req = NotificationHistoryRequest {
-        transaction_id: Some(String::new()),
-        ..valid_history_req.clone()
-    };
 
-    assert_eq!(
-        api.subscription_status(Environment::Sandbox, "")
+    for bad_segment in ["", ".", ".."] {
+        assert_eq!(
+            api.subscription_status(Environment::Sandbox, bad_segment)
+                .await
+                .err(),
+            Some(ApiFailure::BadRequest),
+            "subscription_status {bad_segment:?}"
+        );
+        assert_eq!(
+            api.set_app_account_token(Environment::Sandbox, bad_segment, "token")
+                .await
+                .err(),
+            Some(ApiFailure::BadRequest),
+            "set_app_account_token {bad_segment:?}"
+        );
+        assert_eq!(
+            api.transaction_history(Environment::Sandbox, bad_segment, None)
+                .await
+                .err(),
+            Some(ApiFailure::BadRequest),
+            "transaction_history {bad_segment:?}"
+        );
+        assert_eq!(
+            api.test_notification_status(
+                Environment::Sandbox,
+                &TestNotificationToken::new(bad_segment)
+            )
             .await
             .err(),
-        Some(ApiFailure::BadRequest)
-    );
-    assert_eq!(
-        api.set_app_account_token(Environment::Sandbox, "", "token")
-            .await
-            .err(),
-        Some(ApiFailure::BadRequest)
-    );
-    assert_eq!(
-        api.transaction_history(Environment::Sandbox, "", None)
-            .await
-            .err(),
-        Some(ApiFailure::BadRequest)
-    );
+            Some(ApiFailure::BadRequest),
+            "test_notification_status {bad_segment:?}"
+        );
+    }
+
     assert_eq!(
         api.transaction_history(Environment::Sandbox, "2000000000000001", Some(""))
             .await
@@ -782,18 +829,45 @@ async fn empty_inputs_are_refused_before_any_request_and_path_segments_are_encod
             .err(),
         Some(ApiFailure::BadRequest)
     );
-    assert_eq!(
-        api.notification_history(Environment::Sandbox, &empty_tx_history_req, None)
-            .await
-            .err(),
-        Some(ApiFailure::BadRequest)
-    );
-    assert_eq!(
-        api.test_notification_status(Environment::Sandbox, &TestNotificationToken::new(""))
-            .await
-            .err(),
-        Some(ApiFailure::BadRequest)
-    );
+
+    let invalid_history_requests = [
+        NotificationHistoryRequest {
+            start_date: 2_001,
+            end_date: 2_000,
+            ..valid_history_req.clone()
+        },
+        NotificationHistoryRequest {
+            transaction_id: Some(String::new()),
+            ..valid_history_req.clone()
+        },
+        NotificationHistoryRequest {
+            notification_type: Some(String::new()),
+            ..valid_history_req.clone()
+        },
+        NotificationHistoryRequest {
+            notification_type: Some("DID_RENEW".to_owned()),
+            notification_subtype: Some(String::new()),
+            ..valid_history_req.clone()
+        },
+        NotificationHistoryRequest {
+            notification_subtype: Some("BILLING_RECOVERY".to_owned()),
+            ..valid_history_req.clone()
+        },
+        NotificationHistoryRequest {
+            notification_type: Some("DID_RENEW".to_owned()),
+            transaction_id: Some("2000000000000001".to_owned()),
+            ..valid_history_req.clone()
+        },
+    ];
+    for invalid in invalid_history_requests {
+        assert_eq!(
+            api.notification_history(Environment::Sandbox, &invalid, None)
+                .await
+                .err(),
+            Some(ApiFailure::BadRequest),
+            "{invalid:?}"
+        );
+    }
     assert!(apple.asked().is_empty());
 
     let _ = api
@@ -904,48 +978,71 @@ async fn history_and_test_endpoints_map_http_and_shape_failures_cleanly() {
         );
     }
 
-    for malformed in [
-        json!({"hasMore": true, "signedTransactions": ["tx-1"]}),
-        json!({"hasMore": true, "revision": "", "signedTransactions": ["tx-1"]}),
-        json!({"hasMore": false, "signedTransactions": [""]}),
+    for (malformed, cursor) in [
+        (
+            json!({"hasMore": true, "signedTransactions": ["tx-1"]}),
+            None,
+        ),
+        (
+            json!({"hasMore": true, "revision": "", "signedTransactions": ["tx-1"]}),
+            None,
+        ),
+        (
+            json!({"hasMore": true, "revision": "rev-same", "signedTransactions": ["tx-1"]}),
+            Some("rev-same"),
+        ),
+        (json!({"hasMore": false, "signedTransactions": [""]}), None),
     ] {
         let (_, url) = Apple::answering(StatusCode::OK, malformed.to_string()).await;
         assert_eq!(
             api(key().0, &url, &url)
-                .transaction_history(Environment::Sandbox, "2000000000000001", None)
+                .transaction_history(Environment::Sandbox, "2000000000000001", cursor)
                 .await
                 .err(),
             Some(ApiFailure::Malformed)
         );
     }
 
-    for malformed in [
-        json!({"hasMore": true, "notificationHistory": []}),
-        json!({"hasMore": true, "paginationToken": "", "notificationHistory": []}),
-        json!({"hasMore": false, "notificationHistory": [{"signedPayload": "", "sendAttempts": []}]}),
+    for (malformed, cursor) in [
+        (json!({"hasMore": true, "notificationHistory": []}), None),
+        (
+            json!({"hasMore": true, "paginationToken": "", "notificationHistory": []}),
+            None,
+        ),
+        (
+            json!({"hasMore": true, "paginationToken": "tok-same", "notificationHistory": []}),
+            Some("tok-same"),
+        ),
+        (
+            json!({"hasMore": false, "notificationHistory": [{"signedPayload": "", "sendAttempts": []}]}),
+            None,
+        ),
     ] {
         let (_, url) = Apple::answering(StatusCode::OK, malformed.to_string()).await;
         assert_eq!(
             api(key().0, &url, &url)
-                .notification_history(Environment::Sandbox, &history_req, None)
+                .notification_history(Environment::Sandbox, &history_req, cursor)
                 .await
                 .err(),
             Some(ApiFailure::Malformed)
         );
     }
 
-    let (_, empty_token_url) = Apple::answering(
-        StatusCode::OK,
-        json!({"testNotificationToken": ""}).to_string(),
-    )
-    .await;
-    assert_eq!(
-        api(key().0, &empty_token_url, &empty_token_url)
-            .request_test_notification(Environment::Sandbox)
-            .await
-            .err(),
-        Some(ApiFailure::Malformed)
-    );
+    for bad_token in ["", ".", ".."] {
+        let (_, bad_token_url) = Apple::answering(
+            StatusCode::OK,
+            json!({"testNotificationToken": bad_token}).to_string(),
+        )
+        .await;
+        assert_eq!(
+            api(key().0, &bad_token_url, &bad_token_url)
+                .request_test_notification(Environment::Sandbox)
+                .await
+                .err(),
+            Some(ApiFailure::Malformed),
+            "testNotificationToken {bad_token:?}"
+        );
+    }
 
     let (_, empty_payload_url) = Apple::answering(
         StatusCode::OK,

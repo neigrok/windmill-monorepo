@@ -1909,6 +1909,7 @@ async fn test_notification_runner_polls_and_logs_only_non_secret_outcomes() {
         Ok(token.clone()),
         vec![
             Err(ApiFailure::NotFound),
+            Err(ApiFailure::ServerError),
             Ok(TestNotificationStatus {
                 signed_payload: "secret-payload-never-logged".to_owned(),
                 send_attempts: vec![],
@@ -1931,7 +1932,7 @@ async fn test_notification_runner_polls_and_logs_only_non_secret_outcomes() {
     let delivered = run_test_notification(
         &delivered_api,
         Environment::Sandbox,
-        4,
+        5,
         Duration::from_millis(1),
     )
     .await;
@@ -1978,7 +1979,7 @@ async fn test_notification_runner_polls_and_logs_only_non_secret_outcomes() {
     request_failed.log(Environment::Production, Duration::from_millis(3));
 
     let status_failed_api =
-        FakeApi::for_test_notification(Ok(token), vec![Err(ApiFailure::RateLimited)]);
+        FakeApi::for_test_notification(Ok(token.clone()), vec![Err(ApiFailure::RateLimited)]);
     let status_failed = run_test_notification(
         &status_failed_api,
         Environment::Sandbox,
@@ -1987,6 +1988,22 @@ async fn test_notification_runner_polls_and_logs_only_non_secret_outcomes() {
     )
     .await;
     status_failed.log(Environment::Sandbox, Duration::from_millis(4));
+
+    let persistent_server_error_api = FakeApi::for_test_notification(
+        Ok(token),
+        vec![Err(ApiFailure::ServerError), Err(ApiFailure::ServerError)],
+    );
+    let persistent_server_error = run_test_notification(
+        &persistent_server_error_api,
+        Environment::Sandbox,
+        2,
+        Duration::from_millis(1),
+    )
+    .await;
+    assert_eq!(
+        persistent_server_error,
+        TestNotificationOutcome::StatusFailed(ApiFailure::ServerError)
+    );
 
     assert_eq!(
         (

@@ -148,6 +148,27 @@ pub struct NotificationHistoryRequest {
     pub transaction_id: Option<String>,
 }
 
+impl NotificationHistoryRequest {
+    fn is_valid(&self) -> bool {
+        if self.start_date > self.end_date {
+            return false;
+        }
+        if self.notification_type.as_deref() == Some("")
+            || self.notification_subtype.as_deref() == Some("")
+            || self.transaction_id.as_deref() == Some("")
+        {
+            return false;
+        }
+        if self.notification_subtype.is_some() && self.notification_type.is_none() {
+            return false;
+        }
+        if self.notification_type.is_some() && self.transaction_id.is_some() {
+            return false;
+        }
+        true
+    }
+}
+
 impl fmt::Debug for NotificationHistoryRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -382,7 +403,7 @@ impl ServerApi {
         environment: Environment,
         original_transaction_id: &str,
     ) -> Result<SignedStatus, ApiFailure> {
-        if original_transaction_id.is_empty() {
+        if invalid_path_segment(original_transaction_id) {
             return Err(ApiFailure::BadRequest);
         }
         let url = self.url(
@@ -410,7 +431,7 @@ impl ServerApi {
         original_transaction_id: &str,
         app_account_token: &str,
     ) -> Result<(), ApiFailure> {
-        if original_transaction_id.is_empty() {
+        if invalid_path_segment(original_transaction_id) {
             return Err(ApiFailure::BadRequest);
         }
         let url = self.url(
@@ -439,7 +460,7 @@ impl ServerApi {
         transaction_id: &str,
         revision: Option<&str>,
     ) -> Result<TransactionHistoryPage, ApiFailure> {
-        if transaction_id.is_empty() || revision == Some("") {
+        if invalid_path_segment(transaction_id) || revision == Some("") {
             return Err(ApiFailure::BadRequest);
         }
         let mut url = self.url(environment, ["inApps", "v2", "history", transaction_id]);
@@ -449,16 +470,18 @@ impl ServerApi {
         let body = self.send(self.client.get(url)).await?;
         let HistoryResponse {
             signed_transactions,
-            revision,
+            revision: response_revision,
             has_more,
         } = serde_json::from_slice(&body).map_err(|_| ApiFailure::Malformed)?;
-        let revision = revision.filter(|value| !value.is_empty());
-        if (has_more && revision.is_none()) || signed_transactions.iter().any(String::is_empty) {
+        let next_revision = response_revision.filter(|value| !value.is_empty());
+        if (has_more && (next_revision.is_none() || next_revision.as_deref() == revision))
+            || signed_transactions.iter().any(String::is_empty)
+        {
             return Err(ApiFailure::Malformed);
         }
         Ok(TransactionHistoryPage {
             signed_transactions,
-            revision,
+            revision: next_revision,
             has_more,
         })
     }
@@ -471,7 +494,7 @@ impl ServerApi {
         request: &NotificationHistoryRequest,
         pagination_token: Option<&str>,
     ) -> Result<NotificationHistoryPage, ApiFailure> {
-        if pagination_token == Some("") || request.transaction_id.as_deref() == Some("") {
+        if pagination_token == Some("") || !request.is_valid() {
             return Err(ApiFailure::BadRequest);
         }
         let mut url = self.url(environment, ["inApps", "v1", "notifications", "history"]);
@@ -487,11 +510,11 @@ impl ServerApi {
         let response = self.send(http_request).await?;
         let NotificationHistoryResponse {
             notification_history,
-            pagination_token,
+            pagination_token: response_token,
             has_more,
         } = serde_json::from_slice(&response).map_err(|_| ApiFailure::Malformed)?;
-        let pagination_token = pagination_token.filter(|value| !value.is_empty());
-        if has_more && pagination_token.is_none() {
+        let next_token = response_token.filter(|value| !value.is_empty());
+        if has_more && (next_token.is_none() || next_token.as_deref() == pagination_token) {
             return Err(ApiFailure::Malformed);
         }
         let mut entries = Vec::with_capacity(notification_history.len());
@@ -506,7 +529,7 @@ impl ServerApi {
         }
         Ok(NotificationHistoryPage {
             entries,
-            pagination_token,
+            pagination_token: next_token,
             has_more,
         })
     }
@@ -522,7 +545,7 @@ impl ServerApi {
         let SendTestNotificationResponse {
             test_notification_token,
         } = serde_json::from_slice(&body).map_err(|_| ApiFailure::Malformed)?;
-        if test_notification_token.is_empty() {
+        if invalid_path_segment(&test_notification_token) {
             return Err(ApiFailure::Malformed);
         }
         Ok(TestNotificationToken(test_notification_token))
@@ -534,7 +557,7 @@ impl ServerApi {
         environment: Environment,
         token: &TestNotificationToken,
     ) -> Result<TestNotificationStatus, ApiFailure> {
-        if token.expose().is_empty() {
+        if invalid_path_segment(token.expose()) {
             return Err(ApiFailure::BadRequest);
         }
         let url = self.url(
@@ -766,6 +789,12 @@ impl fmt::Display for InvalidKey {
 }
 
 impl std::error::Error for InvalidKey {}
+
+// `Url::path_segments_mut().extend(...)` treats "." and ".." as dot segments and resolves them rather than
+// appending a segment; refuse them alongside empty ids before any request is sent.
+fn invalid_path_segment(segment: &str) -> bool {
+    segment.is_empty() || segment == "." || segment == ".."
+}
 
 #[derive(Deserialize)]
 struct StatusResponse {
