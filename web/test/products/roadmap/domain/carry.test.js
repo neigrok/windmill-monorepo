@@ -219,7 +219,7 @@ test('a refused creation’s notice is read for the Coach records about its road
     { d: [made('coachThread', 'thread0009', { treeId: 't_00000000000000bb', stepId: null, title: 'Elsewhere' }, at(5007))] },
   ]), OLD);
   const read = ({ type, id, made: making, life, registers: held }) => [type.type, id, making, life?.[0] ?? null, Object.fromEntries(Object.entries(held).map(([name, [value]]) => [name, value]))];
-  assert.deepEqual({ records: carried.records.map(read), others: carried.others.map(read), empty: carried.isEmpty }, {
+  assert.deepEqual({ records: carried.records.map(read), others: carried.others.map(read) }, {
     records: [
       ['coachThread', 'thread0001', true, 'alive', { treeId: OLD, stepId: null, title: 'Where do I start?' }],
       ['coachThread', 'thread0003', true, 'dead', { treeId: OLD, stepId: null, title: 'Never mind' }],
@@ -230,9 +230,7 @@ test('a refused creation’s notice is read for the Coach records about its road
         state: 'pending' }],
     ],
     others: [['coachThread', 'thread0009', true, 'alive', { treeId: 't_00000000000000bb', stepId: null, title: 'Elsewhere' }]],
-    empty: false,
   });
-  assert.equal(CarriedConversations.of(refusedOf(OLD, []), OLD).isEmpty, true);
 });
 
 // What a device draws of Coach's records: each record's fields, by id.

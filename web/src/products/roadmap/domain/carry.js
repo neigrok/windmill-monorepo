@@ -486,8 +486,6 @@ export class CarriedConversations {
     Object.freeze(this);
   }
 
-  get isEmpty() { return this.records.length === 0 && this.others.length === 0; }
-
   // How many of `others` a reader of the person's scope does not draw: the records only the notice holds.
   /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
   unheld(read) { return this.others.filter(({ type, id }) => read.repository(type).find(new Id(id, type), 'drawn') === null).length; }
@@ -528,8 +526,9 @@ export class CarriedConversations {
     const proposals = about(CoachProposal);
     const messages = new Set(all.filter((record) => record.type === CoachMessage
       && (threads.has(String(value(record, 'threadId'))) || proposals.has(String(value(record, 'proposalId'))))).map((record) => record.id));
-    const ours = (/** @type {CarriedCoachRecord} */ record) => (record.type === CoachThread ? threads : record.type === CoachProposal ? proposals
-      : record.type === CoachMessage ? messages : null)?.has(record.id) ?? messages.has(String(value(record, 'messageId')));
+    /** @type {Map<CoachType, Set<string>>} */
+    const carriedOf = new Map(/** @type {[CoachType, Set<string>][]} */ ([[CoachThread, threads], [CoachProposal, proposals], [CoachMessage, messages]]));
+    const ours = (/** @type {CarriedCoachRecord} */ record) => carriedOf.get(record.type)?.has(record.id) ?? messages.has(String(value(record, 'messageId')));
     const rank = (/** @type {CoachType} */ type) => COACH_TYPES.indexOf(type);
     const ordered = all.sort((a, b) => rank(a.type) - rank(b.type) || compareText(a.id, b.id));
     return new CarriedConversations(ordered.filter(ours), ordered.filter((record) => !ours(record)));
