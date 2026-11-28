@@ -95,11 +95,11 @@ person is told why before they speak. It stops at the first row that holds:
 |---|---|---|
 | Signed out | the shell | The button is shown and opens the sign-in door. (R-4) |
 | Offline | no connection | Says Talk needs a connection, and typing goes on. |
-| Microphone refused | the system | Points to Settings. |
 | This build is retired | the pass door's `client-update-required` | Asks for an update. |
 | No Windmill One | the subscription's `windmillOne` false | Opens the store door [subscriptions](subscriptions.md) designs. |
 | Windmill One with no funded period | `windmillOne` true and the allowance's `capabilities.transcription` false; the live door's `funding_required` | Says Talk returns when the period is paid. |
 | Allowance used | `subject_exhausted` | Says when it returns. |
+| Microphone not allowed | the system, asked the first time here, once every row above has passed (R-10) | Refused or restricted, points to Settings. |
 | Another request running | `concurrency_exhausted` | Says so; nothing is recorded. |
 | Busy | `busy`, `rate_limited`, `accounting_unavailable`, from either door | Says to try again in a moment. |
 | Talk is off | the pass door's 404 or `unavailable`; the live door's `provider_unavailable` or `paused` | Says Talk is not available now. |
@@ -126,14 +126,18 @@ person is told why before they speak. It stops at the first row that holds:
    code as §4 maps it, and clears the mark. So does a door that has not said `started` within
    `OPEN_WAIT`.
 4. Talk sends no `context` frame and names no language.
-5. A take is not opened within `END_WAIT` of the end of the day. A press that opens no take changes
-   nothing: a mark still standing stays, and its recovery goes on.
+5. A take is not opened within `END_WAIT` of the end of the day, nor while a take is running or
+   still ending. A press that opens no take changes nothing: a mark still standing stays, and its
+   recovery goes on.
+
+The room keeps the screen awake while a take runs, so Auto-Lock does not end it. (R-11)
 
 ### §5.2 Audio and pauses
 
 - The device captures with the system's voice processing, automatic gain, noise suppression and
   echo cancellation all off, and sends 16-bit little-endian PCM, mono, 24 kHz, in frames of `FRAME`
-  (2,400 samples), as they are captured.
+  (2,400 samples), as they are captured. With Bluetooth earbuds worn, the earbuds' microphone
+  records (R-9): the system's processing is off, and an earbud's own processing is the earbud's.
 - **The pause rule** works in whole numbers, so two implementations agree to the frame.
   - A frame's *energy* is the sum of its samples' squares divided by 2,400, rounded down.
   - Frames are counted from a session's first. Each ten in a row are a *block*, whose energy is the
@@ -195,7 +199,7 @@ for a call, an alarm or its assistant, or the microphone's device goes; and when
 4. An ended take offers Undo once, which removes its passage in one save: the page's text and
    `source` are again what they were before the take, and a mark still standing is cleared. Undo
    writes only while the page's text is as the take or its recovery last saved it, and it ends a
-   recovery under way.
+   recovery under way. A press that begins another take ends the offer.
 
 A session the service ends is read the same way: its `text` is placed and saved.
 
@@ -204,7 +208,7 @@ A session the service ends is read the same way: its `text` is placed and saved.
 | `ended` `cut` with `idle` | ends; the words stay. Talk says it stopped listening. |
 | `ended` `cut` with a refusal of the next slice | ends; the words stay; §4 says why. |
 | `ended` `cut` with `paused` or `restarting` | ends; the words stay; Talk says it is not available now. |
-| `failed` `provider_failed` after `started` | is bridged (§5.5). After `end` was sent it is not bridged and ends the take as any other `failed` does. |
+| `failed` `provider_failed` after `started` | is bridged (§5.5). After `end` was sent it is not bridged: it is the session's last message. |
 | any other `failed` after `started` | ends; the words stay; §4 says why. |
 
 ### §5.5 A connection lost
@@ -222,11 +226,11 @@ refused one.
    seconds.
 3. When the new session answers `started`, the device sends what it kept, then the live audio. A
    take that ends meanwhile, by the person or any other cause, is answered the same way: the kept
-   audio is sent, then `end`. Leaving the foreground is the exception (INV-3): the kept audio is
-   dropped, the new session's opening is closed and the take ends with the words it has.
+   audio is sent, then `end`. Leaving the foreground is the exception (INV-3, R-8): the kept audio
+   is dropped, the new session's opening is closed and the take ends with the words it has.
 4. With no `started` within `BRIDGE_WAIT`, or on any other refusal, the take ends with its words.
    A new session lost before its `started` is bridged again within the same wait, whether or not
-   the take has ended meanwhile.
+   the take has been ended meanwhile.
 5. Every lost session is read, whether or not it said `started`: its `text` comes from
    `GET /v1/calls/{callId}/result`, every `RESULT_POLL` while the service answers that the session
    is still open, and replaces that session's part of the passage. An answer that the result is
@@ -241,8 +245,9 @@ refused one.
 
 ### §5.6 Recovery
 
-When the journal room opens or returns to the foreground, or a take ends with its mark standing,
-and a mark exists, the device recovers it, once it has pulled the journal's scope whole.
+When the journal room opens or returns to the foreground with no take in memory, or a take ends
+with its mark standing, and a mark exists, the device recovers it, once it has pulled the journal's
+scope whole. A recovery never starts while a take is in memory and has not ended.
 
 - A mark whose day is no longer today, or that names no session, is cleared and nothing is written,
   at the recovery's start and at any answer after the day has ended. A mark is a row of the replica
@@ -267,11 +272,9 @@ and a mark exists, the device recovers it, once it has pulled the journal's scop
 
 ## §6 What a person sees
 
-What a person sees is built only from boards marked ✅ Ready for dev. The boards approved on
-2026-11-08 draw a finished recording written down at the end (Journal · iOS 03.3P to 03.6P, and
-03.8P at the largest text); R-1 replaces that interaction, so Talk is drawn again and approved
-before it is built. The first microphone request (03.1P), a refused microphone (03.2P) and offline
-(03.7P) keep their place, with their words checked against live Talk and §4's sentence.
+What a person sees on the iPhone is built from [Journal Talk's design](../design/ios/journal-talk.md)
+and its boards, marked ✅ Ready for dev. A refusal is said in the room's band, in one sentence, never
+in a sheet or an alert. (R-12)
 
 The design MUST draw, for the iPhone and the web: connecting; listening with words arriving;
 unsettled words told apart from settled ones; ending; the last minute; Undo of a take; a take that
@@ -388,3 +391,8 @@ stays a backend route and the journal architecture's account of Talk.
 | R-5 | The app leaves the foreground during a take | The take ends and its words stay. Talk never records in the background. (2026-11-17) |
 | R-6 | The web's Talk | The same behaviour through the AI service, built after the iPhone's and before the backend's transcription model shuts down on 2027-02-26. (2026-11-17) |
 | R-7 | Which path the iPhone takes to the model | The AI service's live door, not the backend's route. (2026-11-17) |
+| R-8 | Audio kept during a bridge when the app leaves the foreground | Dropped. R-5 reaches it: audio is sent only while the app is in the foreground, and up to ten seconds of words can be lost. (2026-11-28) |
+| R-9 | Which microphone records when Bluetooth earbuds are worn | The earbuds'. (2026-11-28) |
+| R-10 | When the microphone is asked for | Only after every other check has passed: sign-in, connection, Windmill One and the allowance. (2026-11-28) |
+| R-11 | The screen during a take | Kept awake while a take runs. (2026-11-28) |
+| R-12 | Where Talk says why it cannot start | In the room's band, in one sentence. No sheet, no alert. (2026-11-28) |
