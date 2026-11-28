@@ -159,6 +159,8 @@ function revived(tree, held, valid) {
   return writeIn(RoadmapScopes.tree(tree), held.reviving(valid, changed), null);
 }
 
+// §4 A change to a kind's words, its label and description. A kind's hue is the recolour's to write, which repaints the steps
+// that wear it and checks no other kind wears the new one, so a hue the change is given is no part of it.
 export class ChangeKind {
   /**
    * @param {string} tree
@@ -168,7 +170,8 @@ export class ChangeKind {
   constructor(tree, kind, changes) {
     this.tree = tree;
     this.kind = kind;
-    this.changes = changes;
+    this.changes = /** @type {KindWords} */ (Object.fromEntries(/** @type {const} */ (['label', 'description']).filter((name) => changes[name] !== undefined)
+      .map((name) => [name, changes[name]])));
     this.refusals = RoadmapRefusals;
     Object.freeze(this);
   }
