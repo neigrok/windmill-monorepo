@@ -2,9 +2,12 @@
 # Holds Talk's stories to the specification by a second derivation: nothing here reads generate.py.
 import argparse
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
+import time
 
 ROOT = Path(__file__).parent
 CONTRACT = ROOT.parent.parent
@@ -13,6 +16,26 @@ wire = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wire)
 
 SAMPLES, PAUSE, MIN_TURN, SPEECH_MIN = 2400, 7, 10, 10737
+PAGE_MAX = 131072
+# ECMAScript's WhiteSpace and LineTerminator, as the journal corpus trims: U+0085 is content.
+WHITESPACE = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
+# The mark's value as the Talk contract's §2 gives it. It stands in for the registry's `talkTake` row only until
+# sync/journal.registry.json holds that row; then the row is what a mark is held to, and this goes.
+CONTRACT_MARK = {
+    'type': 'object', 'required': ['day', 'bytesBefore', 'pageDigest', 'sessions'],
+    'properties': {
+        'day': {'type': 'string', 'pattern': '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'},
+        'bytesBefore': {'type': 'number', 'integer': True, 'min': 0, 'max': 131072},
+        'pageDigest': {'type': 'string', 'pattern': '^[0-9a-f]{16}$'},
+        'sessions': {'type': 'array', 'maxItems': 4, 'items': {
+            'type': 'object', 'required': ['callId', 'bytesSaved', 'heardAt'],
+            'properties': {
+                'callId': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{22}$'},
+                'bytesSaved': {'type': 'number', 'integer': True, 'min': 0, 'max': 131072},
+                'heardAt': {'type': 'number', 'integer': True, 'min': 0, 'max': 9007199254740991},
+            }}},
+    },
+}
 
 # Each clause of docs/foundation/journal-talk.md and the stories that pin it. A clause with no story, a story no
 # clause names and a name that is not a story each fail the check.
@@ -34,6 +57,18 @@ PINS = {
         '§5.2 commit, the counts start again': ['a long silence sends one commit', 'after a commit nine speech frames send nothing',
                                                 'after a commit ten speech frames and a pause send the next'],
         '§5.2 a sequence too short to decide': ['an empty sequence sends nothing', 'a sequence shorter than a block sends nothing'],
+    },
+    'saves.json': {
+        '§5.1 step 2, the mark at the press': ['the press writes the mark alone'],
+        '§5.3 saving': ['the first settled turn saves the page as spoken with its mark', 'spoken words on a day with no page create it'],
+        '§5.3 never into another day': ['a day that is no longer today is refused and nothing is written'],
+        '§5.3 the page\'s size limit': ['a page over 131,072 bytes is refused and nothing is written'],
+        '§5.4 step 2, the mark cleared': ['the last save writes the page and clears the mark', 'the mark is cleared alone'],
+        '§5.4 step 4, Undo': ['Undo saves the page and its source as they were and clears the mark', 'Undo on a day that had no page removes it'],
+        '§5.5 step 1, the mark at a bridge': ['a bridge adds its session to the mark alone'],
+        '§5.6 writes only while the page has the digest': ['a guarded save writes while the page has the digest',
+                                                         'a guarded save changes nothing once the page has changed'],
+        'domain kit Appendix C, pending edits': ['a bound day with a pending claim keeps the words in its claim, with the mark'],
     },
 }
 
@@ -77,6 +112,66 @@ def commits(energies):
     return sent
 
 
+def digest(text):
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def conforms(value, shape, where):
+    kind = shape['type']
+    if kind == 'object':
+        require(isinstance(value, dict) and set(value) == set(shape['properties']) and set(shape['required']) <= set(value), where + ': fields differ')
+        for name, inner in shape['properties'].items():
+            conforms(value[name], inner, where + '.' + name)
+    elif kind == 'array':
+        require(isinstance(value, list) and len(value) <= shape['maxItems'], where + ': not a list within its length')
+        for item in value:
+            conforms(item, shape['items'], where + '[]')
+    elif kind == 'number':
+        require(type(value) is int and shape['integer'] and shape['min'] <= value <= shape['max'], where + ': not a whole number within its bounds')
+    else:
+        require(kind == 'string' and isinstance(value, str) and re.fullmatch(shape['pattern'].removeprefix('^').removesuffix('$'), value), where + ': not text of its pattern')
+
+
+# What a mark is held to, and where that came from.
+def mark_shape():
+    registry = json.loads((CONTRACT / 'sync' / 'journal.registry.json').read_text())
+    row = registry['products']['journal']['device'].get('talkTake')
+    if row is None:
+        return CONTRACT_MARK, 'the contract\'s shape in check.py, the registry holding no talkTake row yet'
+    return row['value'], 'the registry\'s talkTake row'
+
+
+# D-5 and §5.6: a page with the mark's digest, read by the mark's lengths. Answers each session's part.
+def located(body, mark, shape):
+    conforms(mark, shape, 'mark')
+    require(mark['sessions'], 'a mark names a session')
+    require(mark['pageDigest'] == digest(body), 'the mark\'s digest is not the page\'s')
+    data, before = body.encode(), mark['bytesBefore']
+    lengths = [session['bytesSaved'] for session in mark['sessions']]
+    try:
+        head, tail = data[:before].decode(), data[before:]
+        require(len(data) >= before and head == head.rstrip(WHITESPACE), 'bytesBefore is not the page before the passage, trimmed')
+        if not any(lengths):
+            require(tail.decode().strip(WHITESPACE) == '', 'a page with no part saved holds more than its text before the take')
+            return [''] * len(lengths)
+        parts, cursor = [], 2 if before else 0
+        require(tail[:cursor] == b'\n\n'[:cursor], 'no blank line before the passage')
+        for length in lengths:
+            if length and any(parts):
+                require(tail[cursor:cursor + 1] == b' ', 'parts are not one space apart')
+                cursor += 1
+            parts.append(tail[cursor:cursor + length].decode())
+            cursor += length
+        require(cursor == len(tail) and all(utf8(part) == length for part, length in zip(parts, lengths)), 'the lengths do not cover the passage')
+        return parts
+    except UnicodeDecodeError:
+        raise ValueError('a length cuts a character')
+
+
+def utf8(text):
+    return len(text.encode())
+
+
 def vectors(document, pins):
     require(isinstance(document, list), 'a vector file is an array')
     names = [case.get('name') for case in document]
@@ -106,14 +201,61 @@ def check_pauses(document):
     return len(document)
 
 
+def check_saves(document, shape):
+    for case in vectors(document, PINS['saves.json']):
+        try:
+            scene = case['input']
+            wire.fields({key: value for key, value in scene.items() if key != 'devices'}, 'action input records ids now offsetSeconds actor')
+            require(scene['action'] == 'SaveSpoken', 'unknown save action')
+            given = scene['input']
+            wire.fields(given, 'day body source mark whilePage')
+            require(given['source'] in {'typed', 'spoken'} and (given['body'] is None or isinstance(given['body'], str)), 'a save holds a body or null, and a source')
+            row = next((record for record in scene['records']['drawn'] if record['t'] == 'page' and record['id'] == given['day']), None)
+            drawn = row['x']['body']['text'] if row else ''
+            if given['mark'] is not None:
+                located(drawn if given['body'] is None else given['body'], given['mark'], shape)
+            wire.fields(case['expect'], 'decision')
+            decision = case['expect']['decision']
+            today = time.strftime('%Y-%m-%d', time.gmtime((scene['now'] + scene['offsetSeconds'] * 1000) // 1000))
+            if given['whilePage'] is not None and given['whilePage'] != digest(drawn):
+                require(decision == {'unchanged': {'result': None}}, 'a guarded save wrote over a page that changed')
+            elif given['body'] is not None and given['day'] != today:
+                require(decision == {'refuse': {'invalid': {'rule': 'journal.day', 'path': 'day', 'reason': 'custom', 'custom': 'readOnlyDay'}}}, 'a save into another day')
+            elif given['body'] is not None and utf8(given['body']) > PAGE_MAX:
+                require(decision == {'refuse': {'invalid': {'rule': 'journal.savePage.body', 'path': 'body', 'reason': 'tooLong', 'max': PAGE_MAX, 'unit': 'bytes', 'measured': utf8(given['body'])}}}, 'a page over the limit')
+            else:
+                wire.fields(decision, 'write')
+                wire.fields(decision['write'], 'gesture result')
+                gesture = decision['write']['gesture']
+                wire.fields(gesture, 'changes atomic hold guards retire cmd predict local')
+                keys = [write['key'] for write in gesture['local']]
+                require(keys == sorted(keys, key=str.encode) and gesture['local'][-1] == {'key': 'talkTake', 'value': given['mark']}, 'the mark is not written with the save')
+                if given['body'] is None:
+                    require(gesture['cmd'] is None and gesture['predict'] == [] and keys == ['talkTake'], 'the mark alone wrote more than the mark')
+                elif gesture['cmd'] is not None:
+                    args, hasText = gesture['cmd']['args'], given['body'].strip(WHITESPACE) != ''
+                    require(gesture['cmd']['name'] == 'journal.savePage' and args['day'] == given['day'] and args['body'] == given['body'], 'the command saves another page')
+                    require(args['source'] == (given['source'] if hasText else 'typed'), 'the command saves another source')
+                    require(gesture['predict'][0]['x']['body']['text'] == given['body'] and 'contentClock' in keys, 'the prediction or the clock differs')
+        except (KeyError, IndexError, TypeError) as error:
+            raise ValueError(case['name'] + ': malformed scene') from error
+        except ValueError as error:
+            raise ValueError(case['name'] + ': ' + str(error)) from error
+    return len(document)
+
+
 def check(documents):
     require(set(documents) == set(PINS), 'story files differ: ' + ', '.join(sorted(set(documents) ^ set(PINS))))
-    return {'pause cases': check_pauses(documents['pauses.json'])}
+    shape, source = mark_shape()
+    return {'pause cases': check_pauses(documents['pauses.json']), 'save scenes': check_saves(documents['saves.json'], shape)}, source
 
 
 def negative_probes(documents):
     def pauses(change):
         return lambda docs: change(docs['pauses.json'])
+
+    def save(name, change):
+        return lambda docs: change(next(case for case in docs['saves.json'] if case['name'] == name))
 
     probes = [
         ('a commit one frame late', pauses(lambda cases: next(case for case in cases if case['expect'] == {'commits': [27]})['expect'].update(commits=[28]))),
@@ -122,6 +264,13 @@ def negative_probes(documents):
         ('an unknown pause operation', pauses(lambda cases: cases[0]['input'].update(op='PauseRule.floor'))),
         ('a story no clause names', pauses(lambda cases: cases.append(copy.deepcopy(dict(cases[0], name='unpinned'))))),
         ('a repeated name', pauses(lambda cases: cases.append(copy.deepcopy(cases[0])))),
+        ('a mark whose digest is not the page\'s', save('the first settled turn saves the page as spoken with its mark', lambda case: case['input']['input']['mark'].update(pageDigest='0' * 16))),
+        ('a mark one byte long', save('the first settled turn saves the page as spoken with its mark', lambda case: case['input']['input']['mark']['sessions'][0].update(bytesSaved=21))),
+        ('a mark with a fifth session', save('a bridge adds its session to the mark alone', lambda case: case['input']['input']['mark']['sessions'].extend([case['input']['input']['mark']['sessions'][1]] * 3))),
+        ('a mark with a field the row does not hold', save('the press writes the mark alone', lambda case: case['input']['input']['mark'].update(seat='bound'))),
+        ('a save that drops the mark', save('the last save writes the page and clears the mark', lambda case: case['expect']['decision']['write']['gesture']['local'].pop())),
+        ('a guarded save that writes over a changed page', save('a guarded save changes nothing once the page has changed', lambda case: case['input']['input'].update(whilePage=None))),
+        ('a save into another day', save('a day that is no longer today is refused and nothing is written', lambda case: case['expect'].update(decision={'unchanged': {'result': None}}))),
     ]
     for name, mutate in probes:
         invalid = copy.deepcopy(documents)
@@ -139,9 +288,9 @@ def main():
     parser.add_argument('--self-test', action='store_true')
     parser.parse_args()
     documents = {str(path.relative_to(ROOT)): json.loads(path.read_text()) for path in sorted(ROOT.rglob('*.json'))}
-    counts = check(documents)
+    counts, source = check(documents)
     probes = negative_probes(documents)
-    print('Talk stories verified: ' + ', '.join(f'{count} {kind}' for kind, count in counts.items()) + f'; {probes} negative probes rejected')
+    print('Talk stories verified: ' + ', '.join(f'{count} {kind}' for kind, count in counts.items()) + f'; {probes} negative probes rejected; marks held to {source}')
 
 
 if __name__ == '__main__':

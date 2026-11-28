@@ -19,9 +19,12 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 | File | Cases | Runs |
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
+| `saves.json` | 13 scenes | `SaveSpoken` |
 
-`pauses.json` is the kit's array of `{name, input, expect}`, compared by JCS
+`pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)).
+
+Words in every file are made up. A `callId` is one letter 22 times.
 
 ## `pauses.json`
 
@@ -69,8 +72,61 @@ Each sequence, and why its commits are what they are. S is 1,000,000 and a block
 | the floor does not start again at a commit | `b1` 2,000 still holds the floor after the commit at frame 27, so 15,000 is not speech. Were the blocks counted again from the commit, the floor would be 0 and frame 44 would send a second commit. |
 | an empty sequence sends nothing; a sequence shorter than a block sends nothing | No frame makes seven quiet in a row. |
 
+## The mark
+
+The device row `talkTake` (D-5), null when there is none:
+
+```json
+{"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "2b52e661f19e998f",
+ "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856003900}]}
+```
+
+- `day` is the take's local day.
+- `bytesBefore` is the UTF-8 length of the page's text before the take with its trailing whitespace removed.
+  Whitespace is ECMAScript's `WhiteSpace` and `LineTerminator`, as the journal corpus trims; U+0085 is content.
+- `pageDigest` is the first 16 lowercase hexadecimal characters of the SHA-256 of the UTF-8 bytes of the page's
+  text as stored by the write that wrote the mark; at the press, of the page's text as it stands.
+- `sessions` are the take's sessions in the order they were opened, four at most. `bytesSaved` is the UTF-8
+  length of the session's part as saved. `heardAt` is the time of the session's last message as of that write,
+  and the time it was opened before any.
+
+A page that has the mark's digest is read by the mark's lengths: its first `bytesBefore` bytes; then, when no
+part has bytes, nothing but whitespace; otherwise two line feeds when `bytesBefore` is above zero, and each part
+that has bytes, of its length, one space between two.
+
+## `saves.json`
+
+The scene of the journal corpus's [`page-actions.json`](../domain/README.md#actions), unchanged:
+`{action, input, records: {drawn}, devices?, ids, now, offsetSeconds, actor}` in, `{decision}` out.
+
+| Action | Input | Result |
+|---|---|---|
+| `SaveSpoken` | `{day, body, source, mark, whilePage}` | as `SavePage`: the claim id of a day with a pending claim, null otherwise |
+
+`SaveSpoken` is the one write of a take and of a recovery.
+
+- `mark` is the mark to store, or null to clear it. Every write decision carries it as the device write
+  `talkTake`, after the other device writes, which are in the order of their keys.
+- `body` null leaves the page as it is: the decision writes the mark and nothing else.
+- Otherwise the decision is `SavePage`'s for the document `{body, mood, energy, source}`, its ratings those the
+  phone holds for the day as `SaveWords` takes them, with the mark's write added. A refusal of `SavePage`'s is the
+  refusal, and then the mark is not written either.
+- `whilePage` null writes whatever the page holds. Otherwise it is a digest in the mark's form, and the decision
+  is `{unchanged: {result: null}}` unless the drawn page's text, empty where the day has no page, has that digest.
+  A take's own saves pass null. Recovery and Undo pass the digest of the page as the take last saved it (§5.4
+  step 4, §5.6).
+
+No scene draws a `journalState` record, so every save of a written page retires the first-run copy, as the
+journal corpus's scenes do: a repeated retirement is a difference the corpus permits between surfaces.
+
 ## What `check.py` holds
 
 - `pauses.json`: every answer equals a reference of §5.2 written in `check.py`. The cases above are stated by
   hand, so two derivations agree on each.
+- Every mark matches the registry's `talkTake` row. While `sync/journal.registry.json` holds no such row, a mark
+  is held to the Talk contract's shape, stated once in `check.py`; the check prints which it ran against.
+- Every mark has the digest of the page it was written with, and its lengths read that page.
+- `saves.json`: a guarded save is `unchanged` exactly when the drawn page's digest differs; a save into another
+  day or over 131,072 bytes is refused; every other decision writes the mark last among its device writes, and
+  the mark alone writes nothing else.
 - Every clause the files pin has a story, and every story is named by a clause: the table `PINS`.
