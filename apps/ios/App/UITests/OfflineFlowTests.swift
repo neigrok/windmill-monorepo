@@ -80,6 +80,12 @@ import XCTest
 
     switchRoom("Gym", in: app)
     if restoringWorkout {
+      // iOS 26 brings the hidden workout back from the tab bar's accessory on any tab; iOS 18 from the Hidden row at the
+      // head of The log.
+      if #unavailable(iOS 26.0) {
+        ready(app.tabBars.buttons["The log"])
+        app.tabBars.buttons["The log"].tap()
+      }
       ready(app.buttons["gym-hidden-workout"])
       app.buttons["gym-hidden-workout"].tap()
     } else {

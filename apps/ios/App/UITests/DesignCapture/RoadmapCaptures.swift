@@ -129,8 +129,9 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 03.10: the note on its own screen with the keyboard up, a paragraph added and two words set bold from the Format
-  // menu of the system's edit menu, which is paged to it.
+  // 03.10: the note on its own screen with the keyboard up and a paragraph added; on iOS 26 two words set bold from the
+  // Format menu of the system's edit menu, which is paged to it. Before iOS 26 the note edits plain text, whose edit menu
+  // has no Format.
   func testStepNote() {
     captureBoard("03.10-roadmap-step-note") { look in
       let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
@@ -141,11 +142,14 @@ final class RoadmapCaptures: DesignCapture {
       XCTAssertTrue(note.waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
       if app.buttons["Continue"].waitForExistence(timeout: 2) { app.buttons["Continue"].tap() }
       note.typeText("\n\nAsk which way the harbour flag points when the sea breeze fills in.")
+      guard #available(iOS 26.0, *) else { return app }
+      // The edit menu's page turn, which iOS 26 calls Forward and iOS 27 Next Page.
+      let nextPage = app.buttons.matching(NSPredicate(format: "label IN %@", ["Forward", "Next Page"])).firstMatch
       // *dark* and *patches* stand on the field's first line, under the bar.
       for word in [150.0, 205.0] {
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: word, dy: app.navigationBars["Note"].frame.maxY + 22)).doubleTap()
         XCTAssertTrue(app.menuItems["Copy"].waitForExistence(timeout: 5))
-        app.buttons["Forward"].tap()
+        nextPage.tap()
         XCTAssertTrue(app.buttons["Format"].waitForExistence(timeout: 5))
         app.buttons["Format"].tap()
         XCTAssertTrue(app.buttons["Bold"].waitForExistence(timeout: 5) && app.buttons["Italic"].exists && !app.buttons["Underline"].exists)
@@ -938,9 +942,11 @@ final class RoadmapCaptures: DesignCapture {
       let app = kinds(look)
       addKind("Practice", "Hours on the water", app)
       app.buttons["roadmap-kinds-edit"].tap()
-      let practice = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "roadmap-kinds-row", "Practice")).firstMatch
-      XCTAssertTrue(practice.waitForExistence(timeout: 5))
-      practice.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+      // Edit mode draws one delete control, Practice's, the one kind no step wears. iOS 18 reports its symbol twice, inside
+      // the control that takes the tap, so the tap goes to the first one's middle.
+      let remove = app.images.matching(identifier: "minus.circle.fill").firstMatch
+      XCTAssertTrue(remove.waitForExistence(timeout: 5))
+      remove.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
       XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5))
       app.buttons["Delete"].tap()
       XCTAssertTrue(app.staticTexts["Practice removed"].waitForExistence(timeout: 10))
@@ -955,9 +961,11 @@ final class RoadmapCaptures: DesignCapture {
       let app = kinds(look, board: "roadmap-undo-finds-nothing")
       addKind("Practice", "Hours on the water", app)
       app.buttons["roadmap-kinds-edit"].tap()
-      let practice = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "roadmap-kinds-row", "Practice")).firstMatch
-      XCTAssertTrue(practice.waitForExistence(timeout: 5))
-      practice.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+      // Edit mode draws one delete control, Practice's, the one kind no step wears. iOS 18 reports its symbol twice, inside
+      // the control that takes the tap, so the tap goes to the first one's middle.
+      let remove = app.images.matching(identifier: "minus.circle.fill").firstMatch
+      XCTAssertTrue(remove.waitForExistence(timeout: 5))
+      remove.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
       XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5))
       app.buttons["Delete"].tap()
       // The band stands at the sheet's foot and at the Board's behind it, where it cannot be tapped.
@@ -1053,9 +1061,12 @@ final class RoadmapCaptures: DesignCapture {
     captureBoard("10.5c-roadmap-set-aside-change-menu", settle: 1.5) { look in
       let app = setAside(look)
       app.buttons["2 Set Aside"].tap()
+      XCTAssertTrue(app.navigationBars["Set Aside"].waitForExistence(timeout: 10))
+      // iOS 18 reports an unnamed button of the menu's own at the frame of the … a row draws, so the … itself is never
+      // hittable there; the tap goes to its middle.
       let more = app.buttons.matching(identifier: "roadmap-set-aside-more").firstMatch
-      XCTAssertTrue(more.waitForHittable(timeout: 10))
-      more.tap()
+      XCTAssertTrue(more.waitForExistence(timeout: 10))
+      more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
       XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5))
       return app
     }

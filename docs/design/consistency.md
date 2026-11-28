@@ -678,8 +678,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
-  the system tells the room nothing of its rename; the system's *Rename* tile draws no pencil, where 01.3 draws one,
-  since a title menu gives a tile of the room's own no rename to call; a long name in the menu wraps onto a second line
+  the system tells the room nothing of its rename; a long name in the menu wraps onto a second line
   where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
   at the domain's 200 characters with no counter, and no board
@@ -1006,9 +1005,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   - there is no hairline under the bar or on the foot;
   - a dialog dims less;
   - the medium sheet sits higher.
-
-  NOTE 12 says renaming is the in-bar field iOS 26 has, once the title is a binding. The app passes a string there, so
-  its title menu has no Rename on iOS 18 (plan step `m6-the-room-on-ios-18-renames-and-its-captures-pass`).
 - **Roadmap · iOS · a sheet's close word on iOS 18.** The built Kinds, Guide and Set Aside sheets close with *Done* on
   iOS 18; board 12.10 and NOTE 12 say *Close*. To check against the iOS 26 boards and the Journal and Gym sheets, and
   settle on one word.
