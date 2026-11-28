@@ -473,7 +473,8 @@ items it carried, and each record it set aside for §6's one list.
   has written them, on that run or on the next should that one end first, unless the notice also
   holds Coach records of another roadmap that only it holds: then it stays. One made signed out that
   names nobody and that the account's list does not hold waits, as the first point says, and its
-  notice keeps the records.
+  notice keeps the records. The one list shows none of these refusals,
+  and none is a failure: the carry-over reports what it cannot write again.
 - **Changes a signed-in browser had not sent** are committed to the bound replica as new gestures,
   after the roadmap's first pull. They take the time of the carry-over, so one made days ago with no
   connection counts as made now. They go only to the account the index row names, or whose list

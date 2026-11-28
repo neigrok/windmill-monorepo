@@ -25,6 +25,7 @@
 // refusal made an orphan still awaits its result. Where it is placed, the Coach records the refusal's notice holds about
 // it are written again in the same act, and the ledger names the refusal; the notice goes once that act has written them,
 // on this run or on the next should this one end first, unless it holds Coach records of another roadmap only it holds.
+// The one list shows none of the refusals the carry-over settles (`CarriedRefusals`).
 //
 // What cannot land. Each roadmap's acts are written as one composed act with the ledger last; a part the domain refuses
 // is set aside, in the ledger's one list where it is past a bound, past a cap, of a roadmap deleted or of one no longer
