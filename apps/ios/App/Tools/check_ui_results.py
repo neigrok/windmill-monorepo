@@ -16,6 +16,8 @@ EXPECTED_SKIPS = {
         "requires the verify skill's isolated backend",
     ("RoadmapIntegrationFlowTests", "testARoadmapMadePublicIsExportedAndAnotherAccountForksItFromTheGallery"):
         "requires the verify skill's isolated backend",
+    ("RoadmapCoachIntegrationFlowTests", "testAConversationBegunInABrowserOpensAndATurnRunsAgainstTheStack"):
+        "requires tools/coach-e2e/room_stack.py",
 }
 
 

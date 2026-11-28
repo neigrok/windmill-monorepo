@@ -190,6 +190,27 @@ ones steps wear, none where steps wear one hue alone (`filters`); the hue Add Ki
 each part that alone hides it (`BoardReading.reveal`, the domain's `revealing`, which the web's `BoardQuery.revealing`
 reads too), once the phone's copy holds the step, whether the Board then shows a list or nothing left.
 
+`Coach/` is Roadmap Coach in the room (roadmap-ios.md §8), which exists only where `-roadmap-coach on` launches a
+simulator's Debug build (`AppSettings.roadmapCoach`, `WM_ROADMAP_COACH_ENABLED`, never in Release): `RoadmapCoach` is the
+room's Coach, its composer's words and what they are about (`About`: the roadmap of the room the composer stands in, a
+roadmap gone into among them, or what a conversation's record says, and whether Coach writes there), a turn sent, stopped,
+recovered by its mark and a turn nobody ends ended stale, holding a question in the field while a turn is read back or the
+seat changes, each direct write offered in the room's band with its Undo, which records the receipt's fate, each turn's
+tool host kept while a write of it can still be undone, and the conversation, History and its delete, held with the room's
+band, read from the phone's copy; `RoadmapTurnHost` is the Coach engine's tool host over
+the room's runner and `RoadmapToolHost`, writing the turn's records as roadmap's acts under the turn's lease, the text at
+most once a second, and at the end the facts of its calls and receipts; `CoachProfile` reads the words the bundle carries
+from `packages/api-contract/roadmap/coach/` and the catalog; `CoachReceiptLine` words a receipt, as `receipts.json` holds
+it; `CoachComposer` is the composer, its suggestions, the turn's step line with Stop, and the notice above it;
+`CoachSheet` is the conversation sheet with History and What Coach Read; and `PlayedAiService`, Debug alone, is the AI
+service a launch plays with `-coach-play` (and `-coach-allowance spent` or `capacity`), which the flows
+(`RoadmapCoachFlowTests`) and captures (`RoadmapCoachCaptures`) run their turns on. A board launched with Coach runs the
+phone's clock, and the model server's with it, on from the board's moment (`RunningBoardClock`), so turns asked one after
+another are said in that order; `-board roadmap-signed-out` is a phone never signed in that holds *Learn to sail* with
+three steps done, and `-board roadmap-coach-history` an account whose other phone had five conversations, today, yesterday
+and days before, about *Learn to sail*, its *Read the wind*, every roadmap, *Spanish B1* and *Become a day skipper*.
+`RoadmapCoachIntegrationFlowTests` runs against `tools/coach-e2e/room_stack.py`.
+
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
 whose Find is the Board's and whose one tool is the Board's *Sort and filter* or the Graph's *Fit*, and at the foot the
@@ -1272,8 +1293,8 @@ and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the 
 the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
 class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
-`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures`, `RoadmapNestedCaptures`
-and `RoadmapSharingCaptures`. The CI shards leave
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures`, `RoadmapNestedCaptures`,
+`RoadmapSharingCaptures` and `RoadmapCoachCaptures`. The CI shards leave
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:

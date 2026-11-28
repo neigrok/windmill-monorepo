@@ -684,7 +684,8 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
 | `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by the binding it was issued under and writes nothing (gym's one act, `not-writable`) |
 | `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords`, `signInWork` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
-| `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
+| `subscription.read` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One and Settings Plan shows *Plan unavailable* with Retry until the next read |
+| `allowance.read` | The AI allowance read (`GET /v1/ai/allowance`), kind `billing`, under the tag `reason`: `server` for a 5xx other than `503 ai_allowance_disabled`, `shape` for a 200 that does not match the allowance contract. `503 ai_allowance_disabled`, a request lost and a 4xx report nothing | Settings AI allowance hides on `ai_allowance_disabled` and shows *Allowance unavailable* with Retry on other failures, never `$0` |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
 refusal, a refused clipboard, a browser refusing storage (one `[sync]` console warning per document, and writes still reach
@@ -720,3 +721,18 @@ repeated request's headers/error body reports the stopped turn outcome without a
 Unexpected host failures report `agent-host` once per turn, with the error the host raised. A seat-barrier write failure
 reports before the barrier rejects, without waiting for an in-flight provider to finish.
 No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.
+
+## Plan and AI allowance
+
+Settings reads the shared `GET /v1/subscription` state from `EntitlementsProvider` and reads `GET /v1/ai/allowance`
+independently. Both re-read on window focus. Unexpected read failures report to Sentry under the static operations
+`subscription.read` and `allowance.read` (above). User-visible steps emit allowlisted, bounded labels through
+`track` (`POST /v1/events`); no amount, date, email, transaction id or subscription id enters any event or report.
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| Plan section settles on a load or changes state, once per distinct settled tuple | `plan_viewed` | `state: error/free/active/renewal_slack/renewal_off/grace/on_hold/paused/expired/revoked/other`, `store: app_store/play_store/paddle/none/other`, `environment: production/sandbox/none`, `twice: true/false` |
+| External store manage or update-payment link clicked from Plan or Close your account | `subscription_manage_opened` | `store: app_store/play_store/paddle/none/other`, `from: plan/close_account`, `reason: manage/update_payment` |
+| Apple Refunds external link clicked in Plan | `subscription_refund_help_opened` | `store: app_store` |
+| Retry pressed in Plan or AI allowance after a failed read | `plan_retry` | `section: plan/allowance` |
+| Close your account expands while a production subscription will keep charging and shows a store cancel link, once per store per expansion | `account_close_store_link_shown` | `store: app_store/play_store/paddle/none/other` |

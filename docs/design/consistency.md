@@ -1364,18 +1364,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Journal
 
-- **Talk is live (owner, 2026-11-17).** [Journal Talk](../foundation/journal-talk.md) R-1 replaces the finished
-  recording of Journal · iOS 03.3P to 03.6P with words that appear as a person speaks. To draw, for the iPhone and
-  then the web, before it is built: listening with words arriving, unsettled words told apart from settled ones,
-  ending, the last minute of ten, a take that ended by itself for each cause, a quiet bridge, and every access
-  state. The sentence under a recording and in the microphone permission text is R-3's: Windmill keeps no audio,
-  and the service that writes it down keeps it for 30 days. 03.1P's permission text and the web's *No audio is
-  kept anywhere* say otherwise today. 03.7P's *write it down* reads as the finished recording and needs its
-  words checked. Ending a take offers Undo, which removes what it wrote; the ✕ that discarded a recording has no
-  other heir.
-- **Talk signed out against brand canon (owner, 2026-11-17).** The owner ruled that Talk's button is shown signed
-  out and opens sign-in. [Brand foundations](brand-foundations.md) says Windmill One is never shown signed out;
-  it takes this exception, or the rule is reworded.
+- **Talk is live, and built from nothing yet.** The iPhone's live Talk is drawn in Journal · iOS 03.11P–03.33P
+  with 03.1Pb, 03.2Pb and 03.7Pb, ✅ Ready for dev since the owner approved them on 2026-11-28, and worded in
+  [Talk — iOS Journal](ios/journal-talk.md); the finished recording of 03.1P–03.8P is 🗄 archived. Nothing of
+  Talk's screens is built. The web is not drawn.
+  Its *No audio is kept anywhere* (`journal.talk.promise`) is untrue of the service's 30 days, and
+  `web/public/privacy.html` names OpenAI for Talk without them; both change with the build that ships live Talk.
+- **Talk · an Undo that changed nothing.** Undo writes only while the page is exactly as the take left it, so a
+  page another device changed in between is left alone. 03.34P proposes the band's line, *Couldn't undo. The page
+  changed.*, as Roadmap · iOS 02.10d says *Couldn't bring back* of its rooms. 🧪, for the owner.
+- **Talk · VoiceOver and the open microphone.** A take captures with echo cancellation off (§5.2), so VoiceOver's
+  speech can be heard by the microphone and written on the page. The boards announce nothing while a take runs and
+  carry its start, last minute and end by haptics. Not checked on a device.
+- **Talk · the store door's sentence.** 04.3P offers Talk with *Windmill keeps no audio.* alone. R-3's second
+  sentence belongs wherever Talk is offered; the board is the subscriptions work's.
+- **Talk · the system's microphone dot.** The Design System's Theme has no `ios/system/orange`, so no board draws
+  the dot iOS shows while the microphone is open; the NOTE names it.
 - **iOS journal first run · R117.** AX3 keeps the longer privacy fact in a scrollable page.
 - **iOS journal without mood and energy (owner, 2026-11-08).** The iOS room draws no scale rows, no
   invitation and no ratings on earlier pages; the stored values and sync keep them, and the web still draws
@@ -2051,6 +2055,15 @@ Android. It and the product differ in these places.
   `start_session`, `log_set`, `log_sets`, `finish_session`, `discard_session` and `import_session`.
   The spec gives each ability one agent rule for both doors and withholds these until the owner
   rules (its Appendix B-1).
+- **6ab · Access words on the iPhone, gym's against Roadmap Coach's boards.** Roadmap Coach's notices follow its approved
+  boards (Roadmap · iOS 11.19a to 11.21), and the iPhone's gym Coach says the same states otherwise, for gym's owner to
+  align: no connection is *Asking needs a connection.* on 11.21, where gym says *No connection. Your question is kept here.*
+  (`CoachTurnRefusal.offline`) and *Coach needs a connection.* (`CoachCopy.offline`), and offers *Try again* where 11.21
+  offers nothing, Send being the retry; a spent allowance signed out is *You have used all of your AI allowance. Sign in to
+  continue.* with *Sign In* on 11.19a, where gym says the sentence alone with its own Sign in; signed in, 11.19b adds when it
+  renews (*It renews on 1 December.*) and offers *Use Your Agent*, where gym offers nothing; the shared capacity spent for
+  the day (11.20) offers *Use Your Agent*, as gym's *Use your own AI agent*, in title case. A notice stands in the band slot
+  above the composer on the boards, and at the conversation's end in gym's.
 - **6s · Pasted programs.** The Coach contract and both phones accept 8,000 UTF-8 bytes. The web's `QUESTION_BYTES`
   remains at 1,000, and the web textarea also limits character count to 1,000. Align the web when delivering its setup
   flow, preserving the complete draft and a specific length refusal rather than silently truncating a pasted program.

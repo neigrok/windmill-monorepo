@@ -12,7 +12,11 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use app_store::server_api::{ApiKey, Hosts, ServerApi};
+use app_store::server_api::{
+    ApiFailure, ApiFuture, ApiKey, AppStoreApi, Hosts, NotificationHistoryPage,
+    NotificationHistoryRequest, SendAttempt, SendAttemptResult, ServerApi, SignedStatus,
+    TestNotificationStatus, TestNotificationToken, TransactionHistoryPage,
+};
 use app_store::verification::SignedDataVerifier;
 use app_store_test_signer::TEST_ROOT;
 use axum::Router;
@@ -31,7 +35,7 @@ use serde_json::{Value, json};
 use server::config::Config;
 use server::internal;
 use server::listeners::{Bounds, Listener};
-use server::store_doors::{self, AppStoreDoor};
+use server::store_doors::{self, AppStoreDoor, TestNotificationOutcome, run_test_notification};
 use server::sweep::{HintPass, StoreHintSweep, Sweep};
 use server::telemetry::json_lines;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
@@ -275,7 +279,7 @@ async fn put_token(
 
 // The door with an in-app purchase key of the test's own, calling the test's Apple for both environments, or with none.
 fn door(ledger: &Ledger, clock: &Clock, apple: Option<&Url>) -> AppStoreDoor {
-    let api = apple.map(|url| {
+    let api: Option<Arc<dyn AppStoreApi>> = apple.map(|url| {
         let pkcs8 =
             EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
                 .unwrap();
@@ -292,7 +296,7 @@ fn door(ledger: &Ledger, clock: &Clock, apple: Option<&Url>) -> AppStoreDoor {
             production: url.clone(),
             sandbox: url.clone(),
         };
-        ServerApi::new(key, hosts, clock.reading())
+        Arc::new(ServerApi::new(key, hosts, clock.reading())) as Arc<dyn AppStoreApi>
     });
     let verifier = SignedDataVerifier::windmill_also_trusting(TEST_ROOT, clock.reading()).unwrap();
     AppStoreDoor::new(ledger.clone(), verifier, api, clock.reading())
@@ -1791,4 +1795,354 @@ fn the_inbox_step_applies_what_it_holds_while_apple_stalls_every_hint() {
         "{stopped_within:?}"
     );
     assert_eq!(events.len(), 0, "{events:#?}");
+}
+
+struct FakeApi {
+    request_answer: Mutex<Result<TestNotificationToken, ApiFailure>>,
+    status_answers: Mutex<std::collections::VecDeque<Result<TestNotificationStatus, ApiFailure>>>,
+    status_entry: Mutex<Option<Result<SignedStatus, ApiFailure>>>,
+    hints_written: Mutex<Vec<(Environment, String, String)>>,
+}
+
+impl FakeApi {
+    fn for_test_notification(
+        request_answer: Result<TestNotificationToken, ApiFailure>,
+        status_answers: Vec<Result<TestNotificationStatus, ApiFailure>>,
+    ) -> FakeApi {
+        FakeApi {
+            request_answer: Mutex::new(request_answer),
+            status_answers: Mutex::new(status_answers.into()),
+            status_entry: Mutex::new(None),
+            hints_written: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl AppStoreApi for FakeApi {
+    fn subscription_status<'a>(
+        &'a self,
+        _environment: Environment,
+        _original_transaction_id: &'a str,
+    ) -> ApiFuture<'a, SignedStatus> {
+        let answer = self
+            .status_entry
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or(Err(ApiFailure::NotFound));
+        Box::pin(async move { answer })
+    }
+
+    fn set_app_account_token<'a>(
+        &'a self,
+        environment: Environment,
+        original_transaction_id: &'a str,
+        app_account_token: &'a str,
+    ) -> ApiFuture<'a, ()> {
+        self.hints_written.lock().unwrap().push((
+            environment,
+            original_transaction_id.to_owned(),
+            app_account_token.to_owned(),
+        ));
+        Box::pin(async { Ok(()) })
+    }
+
+    fn transaction_history<'a>(
+        &'a self,
+        _environment: Environment,
+        _transaction_id: &'a str,
+        _revision: Option<&'a str>,
+    ) -> ApiFuture<'a, TransactionHistoryPage> {
+        Box::pin(async {
+            Ok(TransactionHistoryPage {
+                signed_transactions: Vec::new(),
+                revision: None,
+                has_more: false,
+            })
+        })
+    }
+
+    fn notification_history<'a>(
+        &'a self,
+        _environment: Environment,
+        _request: &'a NotificationHistoryRequest,
+        _pagination_token: Option<&'a str>,
+    ) -> ApiFuture<'a, NotificationHistoryPage> {
+        Box::pin(async {
+            Ok(NotificationHistoryPage {
+                entries: Vec::new(),
+                pagination_token: None,
+                has_more: false,
+            })
+        })
+    }
+
+    fn request_test_notification<'a>(
+        &'a self,
+        _environment: Environment,
+    ) -> ApiFuture<'a, TestNotificationToken> {
+        let answer = self.request_answer.lock().unwrap().clone();
+        Box::pin(async move { answer })
+    }
+
+    fn test_notification_status<'a>(
+        &'a self,
+        _environment: Environment,
+        _token: &'a TestNotificationToken,
+    ) -> ApiFuture<'a, TestNotificationStatus> {
+        let answer = self
+            .status_answers
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Err(ApiFailure::NotFound));
+        Box::pin(async move { answer })
+    }
+}
+
+#[tokio::test]
+async fn test_notification_runner_polls_and_logs_only_non_secret_outcomes() {
+    let (captured, _logs) = Captured::start();
+    let token = TestNotificationToken::new("secret-token-never-logged");
+
+    let delivered_api = FakeApi::for_test_notification(
+        Ok(token.clone()),
+        vec![
+            Err(ApiFailure::NotFound),
+            Err(ApiFailure::ServerError),
+            Ok(TestNotificationStatus {
+                signed_payload: "secret-payload-never-logged".to_owned(),
+                send_attempts: vec![],
+            }),
+            Ok(TestNotificationStatus {
+                signed_payload: "secret-payload-never-logged".to_owned(),
+                send_attempts: vec![
+                    SendAttempt {
+                        attempt_date: Some(1_000),
+                        result: Some(SendAttemptResult::TimedOut),
+                    },
+                    SendAttempt {
+                        attempt_date: Some(2_000),
+                        result: Some(SendAttemptResult::Success),
+                    },
+                ],
+            }),
+        ],
+    );
+    let delivered = run_test_notification(
+        &delivered_api,
+        Environment::Sandbox,
+        5,
+        Duration::from_millis(1),
+    )
+    .await;
+    delivered.log(Environment::Sandbox, Duration::from_millis(12));
+
+    let failed_delivery_api = FakeApi::for_test_notification(
+        Ok(token.clone()),
+        vec![Ok(TestNotificationStatus {
+            signed_payload: "secret-payload-never-logged".to_owned(),
+            send_attempts: vec![SendAttempt {
+                attempt_date: Some(1_000),
+                result: Some(SendAttemptResult::UnsuccessfulHttpResponseCode),
+            }],
+        })],
+    );
+    let delivery_failed = run_test_notification(
+        &failed_delivery_api,
+        Environment::Production,
+        2,
+        Duration::from_millis(1),
+    )
+    .await;
+    delivery_failed.log(Environment::Production, Duration::from_millis(5));
+
+    let pending_api =
+        FakeApi::for_test_notification(Ok(token.clone()), vec![Err(ApiFailure::NotFound)]);
+    let pending = run_test_notification(
+        &pending_api,
+        Environment::Sandbox,
+        2,
+        Duration::from_millis(1),
+    )
+    .await;
+    pending.log(Environment::Sandbox, Duration::from_millis(8));
+
+    let request_failed_api = FakeApi::for_test_notification(Err(ApiFailure::Unauthorized), vec![]);
+    let request_failed = run_test_notification(
+        &request_failed_api,
+        Environment::Production,
+        1,
+        Duration::from_millis(1),
+    )
+    .await;
+    request_failed.log(Environment::Production, Duration::from_millis(3));
+
+    let status_failed_api =
+        FakeApi::for_test_notification(Ok(token.clone()), vec![Err(ApiFailure::RateLimited)]);
+    let status_failed = run_test_notification(
+        &status_failed_api,
+        Environment::Sandbox,
+        3,
+        Duration::from_millis(1),
+    )
+    .await;
+    status_failed.log(Environment::Sandbox, Duration::from_millis(4));
+
+    let persistent_server_error_api = FakeApi::for_test_notification(
+        Ok(token),
+        vec![Err(ApiFailure::ServerError), Err(ApiFailure::ServerError)],
+    );
+    let persistent_server_error = run_test_notification(
+        &persistent_server_error_api,
+        Environment::Sandbox,
+        2,
+        Duration::from_millis(1),
+    )
+    .await;
+    assert_eq!(
+        persistent_server_error,
+        TestNotificationOutcome::StatusFailed(ApiFailure::ServerError)
+    );
+
+    assert_eq!(
+        (
+            delivered,
+            delivered.succeeded(),
+            delivery_failed,
+            delivery_failed.succeeded(),
+            pending,
+            request_failed,
+            status_failed,
+        ),
+        (
+            TestNotificationOutcome::Delivered { attempts: 2 },
+            true,
+            TestNotificationOutcome::DeliveryFailed {
+                attempts: 1,
+                result: Some(SendAttemptResult::UnsuccessfulHttpResponseCode),
+            },
+            false,
+            TestNotificationOutcome::Pending,
+            TestNotificationOutcome::RequestFailed(ApiFailure::Unauthorized),
+            TestNotificationOutcome::StatusFailed(ApiFailure::RateLimited),
+        )
+    );
+
+    let raw = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(!raw.contains("secret-token"), "{raw}");
+    assert!(!raw.contains("secret-payload"), "{raw}");
+    let lines = captured.take(&["store.test_notification"]);
+    assert_eq!(
+        lines,
+        vec![
+            json!({
+                "level": "INFO",
+                "message": "store.test_notification",
+                "operation": "store.test_notification",
+                "store": "app_store",
+                "environment": "sandbox",
+                "outcome": "delivered",
+                "send_attempt_result": "success",
+                "attempts": 2,
+            }),
+            json!({
+                "level": "ERROR",
+                "message": "store.test_notification",
+                "operation": "store.test_notification",
+                "store": "app_store",
+                "environment": "production",
+                "outcome": "delivery_failed",
+                "send_attempt_result": "unsuccessful_http_response_code",
+                "attempts": 1,
+            }),
+            json!({
+                "level": "WARN",
+                "message": "store.test_notification",
+                "operation": "store.test_notification",
+                "store": "app_store",
+                "environment": "sandbox",
+                "outcome": "pending",
+                "attempts": 0,
+            }),
+            json!({
+                "level": "ERROR",
+                "message": "store.test_notification",
+                "operation": "store.test_notification",
+                "store": "app_store",
+                "environment": "production",
+                "outcome": "request_failed",
+                "code": "api_unauthorized",
+            }),
+            json!({
+                "level": "ERROR",
+                "message": "store.test_notification",
+                "operation": "store.test_notification",
+                "store": "app_store",
+                "environment": "sandbox",
+                "outcome": "status_failed",
+                "code": "api_rate_limited",
+            }),
+        ]
+    );
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn app_store_door_accepts_a_fake_app_store_api_without_http() {
+    let start = 1_793_491_200_000;
+    let account_id = Uuid::new_v4().to_string();
+    let ((claimed, hints_written), events) = reported(with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let clock = Clock::at(start);
+        let status_json: Value = serde_json::from_str(&signed(
+            without_hint(story("subscription-status.json")),
+            start,
+        ))
+        .unwrap();
+        let last = &status_json["data"][0]["lastTransactions"][0];
+        let fake = Arc::new(FakeApi {
+            request_answer: Mutex::new(Err(ApiFailure::NotFound)),
+            status_answers: Mutex::new(std::collections::VecDeque::new()),
+            status_entry: Mutex::new(Some(Ok(SignedStatus {
+                status: last["status"].as_i64().map(|v| v as i32),
+                signed_transaction_info: last["signedTransactionInfo"].as_str().unwrap().to_owned(),
+                signed_renewal_info: last["signedRenewalInfo"].as_str().map(str::to_owned),
+            }))),
+            hints_written: Mutex::new(Vec::new()),
+        });
+        let verifier =
+            SignedDataVerifier::windmill_also_trusting(TEST_ROOT, clock.reading()).unwrap();
+        let door = AppStoreDoor::new(
+            ledger.clone(),
+            verifier,
+            Some(fake.clone() as Arc<dyn AppStoreApi>),
+            clock.reading(),
+        );
+        let (_, internal) = routers(&ledger, &door);
+        let tx_jws = signed(without_hint(story("purchase-transaction.json")), start);
+        let claimed = post(
+            &internal,
+            "/internal/v1/app-store/claims",
+            claim(&account_id, &tx_jws),
+            true,
+        )
+        .await;
+        let stop = CancellationToken::new();
+        let pass = StoreHintSweep::new(door).pass(&stop).await;
+        assert_eq!(
+            pass,
+            HintPass {
+                written: 1,
+                ..HintPass::default()
+            }
+        );
+        let written = fake.hints_written.lock().unwrap().clone();
+        (claimed, written)
+    }));
+    assert_eq!(claimed.0, StatusCode::OK);
+    assert_eq!(hints_written.len(), 1);
+    assert_eq!(hints_written[0].0, Environment::Sandbox);
+    assert_eq!(hints_written[0].2, account_id);
+    assert_eq!(events.len(), 0);
 }

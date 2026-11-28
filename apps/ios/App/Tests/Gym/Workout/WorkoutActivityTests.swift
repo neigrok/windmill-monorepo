@@ -79,7 +79,8 @@ import SyncTesting
     #expect(await WorkoutFixture.prepare(board, model: model))
     let gym = model.gym, workout = gym.workout, started = try #require(workout.session), seeded = workout.sets
     #expect(gym.isAnonymous && seeded.count == 2)
-    #expect(runtime.auth.fake?.boardClock == false)
+    let serverNow = try #require(runtime.auth.fake?.now)
+    #expect(abs(serverNow - SystemClock().nowMs()) < 60_000, "the model server reads the phone's own clock, not the board's still one")
     await runtime.engine.start()
     #expect(await WorkoutStateTests.until {
       (try? runtime.storageRead { try $0.device().activeReplica.meta.offset.clockReading }) != nil

@@ -27,11 +27,12 @@ wins.
   of making it.
 - **Everything done by hand works signed out** — writing, logging sets, building routines, planting
   steps, editing and every read. Nothing is disabled, dimmed or countdown-limited. Inside the product,
-  Windmill One is never shown signed out. A public page names it as a plain sentence that says it is
+  Windmill One is never shown signed out, with one exception: the journal's Talk button is shown and
+  opens the sign-in door. A public page names Windmill One as a plain sentence that says it is
   not on sale, with no badge and no button; only the pricing page gives its price.
 - **The only unprompted mentions of signing in** are the quiet Sign in where a person starts (iOS
   Where to start?, the web's seat menu), the Keep offer after the first real thing, and You. An
-  account verb the person starts — Share, Connect, Notes, a Coach question past the allowance —
+  account verb the person starts — Share, Connect, Notes, Talk, a Coach question past the allowance —
   opens the same door and resumes the action after sign-in.
 - **Never prompt** on launch, on a timer, after N edits, on exit intent, as a banner, as "save your
   work" or in urgency colours. Nothing counts declines.
@@ -231,7 +232,8 @@ The rules it does not break:
 1. **Free-form or nothing.** No mandatory fields, no forced prompts. Any scaffolding is skippable in
    one gesture and never re-asks.
 2. **Private, structurally.** No share control exists — not disabled, absent — and no share entity
-   exists in the data model. Voice audio is discarded once transcription succeeds.
+   exists in the data model. Windmill keeps no audio of Talk. The service that writes it down keeps it
+   for 30 days, and Talk must say so wherever it is offered.
 3. **No scoring.** No streaks, no percentage, no "you missed 3 days". A day not written is never
    coloured as failure. The product may *state* a pattern; it may not *grade* it.
 4. **Observations must be true and countable.** Anything said back comes from the person's own words

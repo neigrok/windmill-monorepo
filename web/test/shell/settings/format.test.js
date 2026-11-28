@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatUserAgent, relativeTime, shortDate, mcpKeyMeta } from '../../../src/shell/settings/format.js';
+import { formatMoney, formatUserAgent, mcpKeyMeta, relativeTime, shortDate, shortDayMonth, storeDisplayName } from '../../../src/shell/settings/format.js';
 
 test('formatUserAgent — browser on OS for the common desktop agents', () => {
   assert.equal(
@@ -68,4 +68,34 @@ test('mcpKeyMeta — a used key reports its last-active recency', () => {
     mcpKeyMeta({ createdMs: created, lastUsedMs: usedAt }),
     `Created ${shortDate(created)} · Last used 3h ago`,
   );
+});
+
+test('shortDayMonth — formats day and short month in the reader locale, empty for invalid inputs', () => {
+  const ts = Date.parse('2026-12-14T12:00:00Z');
+  assert.equal(shortDayMonth(ts), new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(ts)));
+  assert.equal(shortDayMonth(null), '');
+  assert.equal(shortDayMonth(undefined), '');
+  assert.equal(shortDayMonth(Number.NaN), '');
+});
+
+test('formatMoney — formats ISO currencies via Intl.NumberFormat and degrades cleanly', () => {
+  assert.equal(formatMoney('12.00', 'USD'), new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(12));
+  assert.equal(formatMoney('7.000000000', 'USD'), new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(7));
+  assert.equal(formatMoney('1800', 'JPY'), new Intl.NumberFormat(undefined, { style: 'currency', currency: 'JPY' }).format(1800));
+  assert.equal(formatMoney('12.00', 'NOT_A_CURRENCY'), '12.00 NOT_A_CURRENCY');
+  assert.equal(formatMoney('bad', 'USD'), '');
+  assert.equal(formatMoney('', 'USD'), '');
+  assert.equal(formatMoney('   ', 'USD'), '');
+  assert.equal(formatMoney(null, 'USD'), '');
+  assert.equal(formatMoney(undefined, 'USD'), '');
+  assert.equal(formatMoney({}, 'USD'), '');
+  assert.equal(formatMoney('12.00', ''), '');
+});
+
+test('storeDisplayName — maps known stores and passes unknown store identifiers through', () => {
+  assert.equal(storeDisplayName('app_store'), 'Apple');
+  assert.equal(storeDisplayName('play_store'), 'Google Play');
+  assert.equal(storeDisplayName('paddle'), 'Paddle');
+  assert.equal(storeDisplayName('other_store'), 'other_store');
+  assert.equal(storeDisplayName(null), '');
 });

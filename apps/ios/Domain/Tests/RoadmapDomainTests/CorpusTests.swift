@@ -8,9 +8,9 @@ struct CorpusTests {
   static let reads = ["account", "activity", "board", "diagnostics", "effects", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
 
   // `rules.json` and `values.json` run in RoadmapRulesTests, each family's actions in its own tests (a turn's in
-  // ConversationTests, a proposal's decisions in ApplyTests), and the scenes of `undo.json` in UndoTests.
+  // ConversationTests and TurnRecordsTests, a proposal's decisions in ApplyTests), and the scenes of `undo.json` in UndoTests.
   @Test func everyFileIsClaimed() throws {
-    let actions = ["apply", "conversation", "kinds", "landing", "progress", "roadmaps", "steps", "workspace"].map { "\($0)-actions" }
+    let actions = ["apply", "conversation", "kinds", "landing", "progress", "roadmaps", "steps", "turn-records", "workspace"].map { "\($0)-actions" }
     let claimed = (Self.reads + actions + ["rules", "undo", "values"]).map { "roadmap/domain/\($0).json" }
     #expect(try Contract.files(under: "roadmap/domain") == claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
   }

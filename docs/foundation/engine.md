@@ -4007,6 +4007,15 @@ bundle kept into the replica each page's seat belongs to ([the web as a device](
 row `carry:<seat>` (`localOnly`, `json`: the digest of every page of each act, whether the act wrote it or found
 it held) in the act that carries them. No phone writes or reads the row.
 
+**Talk's mark.** A take in progress keeps the device row `talkTake` (`localOnly`, [Journal Talk](journal-talk.md) D-5):
+`day`, the page's day in its id pattern; `bytesBefore`, the UTF-8 byte length of the page's text before the passage,
+its trailing whitespace removed, 0–131 072; `pageDigest`, the first 16 lowercase hex characters of the SHA-256 of the
+UTF-8 bytes of the page's text as the take last saved it, or as it stood at the press before any save; and `sessions`,
+at most four, in the order they were opened, each `{callId, bytesSaved, heardAt}`: its 22 base64url characters, the
+UTF-8 byte length of its part as last saved (0–131 072), and the device's epoch ms when it was last heard from. Every
+member is required. An array domain states no minimum length, so the row's domain admits a mark with no session. The
+row is never sent, so it moves no registry version.
+
 **Codes:** `claim-conflict` (a different claim under the same receipt id); all other refusals use
 the engine's codes.
 
