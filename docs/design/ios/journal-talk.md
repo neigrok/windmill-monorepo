@@ -1,13 +1,13 @@
 # Talk — iOS Journal
 
-Status: each board's status is in its Figma layer name. Nothing is built, and nothing here is built
-until its boards are ✅ Ready for dev. Behaviour is [Journal Talk](../../foundation/journal-talk.md)'s; this
+Status: ✅ Ready for dev, approved by the owner on 2026-11-28; 03.34P is a 🧪 proposal. Nothing is
+built. Behaviour is [Journal Talk](../../foundation/journal-talk.md)'s; this
 file holds what a person sees on the iPhone and every word Talk says there.
 
 The boards are in [03 · Windmill One — Talk and Echoes](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=259-1850)
 on the Journal file's iOS page, each Dark and Light: 03.11P–03.33P, and 03.1Pb, 03.2Pb and 03.7Pb,
-which correct 03.1P, 03.2P and 03.7P. 03.34P, an Undo that changed nothing, is a further proposal
-beside them. Their [NOTE](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=340-4901)
+which replace the archived 03.1P, 03.2P and 03.7P. 03.34P, an Undo that changed nothing, is a
+proposal beside them. Their [NOTE](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=340-4901)
 names the SwiftUI element of every part. The parts are three components on the file's Components
 page: the bottom bar during a take (`336:103`), the Talk line (`336:150`) and the band (`336:168`).
 

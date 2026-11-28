@@ -1368,10 +1368,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Journal
 
-- **Talk is live (owner, 2026-11-17).** [Journal Talk](../foundation/journal-talk.md) R-1 replaces the finished
-  recording of Journal · iOS 03.3P to 03.6P and 03.8P with words that appear as a person speaks. The iPhone is
-  drawn in 03.11P–03.33P with 03.1Pb, 03.2Pb and 03.7Pb and worded in [Talk — iOS Journal](ios/journal-talk.md);
-  each board's status is in its Figma layer name, and nothing of Talk's screens is built. The web is not drawn.
+- **Talk is live, and built from nothing yet.** The iPhone's live Talk is drawn in Journal · iOS 03.11P–03.33P
+  with 03.1Pb, 03.2Pb and 03.7Pb, ✅ Ready for dev since the owner approved them on 2026-11-28, and worded in
+  [Talk — iOS Journal](ios/journal-talk.md); the finished recording of 03.1P–03.8P is 🗄 archived. Nothing of
+  Talk's screens is built. The web is not drawn.
   Its *No audio is kept anywhere* (`journal.talk.promise`) is untrue of the service's 30 days, and
   `web/public/privacy.html` names OpenAI for Talk without them; both change with the build that ships live Talk.
 - **Talk · an Undo that changed nothing.** Undo writes only while the page is exactly as the take left it, so a
