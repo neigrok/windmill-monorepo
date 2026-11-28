@@ -6,10 +6,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod server_api;
 
-pub use server_api::HintWritten;
+pub use server_api::{HintWritten, TestNotificationOutcome, run_test_notification};
 
 use app_store::decoding::{self, Awaiting, Decoded};
-use app_store::server_api::ServerApi;
+use app_store::server_api::AppStoreApi;
 use app_store::verification::{self, Notification, SignedDataVerifier};
 use axum::body::Bytes;
 use axum::extract::State;
@@ -79,7 +79,7 @@ pub struct AppStoreDoor {
     ledger: Ledger,
     verifier: Arc<SignedDataVerifier>,
     // Absent while the deployment holds no in-app purchase key: nothing is pulled and no hint is written.
-    api: Option<Arc<ServerApi>>,
+    api: Option<Arc<dyn AppStoreApi>>,
     clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
     deliveries: TaskTracker,
     // Verification is CPU work, run off the async workers and at most once per core, so payloads nobody signed
@@ -122,14 +122,14 @@ impl AppStoreDoor {
     pub fn new(
         ledger: Ledger,
         verifier: SignedDataVerifier,
-        api: Option<ServerApi>,
+        api: Option<Arc<dyn AppStoreApi>>,
         clock: impl Fn() -> SystemTime + Send + Sync + 'static,
     ) -> AppStoreDoor {
         let cores = thread::available_parallelism().map_or(1, NonZero::get);
         AppStoreDoor {
             ledger,
             verifier: Arc::new(verifier),
-            api: api.map(Arc::new),
+            api,
             clock: Arc::new(clock),
             deliveries: TaskTracker::new(),
             verifications: Arc::new(Semaphore::new(cores)),
