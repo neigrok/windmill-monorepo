@@ -7,3 +7,7 @@ the web's and the iPhone's Coach profiles will ship it as it is, as gym's apps s
 | File | What it holds |
 |---|---|
 | `prompt.md` | The system prompt of a turn, byte for byte. |
+
+`receipts.json` holds what a person reads, not the model: each case a direct write's receipt as its Coach message records
+it (roadmap-coach.md §9), and the line the conversation shows of it, in English, at most eight words. The web claims it in
+`web/test/products/roadmap/coach/receiptLine.test.js`, the iPhone in its App's unit tests.

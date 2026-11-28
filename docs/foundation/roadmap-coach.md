@@ -675,6 +675,24 @@ composition. (R-4) They join the registry that holds a roadmap's structure
 A device also keeps rows of its own, which do not sync: the mark (§8), `applying` (§7) and a
 picture's original, as gym keeps one.
 
+A Coach message's `calls` and `receipts` are facts, written once with the turn's end, never a sentence and never a word of
+what a call answered (INV-5):
+
+- `calls`: each call the turn made, in order, the context first as the ability `context`: `{ability, treeId, outcome,
+  steps?, done?, nodeIds?, fields?}`, `treeId` null for a call about all roadmaps, `outcome` `ok` or the refusal code, and of
+  a read how many steps it answered and how many of them were done, the steps it named by id (at most 50) and the fields it
+  asked for. What Coach Read (board 11.8) and the line under an answer are made from them.
+- `receipts`: each direct write that landed (D-4), at most `MAX_WRITES`: `{ability, treeId, nodeId, label, change,
+  fields?, items?, prerequisites?}`, `label` the step's label after the write, the person's own roadmap data in their own
+  records, and `change` one of `completed`, `reset`, `changed` (with the `fields` changed, of `label`, `description` and
+  `links`, and the `items` added to its checklist), `created` (with the labels of the steps it follows) and `linked` (with the
+  label of the step now followed). A receipt's line is made from these and the app's words, never from the model's text, as
+  `packages/api-contract/roadmap/coach/receipts.json` holds it on every surface: at most eight words, a name cut a word at a
+  time where the line would pass them. A `coachWriteFate` names its receipt by index; one `undone` makes the line *Undone*.
+
+What a turn writes beyond its opening and end, and History's read, are proven by
+`packages/api-contract/roadmap/domain/turn-records-actions.json`.
+
 - A turn's states are gym's: `running`, then `completed`, `declined`, `failed`, `stopped` or
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
 - History is one list of every conversation, each tagged with its roadmap or with "All roadmaps",
