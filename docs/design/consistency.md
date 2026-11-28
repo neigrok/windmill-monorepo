@@ -1369,17 +1369,35 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Journal
 
 - **Talk is live (owner, 2026-11-17).** [Journal Talk](../foundation/journal-talk.md) R-1 replaces the finished
-  recording of Journal · iOS 03.3P to 03.6P with words that appear as a person speaks. To draw, for the iPhone and
-  then the web, before it is built: listening with words arriving, unsettled words told apart from settled ones,
-  ending, the last minute of ten, a take that ended by itself for each cause, a quiet bridge, and every access
-  state. The sentence under a recording and in the microphone permission text is R-3's: Windmill keeps no audio,
-  and the service that writes it down keeps it for 30 days. 03.1P's permission text and the web's *No audio is
-  kept anywhere* say otherwise today. 03.7P's *write it down* reads as the finished recording and needs its
-  words checked. Ending a take offers Undo, which removes what it wrote; the ✕ that discarded a recording has no
-  other heir.
-- **Talk signed out against brand canon (owner, 2026-11-17).** The owner ruled that Talk's button is shown signed
-  out and opens sign-in. [Brand foundations](brand-foundations.md) says Windmill One is never shown signed out;
-  it takes this exception, or the rule is reworded.
+  recording of Journal · iOS 03.3P to 03.6P and 03.8P with words that appear as a person speaks. The iPhone is
+  drawn as 🧪 proposals, 03.11P–03.33P with 03.1Pb, 03.2Pb and 03.7Pb, and worded in
+  [Talk — iOS Journal](ios/journal-talk.md). Until the owner approves them 03.1P–03.8P keep ✅, section 03's header
+  and its 2026-11-08 NOTE still describe the finished recording, and nothing of Talk's screens is built. The web is
+  not drawn. Its *No audio is kept anywhere* (`journal.talk.promise`) is untrue of the service's 30 days, and
+  `web/public/privacy.html` names OpenAI for Talk without them; both change with the build that ships live Talk.
+- **Talk · a refusal in the band or in the sheet.** Approved 03.2P and 03.7P say a refused microphone and offline
+  in the Talk sheet, and the spec keeps their place (§6). Live Talk has no sheet of its own, so the proposals say
+  every refusal as one sentence in the room's band (03.2Pb, 03.7Pb, 03.25P–03.27P), which runs no timer where the
+  roadmap's bands leave after six or nine seconds. Rule the band, or keep the sheet for every state of §4; in the
+  sheet 03.2P's words stand and 03.7P's sentence becomes *Talk needs a connection. Typing works offline.*
+- **Talk · signed out, the door does not say Windmill One.** A signed-out press opens the Shell's sign-in door
+  (R-4), and a person who signs in for Talk then meets the store door. Rule whether the door opened from Talk
+  says first that Talk is part of Windmill One; the door's words are the Shell's.
+- **Talk · the order of §4.** A refused microphone stands before No Windmill One, so a person without Windmill One
+  is sent to Settings and then meets the store door. An unasked microphone has no row: the boards ask only when
+  every other row has passed (03.1Pb). The spec's table has no row for a page already full at the press, a press
+  in the last 15 seconds of the day, a cut with a code Talk has no sentence for, or a connection that could not be
+  bridged; 03.22P, 03.32P and 03.33P word them.
+- **Talk · the phone locks itself.** A take ends when the app leaves the foreground (R-5), and a phone left
+  untouched locks after its Auto-Lock time while a person is still speaking. The spec does not say Talk keeps the
+  screen awake during a take; the boards assume it does.
+- **Talk · VoiceOver and the open microphone.** A take captures with echo cancellation off (§5.2), so VoiceOver's
+  speech can be heard by the microphone and written on the page. The boards announce nothing while a take runs and
+  carry its start, last minute and end by haptics. Not checked on a device.
+- **Talk · the store door's sentence.** 04.3P offers Talk with *Windmill keeps no audio.* alone. R-3's second
+  sentence belongs wherever Talk is offered; the board is the subscriptions work's.
+- **Talk · the system's microphone dot.** The Design System's Theme has no `ios/system/orange`, so no board draws
+  the dot iOS shows while the microphone is open; the NOTE names it.
 - **iOS journal first run · R117.** AX3 keeps the longer privacy fact in a scrollable page.
 - **iOS journal without mood and energy (owner, 2026-11-08).** The iOS room draws no scale rows, no
   invitation and no ratings on earlier pages; the stored values and sync keep them, and the web still draws

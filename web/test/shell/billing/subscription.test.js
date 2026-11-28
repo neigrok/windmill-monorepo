@@ -2,7 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { fetchSubscription, holdsWindmillOne, readSubscription } from '../../../src/shell/billing/subscription.js';
+import {
+  fetchSubscription,
+  hasProductionAppStoreRefundLink,
+  holdsWindmillOne,
+  isRenewalSlack,
+  manageUrlFor,
+  planTelemetry,
+  readSubscription,
+  storesChargingAfterClose,
+  telemetryStore,
+} from '../../../src/shell/billing/subscription.js';
 
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
@@ -46,6 +56,7 @@ test('a body that is not a SubscriptionResponse reads as none, and holds no Wind
   assert.equal(windmillOne, true);
   for (const body of [null, [], 'none', { status: 'none', active: false }, { ...closed, environment: 'staging' },
     { ...closed, purchasable: [1] }, { ...closed, accessUntil: '1799056800000' }, { ...closed, others: undefined },
+    { ...closed, others: [null] }, { ...closed, others: ['bad'] }, { ...closed, others: [[]] },
     unanswered, { ...closed, windmillOne: 'true' }]) {
     assert.equal(readSubscription(body), null, JSON.stringify(body));
     assert.equal(holdsWindmillOne(readSubscription(body)), false, JSON.stringify(body));
@@ -77,4 +88,93 @@ test('the read reports a server failure and a body of another shape, and nothing
     [null, ['shape']],
     [null, []],
   ]);
+});
+
+test('planTelemetry, refund links, renewal slack and close-account cancel stores follow the contract across every fixture', () => {
+  const byName = Object.fromEntries(examples().map(({ name, body }) => [name, body]));
+  const beforeEnd = byName.active.governing.nextChargeAt - 1000;
+  const afterEnd = byName.active.governing.nextChargeAt + 1000;
+
+  assert.equal(isRenewalSlack(byName.active.governing, beforeEnd), false);
+  assert.equal(isRenewalSlack(byName.active.governing, afterEnd), true);
+  assert.equal(isRenewalSlack(byName.cancelled_access_continues.governing, afterEnd), false);
+
+  assert.deepEqual(planTelemetry('error', null, beforeEnd), { state: 'error', store: 'none', environment: 'none', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.never_subscribed_line_closed, beforeEnd), { state: 'free', store: 'none', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.active, beforeEnd), { state: 'active', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.active, afterEnd), { state: 'renewal_slack', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.cancelled_access_continues, beforeEnd), { state: 'renewal_off', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.grace, beforeEnd), { state: 'grace', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.on_hold, beforeEnd), { state: 'on_hold', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.expired_line_open, beforeEnd), { state: 'expired', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.revoked_line_open, beforeEnd), { state: 'revoked', store: 'app_store', environment: 'production', twice: false });
+  assert.deepEqual(planTelemetry('ready', byName.charged_twice, beforeEnd), { state: 'active', store: 'app_store', environment: 'production', twice: true });
+  assert.deepEqual(planTelemetry('ready', byName.sandbox_allowlisted, beforeEnd), { state: 'active', store: 'app_store', environment: 'sandbox', twice: false });
+
+  assert.equal(telemetryStore('app_store'), 'app_store');
+  assert.equal(telemetryStore('play_store'), 'play_store');
+  assert.equal(telemetryStore('paddle'), 'paddle');
+  assert.equal(telemetryStore('unknown_vendor'), 'other');
+  assert.equal(telemetryStore(null), 'none');
+
+  assert.equal(hasProductionAppStoreRefundLink(byName.active), true);
+  assert.equal(hasProductionAppStoreRefundLink(byName.cancelled_access_continues), true);
+  assert.equal(hasProductionAppStoreRefundLink(byName.grace), true);
+  assert.equal(hasProductionAppStoreRefundLink(byName.charged_twice), true);
+  assert.equal(hasProductionAppStoreRefundLink(byName.on_hold), false);
+  assert.equal(hasProductionAppStoreRefundLink(byName.expired_line_open), false);
+  assert.equal(hasProductionAppStoreRefundLink(byName.revoked_line_open), false);
+  assert.equal(hasProductionAppStoreRefundLink(byName.sandbox_allowlisted), false);
+
+  assert.deepEqual(storesChargingAfterClose(byName.active), [{ store: 'app_store', url: 'https://apps.apple.com/account/subscriptions' }]);
+  assert.deepEqual(storesChargingAfterClose(byName.grace), [{ store: 'app_store', url: 'https://apps.apple.com/account/subscriptions' }]);
+  assert.deepEqual(storesChargingAfterClose(byName.on_hold), [{ store: 'app_store', url: 'https://apps.apple.com/account/subscriptions' }]);
+  assert.deepEqual(storesChargingAfterClose(byName.charged_twice), [{ store: 'app_store', url: 'https://apps.apple.com/account/subscriptions' }]);
+  assert.deepEqual(storesChargingAfterClose(byName.cancelled_access_continues), []);
+  assert.deepEqual(storesChargingAfterClose(byName.expired_line_open), []);
+  assert.deepEqual(storesChargingAfterClose(byName.revoked_line_open), []);
+  assert.deepEqual(storesChargingAfterClose(byName.sandbox_allowlisted), []);
+  assert.deepEqual(storesChargingAfterClose(byName.never_subscribed_line_closed), []);
+
+  const crossStore = {
+    ...byName.charged_twice,
+    others: [{ ...byName.charged_twice.others[0], store: 'play_store' }],
+  };
+  assert.deepEqual(storesChargingAfterClose(crossStore), [
+    { store: 'app_store', url: 'https://apps.apple.com/account/subscriptions' },
+    { store: 'play_store', url: 'https://play.google.com/store/account/subscriptions' },
+  ]);
+  assert.equal(manageUrlFor(crossStore, crossStore.others[0]), 'https://play.google.com/store/account/subscriptions');
+
+  // Paying twice where App Store entries are on_hold/paused must not show the Apple refund link.
+  const twiceOnHold = {
+    ...byName.on_hold,
+    others: [{ ...byName.on_hold.governing, subscriptionId: 'other-hold', state: 'paused' }],
+  };
+  assert.equal(hasProductionAppStoreRefundLink(twiceOnHold), false);
+
+  // manageUrlFor ignores Object.prototype keys and malformed https URLs with no host.
+  assert.equal(manageUrlFor(byName.active, { store: 'toString' }), null);
+  assert.equal(manageUrlFor(byName.active, { store: '__proto__' }), null);
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'https://' } },
+      { store: 'paddle' },
+    ),
+    null,
+  );
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'javascript:alert(1)' } },
+      { store: 'paddle' },
+    ),
+    null,
+  );
+  assert.equal(
+    manageUrlFor(
+      { ...byName.active, manage: { store: 'paddle', url: 'https://customer-portal.paddle.com/cpl_123' } },
+      { store: 'paddle' },
+    ),
+    'https://customer-portal.paddle.com/cpl_123',
+  );
 });

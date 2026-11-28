@@ -3,7 +3,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
-use server::config::{AppStoreApiKey, Config, ConfigError, Problem};
+use server::config::{AppStoreApiConfig, AppStoreApiKey, Config, ConfigError, Problem};
 use storage::DatabaseUrl;
 use tracing_subscriber::filter::LevelFilter;
 
@@ -478,4 +478,89 @@ fn an_address_naming_a_host_that_does_not_resolve_is_refused_by_its_name() {
         refusal.to_string(),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS names a host that does not resolve"
     );
+}
+
+#[test]
+fn app_store_api_config_loads_without_database_or_listener_variables() {
+    let private_key = p8();
+    let config = AppStoreApiConfig::from_environment(|variable| match variable {
+        "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID" => {
+            Some("57246542-96fe-1a63-e053-0824d011072a".to_owned())
+        }
+        "SUBSCRIPTIONS_APP_STORE_API_KEY_ID" => Some("2X9R4HXF34".to_owned()),
+        "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY" => Some(private_key.clone()),
+        _ => None,
+    })
+    .unwrap();
+
+    assert_eq!(
+        config,
+        AppStoreApiConfig {
+            key: ApiKey {
+                issuer_id: "57246542-96fe-1a63-e053-0824d011072a".to_owned(),
+                key_id: "2X9R4HXF34".to_owned(),
+                private_key: private_key.parse().unwrap(),
+            },
+            test_url: None,
+        }
+    );
+}
+
+#[test]
+fn app_store_api_config_requires_every_key_variable_and_guards_test_url() {
+    let private_key = p8();
+    for missing in [
+        "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID",
+        "SUBSCRIPTIONS_APP_STORE_API_KEY_ID",
+        "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY",
+    ] {
+        let refusal = AppStoreApiConfig::from_environment(|variable| {
+            if variable == missing {
+                return None;
+            }
+            match variable {
+                "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID" => Some("issuer".to_owned()),
+                "SUBSCRIPTIONS_APP_STORE_API_KEY_ID" => Some("key".to_owned()),
+                "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY" => Some(private_key.clone()),
+                _ => None,
+            }
+        })
+        .unwrap_err();
+        assert_eq!(
+            refusal,
+            ConfigError {
+                variable: missing,
+                problem: Problem::Missing,
+            }
+        );
+    }
+
+    for (env_name, allowed) in [
+        (Some("test"), true),
+        (Some("production"), false),
+        (None, false),
+    ] {
+        let result = AppStoreApiConfig::from_environment(|variable| match variable {
+            "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID" => Some("issuer".to_owned()),
+            "SUBSCRIPTIONS_APP_STORE_API_KEY_ID" => Some("key".to_owned()),
+            "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY" => Some(private_key.clone()),
+            "SUBSCRIPTIONS_APP_STORE_API_TEST_URL" => Some("http://127.0.0.1:18662".to_owned()),
+            "SENTRY_ENVIRONMENT" => env_name.map(str::to_owned),
+            _ => None,
+        });
+        if allowed {
+            assert_eq!(
+                result.unwrap().test_url,
+                Some("http://127.0.0.1:18662".parse().unwrap())
+            );
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                ConfigError {
+                    variable: "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+                    problem: Problem::RefusedInEnvironment,
+                }
+            );
+        }
+    }
 }

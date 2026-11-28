@@ -50,6 +50,29 @@ export function shortDate(ms) {
   return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+export function shortDayMonth(ms) {
+  if (!Number.isFinite(ms)) return '';
+  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(ms));
+}
+
+export function formatMoney(amount, currency) {
+  if (typeof amount !== 'number' && (typeof amount !== 'string' || amount.trim().length === 0)) return '';
+  const value = typeof amount === 'number' ? amount : Number(amount);
+  if (!Number.isFinite(value) || typeof currency !== 'string' || !currency) return '';
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
+  } catch {
+    return `${amount} ${currency}`;
+  }
+}
+
+export function storeDisplayName(store) {
+  if (store === 'app_store') return t('shell.plan.storeApple');
+  if (store === 'play_store') return t('shell.plan.storeGooglePlay');
+  if (store === 'paddle') return t('shell.plan.storePaddle');
+  return typeof store === 'string' ? store : '';
+}
+
 export function mcpKeyMeta(key) {
   if (!key.lastUsedMs) return t('shell.keys.metaNeverUsed', { created: shortDate(key.createdMs) });
   return t('shell.keys.metaUsed', { created: shortDate(key.createdMs), used: relativeTime(key.lastUsedMs) });
