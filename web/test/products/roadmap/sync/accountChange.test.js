@@ -9,13 +9,11 @@ import assert from 'node:assert/strict';
 import { randomInt } from 'node:crypto';
 import { hello } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
-import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { ActionRunner, EngineReplica } from '../../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../../src/platform/domain-kit/time.js';
-import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, OpenTurn, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
+import { CoachMessage, CoachProposal, CoachThread, Conversation, EndTurn, MintProposal, OpenTurn, WithdrawTurn } from '../../../../src/products/roadmap/domain/conversation.js';
 import { CreateRoadmap, CreateSubtree, DeleteRoadmap, WriteRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { ChangeStep } from '../../../../src/products/roadmap/domain/steps.js';
 import { MarkStep } from '../../../../src/products/roadmap/domain/progress.js';
@@ -249,7 +247,7 @@ const { pull, push } = await import('../../../../../packages/api-contract/sync/r
 const { RoadmapProduct } = await import('../../../../../packages/api-contract/sync/reference/roadmap/product.js');
 const { FakeChannels, FakeLocks } = await import('../../../platform/sync/fakes.js');
 const { roadmapRegistry } = await import('../domain/vectors.js');
-const { RoadmapScopes, writeIn } = await import('../../../../src/products/roadmap/domain/roadmapRules.js');
+const { RoadmapScopes } = await import('../../../../src/products/roadmap/domain/roadmapRules.js');
 const { Roadmap, RoadmapMeta, SetVisibility } = await import('../../../../src/products/roadmap/domain/roadmaps.js');
 const { CarryOver } = await import('../../../../src/products/roadmap/carry/CarryOver.js');
 const { Complete } = await import('../../../../src/products/roadmap/domain/progress.js');
@@ -623,25 +621,12 @@ test('a sign-in’s Discard takes the old stores of each roadmap the carry-over 
 // its own: storage, locks and channels.
 const ownDisk = () => ({ engines: new IDBFactory(), locks: new FakeLocks(), channels: new FakeChannels() });
 
-// A pending proposal about `tree` on Coach's answer, written raw: minting one is the propose ability's
-// (m4-model-proposals), so the test writes the record's fields as the registry admits them.
-class PendingProposal {
-  constructor(tree, { thread, coach }) {
-    this.tree = tree;
-    this.thread = thread;
-    this.coach = coach;
-  }
-
-  load(read) { return read.inScope(RoadmapScopes.account, (account) => ({ moment: account.moment })); }
-
-  decide({ moment }, ids) {
-    const id = ids.mint(CoachProposal);
-    const fields = () => ({ treeId: this.tree, threadId: this.thread.json, messageId: this.coach.json, base: { steps: {} },
-      changes: [{ op: 'rename', nodeId: 'wind', label: 'Read the wind well' }], state: 'pending' });
-    const plan = new Plan();
-    plan.create(new Valid({ id, fields }, moment));
-    return writeIn(RoadmapScopes.account, plan, id.record);
-  }
+// A pending proposal about `tree` on Coach's answer, minted as Coach's tool host mints one: a rename of `step`, its base
+// left empty, since nothing here applies it.
+/** @param {ActionRunner} runner @param {string} tree @param {string} step @param {{ thread: Id<any>, coach: Id<any> }} turn */
+function proposed(runner, tree, step, { thread, coach }) {
+  return runner.runAct(new MintProposal({ proposal: runner.mint(CoachProposal), treeId: tree, thread, message: coach,
+    changes: [{ op: 'rename', nodeId: step, label: 'Read the wind well' }], base: [] }));
 }
 
 // What a browser draws of Coach: each conversation, by what it is about, with who said what and the state Coach's turn
@@ -670,7 +655,7 @@ for (const answer of ['add', 'discard']) {
     const made = await runnerOf(engine).runAct(new CreateRoadmap('Learn to sail', { steps: [{ key: 'wind', label: 'Read the wind' }], links: [] }));
     const sail = String(made.result.tree);
     const turn = await answered(runnerOf(engine), sail);
-    assert.equal((await runnerOf(engine).runAct(new PendingProposal(sail, turn))).kind, 'committed');
+    assert.equal((await proposed(runnerOf(engine), sail, String(made.result.steps.wind), turn)).kind, 'committed');
     assert.equal((await runnerOf(engine).runAct(new OpenTurn({ about: { treeId: null }, question: 'And after that?' }))).kind, 'committed');
     const before = coachOf(engine);
     engine.transport.account = 'A';
