@@ -9,6 +9,8 @@ import { useSignInDoor } from '../auth/SignInDoor.jsx';
 import { PRODUCTS } from '../products.js';
 import { Button } from '../../design-system';
 import { ProfileSection } from './ProfileSection.jsx';
+import { PlanSection } from './PlanSection.jsx';
+import { AllowanceSection } from './AllowanceSection.jsx';
 import { ConnectedToolsSection } from './ConnectedToolsSection.jsx';
 import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
@@ -43,6 +45,8 @@ export function SettingsPage({ inShell = false }) {
       {seat === 'loading' ? null : seat === 'signed-in' ? (
         <>
           <ProfileSection />
+          <PlanSection />
+          <AllowanceSection />
           <ProductSections sections={PRODUCT_MAIN_SECTIONS} />
           <ConnectedToolsSection />
           <ApiKeysSection />

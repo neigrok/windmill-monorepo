@@ -412,25 +412,39 @@ Apple's App Store Server Notifications reference, read on 2026-11-14:
 
 ## App Store Server API
 
-`app_store::server_api::ServerApi` calls Apple's App Store Server API with Windmill's in-app purchase key,
-an `ApiKey`: its issuer id, its key id, and its private key, a P-256 key in PKCS#8 as the `.p8` file App
-Store Connect hands out holds it in PEM (`PrivateKey`, whose `Debug` prints `PrivateKey(redacted)`). Each
-request carries a JSON Web Token of its own as its bearer, signed ES256 with that key: the header `alg`
-`ES256`, `kid` the key id and `typ` `JWT`; the claims `iss` the issuer id, `iat` the clock's time in seconds,
-`exp` five minutes later (Apple takes at most an hour), `aud` `appstoreconnect-v1` and `bid`
-`works.windmill.app`, the bundle id the verifier pins.
+`app_store::server_api::AppStoreApi` is the async trait the server's doors call, behind `Arc<dyn AppStoreApi>` so
+tests substitute an in-memory fake with no HTTP. `ServerApi` implements it over HTTPS with Windmill's in-app
+purchase key, an `ApiKey`: its issuer id, its key id, and its private key, a P-256 key in PKCS#8 as the `.p8` file
+App Store Connect hands out holds it in PEM (`PrivateKey`, whose `Debug` prints `PrivateKey(redacted)`). Each
+request carries a JSON Web Token of its own as its bearer, signed ES256 with that key: the header `alg` `ES256`,
+`kid` the key id and `typ` `JWT`; the claims `iss` the issuer id, `iat` the clock's time in seconds, `exp` five
+minutes later (Apple takes at most an hour), `aud` `appstoreconnect-v1` and `bid` `works.windmill.app`, the bundle
+id the verifier pins.
 
 | Call | Request | What it answers |
 |---|---|---|
 | `subscription_status(environment, original_transaction_id)` | Get All Subscription Statuses, `GET /inApps/v1/subscriptions/{originalTransactionId}` | The lineage's entry among every subscription Apple lists for its customer, as a `SignedStatus`: its `status`, and its transaction and renewal info as Apple signed them, unverified |
 | `set_app_account_token(environment, original_transaction_id, token)` | Set App Account Token, `PUT /inApps/v1/transactions/{originalTransactionId}/appAccountToken` with `{"appAccountToken": token}` | Nothing: Apple names the token in the lineage's current transaction and every renewal after it |
+| `transaction_history(environment, transaction_id, revision)` | Get Transaction History v2, `GET /inApps/v2/history/{transactionId}` with optional `?revision=` | A `TransactionHistoryPage`: unverified `signed_transactions`, optional `revision` cursor, and `has_more` |
+| `notification_history(environment, request, pagination_token)` | Get Notification History, `POST /inApps/v1/notifications/history` with optional `?paginationToken=` and JSON `NotificationHistoryRequest` (`startDate`, `endDate`, optional `notificationType`, `notificationSubtype`, `onlyFailures`, `transactionId`) | A `NotificationHistoryPage`: `entries` (each an unverified `signed_payload` and its `send_attempts`), optional `pagination_token`, and `has_more` |
+| `request_test_notification(environment)` / `test_notification_status(environment, token)` | Request a Test Notification (`POST /inApps/v1/notifications/test`) and Get Test Notification Status (`GET /inApps/v1/notifications/test/{testNotificationToken}`) | A `TestNotificationToken` (redacted `Debug`, no `Display`) and a `TestNotificationStatus` holding the unverified `signed_payload` and its `send_attempts` |
+
+Every type that carries a signed payload, transaction id, cursor or test notification token either omits `Debug`
+(`SignedStatus`) or prints redacted (`PrivateKey`, `TransactionHistoryPage`, `NotificationHistoryRequest`,
+`NotificationHistoryEntry`, `NotificationHistoryPage`, `TestNotificationToken`, `TestNotificationStatus`). Each
+delivery attempt's `sendAttemptResult` maps into the closed `SendAttemptResult` enum (`Unknown` for any new Apple
+code), so no arbitrary network string reaches logs.
 
 The environment picks the host, `Hosts::apple()`: `https://api.storekit.apple.com` for production and
 `https://api.storekit-sandbox.apple.com` for sandbox; a test deployment hands both one address of its own
-([Configuration](#configuration)). A request ends within 3 s, connecting included, under the internal
-listener's 5 s; it follows no redirect, and no error message Apple sends is read. An answer that is not a
-success is one `ApiFailure`, whose `code` is all a line carries. Each code starts `api_`, so none reads as the
-verifier's or the ledger's code beside it in a line, a Sentry fingerprint or a throttle's slot:
+([Configuration](#configuration)). Path segments are percent-encoded through `Url::path_segments_mut`, and empty
+or dot path segments (`""`, `"."`, `".."`), empty cursors, or invalid `NotificationHistoryRequest` filter
+combinations (`start_date > end_date`, empty filter strings, `notification_subtype` without `notification_type`, or
+`notification_type` beside `transaction_id`) fail before any request is sent with `ApiFailure::BadRequest`. A
+request ends within 3 s, connecting included, under the internal listener's request bound; it follows no redirect,
+and no error message Apple sends is read. An answer that is not a success is one `ApiFailure`, whose `code` is all
+a line carries. Each code starts `api_`, so none reads as the verifier's or the ledger's code beside it in a line,
+a Sentry fingerprint or a throttle's slot:
 
 | `ApiFailure` | `code` | When | Of the API |
 |---|---|---|---|
@@ -439,19 +453,24 @@ verifier's or the ledger's code beside it in a line, a Sentry fingerprint or a t
 | `RateLimited` | `api_rate_limited` | 429 | yes |
 | `ServerError` | `api_server_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable: 4040002, 4040004 or 4040006 | yes |
 | `NotFound` | `api_not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
-| `BadRequest` | `api_bad_request` | Any other answer that is not a success, a redirect among them | no |
-| `Malformed` | `api_malformed` | A success whose body is not the shape Apple documents | no |
+| `BadRequest` | `api_bad_request` | Any other answer that is not a success, a redirect among them, or an invalid request input | no |
+| `Malformed` | `api_malformed` | A success whose body is not the shape Apple documents, or `hasMore: true` with no cursor or the same cursor passed in | no |
 
 `of_the_api()` is true of a failure any request would meet now, whatever it asks: the sweep stops writing
 hints at one rather than try each ([The sweep](#the-sweep)). The client verifies nothing it pulls: the door
 hands each entry to `SignedDataVerifier::verify_status` ([above](#app-store-signature-verification)), then
 to `decode_status` ([App Store decoding](#app-store-decoding)). `crates/app_store/tests/server_api.rs` runs
-both calls against an Apple served on a local port: the token's header, claims and signature, each
-environment's host, and the failure each answer comes to.
+all five operations against an Apple served on a local port: the token's header, claims and signature, each
+environment's host, query and path encoding, redacted `Debug`, `Arc<dyn AppStoreApi>`, and the failure each
+answer comes to.
 
-The calls, hosts, token and error codes follow Apple's App Store Server API reference, read on 2026-11-15:
+The calls, hosts, token and error codes follow Apple's App Store Server API reference:
 [Get All Subscription Statuses](https://developer.apple.com/documentation/appstoreserverapi/get-all-subscription-statuses),
 [Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token),
+[Get Transaction History](https://developer.apple.com/documentation/appstoreserverapi/get-transaction-history),
+[Get Notification History](https://developer.apple.com/documentation/appstoreserverapi/get-notification-history),
+[Request a Test Notification](https://developer.apple.com/documentation/appstoreserverapi/request-a-test-notification),
+[Get Test Notification Status](https://developer.apple.com/documentation/appstoreserverapi/get-test-notification-status),
 [StatusResponse](https://developer.apple.com/documentation/appstoreserverapi/statusresponse),
 [LastTransactionsItem](https://developer.apple.com/documentation/appstoreserverapi/lasttransactionsitem) and
 [Generating JSON Web Tokens for API requests](https://developer.apple.com/documentation/appstoreserverapi/generating-json-web-tokens-for-api-requests),
@@ -726,8 +745,14 @@ repeats it.
 `telemetry`, and the binary `subscriptions`, whose `main.rs` reads the configuration, starts telemetry,
 builds the App Store verifier and, while the in-app purchase key is set, the App Store Server API client,
 opens the ledger, and serves both listeners and runs the sweep until a signal. `store_doors` keeps its
-work through the App Store Server API, the claim, the refresh and the hint writes, in
-`store_doors/server_api.rs`.
+work through the App Store Server API — the claim, the refresh, the hint writes, and the
+`test-notification` CLI runner — in `store_doors/server_api.rs`.
+
+Running `subscriptions test-notification <sandbox|production>` reads only the App Store API key variables
+(`AppStoreApiConfig::from_environment`), without opening the ledger or starting either listener, asks Apple for a
+test notification, polls its delivery status, writes one `store.test_notification` JSON line carrying only
+allowlisted fields (`outcome`, `code`, `send_attempt_result`, `attempts`, `duration_ms`), and exits 0 when Apple
+reports `success` or 1 otherwise. It never prints the token, signed payload, key, or raw Apple error text.
 
 ### Configuration
 

@@ -50,6 +50,42 @@ impl AppStoreApiKey {
     }
 }
 
+// What a CLI command needs to call the App Store Server API without opening the ledger or starting either listener.
+#[derive(Debug, PartialEq)]
+pub struct AppStoreApiConfig {
+    pub key: ApiKey,
+    pub test_url: Option<Url>,
+}
+
+impl AppStoreApiConfig {
+    pub fn from_environment(
+        read: impl Fn(&str) -> Option<String>,
+    ) -> Result<AppStoreApiConfig, ConfigError> {
+        let variables = Variables(read);
+        let key = ApiKey {
+            issuer_id: variables.required("SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID")?,
+            key_id: variables.required("SUBSCRIPTIONS_APP_STORE_API_KEY_ID")?,
+            private_key: variables.required("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY")?,
+        };
+        let test_url = variables.base_url("SUBSCRIPTIONS_APP_STORE_API_TEST_URL")?;
+        if test_url.is_some() {
+            let environment: Option<String> = variables.optional("SENTRY_ENVIRONMENT")?;
+            if !environment.as_deref().is_some_and(is_test_deployment) {
+                return Err(ConfigError {
+                    variable: "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+                    problem: Problem::RefusedInEnvironment,
+                });
+            }
+        }
+        Ok(AppStoreApiConfig { key, test_url })
+    }
+}
+
+fn is_test_deployment(environment: &str) -> bool {
+    let normalized = environment.trim().to_ascii_lowercase();
+    TEST_DEPLOYMENTS.contains(&normalized.as_str())
+}
+
 impl Config {
     // An empty value counts as unset: compose renders an unset `${NAME:-}` as an empty string.
     pub fn from_environment(read: impl Fn(&str) -> Option<String>) -> Result<Config, ConfigError> {
@@ -75,8 +111,7 @@ impl Config {
             app_store_api_test_url: variables.base_url("SUBSCRIPTIONS_APP_STORE_API_TEST_URL")?,
             internal_token: variables.optional("SUBSCRIPTIONS_INTERNAL_TOKEN")?,
         };
-        let environment = config.environment.trim().to_ascii_lowercase();
-        let test_deployment = TEST_DEPLOYMENTS.contains(&environment.as_str());
+        let test_deployment = is_test_deployment(&config.environment);
         let test_only = [
             (
                 "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED",

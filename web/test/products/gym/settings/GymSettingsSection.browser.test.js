@@ -31,6 +31,7 @@ const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AuthProvider from '/src/shell/auth/AuthProvider.jsx';
+import EntitlementsProvider from '/src/shell/billing/EntitlementsProvider.jsx';
 import { SignInDoorProvider } from '/src/shell/auth/SignInDoor.jsx';
 import { AccountChrome } from '/src/shell/account/AccountChrome.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
@@ -46,8 +47,10 @@ function BrowsersOwn() {
 }
 window.mount = (signedIn) => {
   const neutral = signedIn ? { Component: SettingsPage, props: { inShell: true } } : { Component: BrowsersOwn, props: {} };
-  createRoot(document.getElementById('root')).render(React.createElement(AuthProvider, null, React.createElement(SignInDoorProvider, null,
-    React.createElement(Shell, { location: { pathname: '/app/settings', hash: '', search: '' }, neutral }))));
+  createRoot(document.getElementById('root')).render(React.createElement(AuthProvider, null,
+    React.createElement(EntitlementsProvider, null,
+      React.createElement(SignInDoorProvider, null,
+        React.createElement(Shell, { location: { pathname: '/app/settings', hash: '', search: '' }, neutral })))));
 };
 window.replica = () => syncSession.engine?.getSnapshot() ?? null;
 window.outbox = () => syncSession.engine.device.activeReplica.outbox.length;
