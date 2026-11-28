@@ -173,22 +173,26 @@ and reduced-motion mappings come from here.
 ## 8. Pictures on public pages
 
 A product picture on the front page or a product landing borrows its room's motion and invents none:
-a part its room does not move stays still, and so does every button drawn inside a picture.
+a part its room does not move stays still, and so does every labelled button a picture draws (Apply,
+Turn this down, Complete, Fork this tree, Go to page, Add movement).
 
-- **At rest** a picture is still.
-- **Under the pointer** a part gives its room's feedback (§0) at the room's values. It takes no press,
-  no focus and no cursor of its own, and it never shows a state, number or word the picture does not
-  already show.
-- **Arrival.** When a mouse or pen is on a picture that is at least 60% in view, the picture plays one
-  finite beat built from the room's own beats: a tree's open steps pulse ×2, and the unlock picture
-  plays ceremony #4 from the state it draws back to the same state. The beat plays again only after it
+- **At rest** a picture is still, and nothing moves before the picture has drawn.
+- **Under the pointer.** A picture answers a mouse or a pen on a device whose primary pointer hovers;
+  a finger never leaves anything lit or lifted. A part gives its room's feedback (§0) at the room's
+  values. It takes no press, no focus and no cursor of its own, and it never shows a state, number or
+  word the picture does not already show.
+- **Arrival.** When that pointer is on a picture that is at least 60% in view, or that covers at least
+  60% of the view's height, a picture that has a beat plays it: a tree's open steps pulse ×2, the
+  unlock picture plays ceremony #4 from the state it draws back to the same state, and Gym's
+  remembered weight lifts its ink. The other pictures have no beat. A beat plays again only after it
   has ended and the pointer has been away for 2400ms.
 - **While the pointer stays** a picture runs its room's one loop: a tree's crown breathes, a hovered
-  path card's crown breathes, a page's caret blinks. When the pointer leaves, the tree's crown plays
-  its breath to the end of the cycle and stops; a path card's crown ends with its card's hover, as on
-  the room's shelf; the caret returns solid at once.
-- **Without hover**, on a phone, a picture plays its beat once per page view, after 60% of it has stayed
-  in view for 400ms, one picture at a time down the page. Taps do nothing and no loop runs.
+  path card's crown breathes, a page's caret blinks; Journal's echo keeps its light. When the pointer
+  leaves, the tree's crown plays its breath to the end of the cycle and stops, a path card's crown
+  ends with its card's hover, the caret returns solid at once, and the echo's light settles.
+- **Without hover**, on a phone, a picture with a beat plays it once per page load, after it has
+  stayed that much in view for 400ms, one picture at a time down the page. There Journal's echo light
+  is a beat too: it kindles, holds and settles once. Taps do nothing and no loop runs.
 - **Calm ceiling.** Only the picture under the pointer starts motion. One the pointer has just left
   finishes its beat and its breath and starts nothing new. On a phone one beat plays at a time.
 - **Reduced motion** follows §5: colour and opacity changes stay, scale, travel, breath and pulse do

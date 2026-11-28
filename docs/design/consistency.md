@@ -2372,8 +2372,14 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   `/instrument.css` leaves the text in the browser's default face with the header unlaid, a failed `/appearance.js` leaves
   no switch and a failed `/events.js` tells nothing, and none of it reaches Sentry. Give the static pages a failure
   report, or say which of these the site accepts.
-- **The offline precache is near its limit.** The build's precache holds 4,051,796 of its 4,194,304-byte budget (96.6%,
+- **The offline precache is near its limit.** The build's precache holds 4,089,409 of its 4,194,304-byte budget (97.5%,
   `web/scripts/offlineShell.js`). Decide what leaves the shell, or the budget, before the next room dependency lands.
+- **Roadmap page boards draw earlier pictures.** On the Marketing file's Roadmap page boards (section `290:2508`) the
+  path cards' thumbnails are a five-step mini tree where the page draws the room's own constellation thumbnails
+  (`QuestThumb`), and the trees and thumbnails draw a step's ring in the lighter base colour where the page uses the
+  kind's ring colour. The Journal and Gym page boards have not been compared picture by picture. Redraw what differs:
+  the page, built from the rooms' own components and words, is the one to match. The state sheets in the Picture motion
+  section (`380:2535`) copy these boards.
 - **Superseded landing boards.** The Marketing file's superapp landing boards, among them `98:2538`
   (three product bands with per-room platform lines), and its boards for the earlier `/roadmap`, `/journal` and `/gym`
   landings describe pages the Instrument pages replaced. Archive them (🗄 Archived prefix and tag).
