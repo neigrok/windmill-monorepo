@@ -92,7 +92,7 @@ PINS = {
         '§5.3 the last text, whole': ['ended-text-replaces-part'],
         '§5.3 the passage and the page before it': ['open-empty-page', 'page-trailing-whitespace', 'page-crlf', 'page-astral',
                                                    'page-whitespace-alone', 'passage-empties'],
-        '§5.3 the page\'s size limit': ['page-full', 'open-page-full'],
+        '§5.3 the page\'s size limit': ['page-full', 'open-page-full', 'page-full-failed'],
         '§5.2 the service commits a turn itself': ['turn-forced'],
         '§5.4 an end before the first `started`': ['end-while-connecting'],
         '§5.4 the causes of an end': ['end-at-take-max', 'end-before-day-end', 'end-background', 'end-microphone-taken', 'end-capture-failed',

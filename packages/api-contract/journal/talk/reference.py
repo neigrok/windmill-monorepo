@@ -274,10 +274,9 @@ class Take:
         self.place(session, message['text'])
         if message['code'] == 'provider_failed' and self.phase == 'listening':
             return self.bridge(at, written=True)
-        if message['type'] == 'failed':
-            self.cause, self.code = 'service', message['code']
         if self.phase == 'listening':
             self.because('service', message['code'])
+        self.code = message['code'] or self.code
         self.finish()
 
     def started(self, at, session):

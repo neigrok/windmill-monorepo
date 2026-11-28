@@ -22,7 +22,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 14 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 91 stories, 612 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 92 stories, 616 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -196,13 +196,13 @@ A step that changes `saved` or `mark`, other than a `changed` step, is one `Save
 
 `end` is `{cause, code, heard, turns, commits, bridges}`:
 
-- `cause` is what first ended the take: `person`, `limit` (`TAKE_MAX`), `dayEnd`, `background`, `microphone`,
-  `capture`, `pageFull`, `refused` (before the first `started`), `service` (an `ended` the take did not ask for,
-  after `started`), `bridge` (a bridge that did not hold) or `defect`. A `failed` after `started` is the
-  exception: it makes the cause `service`, with its code, whenever it comes and whatever ended the take before.
-- `code` is the code that came with a `refused` or a `service` end, null where none came. For `bridge` it is the
-  code of the refusal that answered the last opening of the new session's door, and null where that opening got no
-  answer or the take ended on a loss.
+- `cause` is what first ended the take, always: `person`, `limit` (`TAKE_MAX`), `dayEnd`, `background`,
+  `microphone`, `capture`, `pageFull`, `refused` (before the first `started`), `service` (an `ended` or a `failed`
+  the take did not ask for, after `started`), `bridge` (a bridge that did not hold) or `defect`.
+- `code` is the service's or the door's code where one arrived: with a refusal, and with the session's last
+  message, also when that message comes after the take was already ending, so the cause stays and the code is
+  kept. It is null where none came. For `bridge` it is the code of the refusal that answered the last opening of
+  the new session's door, and null where that opening got no answer or the take ended on a loss.
 - `heard` says whether the take's last session said `started` and the take then placed its last message.
 - `turns` counts the turns, over all sessions, whose words as last heard hold text. `commits` counts the commits
   the take sent. `bridges` counts the sessions opened after the first. They are §10's counts.
@@ -268,9 +268,10 @@ join it; what holds text is never trimmed or normalised.
   session's last message places its text and the take is `ended`. With none by the deadline, where the
   connection is then closed, or when the connection is lost after `end` was sent, every word shown is saved as it
   arrived and the take is `ended`.
-- **The service ends a session.** An `ended` the take did not ask for, whatever its `stop`, places its text and
-  ends the take `service` with its code. So does a `failed` after `started`, whenever it comes; a
-  `provider_failed` while `listening` is bridged instead, and after `end` was sent it is a `failed` like any other.
+- **The service ends a session.** An `ended` the take did not ask for, whatever its `stop`, and a `failed` while
+  `listening`, place their text and end the take `service` with their code; a `provider_failed` while `listening`
+  is bridged instead. A `failed` after `end` was sent, `provider_failed` among them, is the session's last
+  message: its text is placed, the cause stays what it was, and `end.code` is the message's.
 - **The mark at the end.** It is cleared when every session has given its last message or its result. Otherwise
   it is written with the take's last save and stays, every word shown is saved as it arrived, and the take orders
   no more reads: the driver sends `recover`.
@@ -344,7 +345,7 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `ended-text-replaces-part` | §5.3: the last text, whole |
 | `open-empty-page`, `page-trailing-whitespace`, `page-crlf`, `page-astral`, `page-whitespace-alone` | §5.3: the passage and the page before it |
 | `passage-empties` | §5.3: a passage that holds no text after a save |
-| `page-full`, `open-page-full` | §5.3: the page's size limit |
+| `page-full`, `open-page-full`, `page-full-failed` | §5.3: the page's size limit, and a `failed` after it |
 | `other-device-meanwhile` | INV-2: the later save stands |
 | `end-at-take-max`, `end-before-day-end`, `end-background`, `end-microphone-taken`, `end-capture-failed` | §5.4: the causes of an end, and the day's last millisecond |
 | `end-limit-inside-frames`, `end-day-end-and-limit-together` | the clock: a deadline inside a run of frames, and two at one instant |
@@ -372,8 +373,8 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 Every frame sequence of a story begins its session with a quiet second and sets speech at 1,000,000 against a
 quiet of 0, so a revised floor does not move a commit here.
 
-`page-full`, `open-page-full` and `open-near-day-end-full-page` hold their pages whole, 131 KB a copy, as the
-journal corpus holds its bodies at the limit: 1.4 MB, 0.4 MB and 0.4 MB. A result too large for the page has no
+`page-full`, `page-full-failed`, `open-page-full` and `open-near-day-end-full-page` hold their pages whole,
+131 KB a copy, as the journal corpus holds its bodies at the limit: 1.4 MB, 1.2 MB, 0.4 MB and 0.4 MB. A result too large for the page has no
 story for that cost; `page-full` pins the rule for a last message, and `SaveSpoken` refuses the page either way.
 
 ### Readings
@@ -392,7 +393,7 @@ Where the specification leaves a choice, this is the one the stories take, and t
 | A bridge's session lost before `started` is bridged again under the same wait, even after the take was ended; after `end` was sent a loss ends the wait. | `bridge-lost-again`, `bridge-ended-then-lost`, `end-lost` |
 | Every cause of an end during a bridge is answered as the person's. | `bridge-ended-meanwhile`, `bridge-microphone-taken` |
 | Leaving the foreground during a bridge drops the kept frames, closes the opening and ends the take. | `bridge-background`, the one story an owner's ruling may flip |
-| `provider_failed` after `end` was sent is not bridged: its text is placed and the take ends `service` with that code. | `end-provider-failed` |
+| A `failed` after the take was already ending is not bridged: its text is placed, the cause stays and `end.code` is the message's. | `end-provider-failed`, `page-full-failed` |
 | A press over a standing mark replaces it, ends its recovery, and keeps the page's words. | `press-with-mark-standing`, `press-during-recovery` |
 | A press that opens no take changes nothing: the mark stays and its recovery goes on. | `press-refused-with-mark-standing` |
 | Undo's guard is the last save by the take or by the recovery that followed it; Undo ends a recovery under way. | `undo-after-recovery`, `undo-during-recovery`, `end-undo-after-typing` |

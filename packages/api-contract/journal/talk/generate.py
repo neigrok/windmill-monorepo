@@ -478,6 +478,11 @@ def word_stories():
     s.step(T + 5600, heard(A, turn(2, 'Tea first.')), shown=[['Tea first.']], saved=['Tea first.'], source='spoken', heard=[T + 5600])
     out.append(s)
 
+    s = opening('page-full-failed', 'a' * 131069)
+    s.step(T + 3900, heard(A, turn(1, 'bb')), phase='ending', do=[MIC_CLOSED], send=[END], wake=T + 3900 + END_WAIT)
+    s.step(T + 4600, heard(A, last('accounting_unavailable', 'bb')), phase='ended', marked=False, wake=None)
+    s.ends('pageFull', 'accounting_unavailable', turns=1); out.append(s)
+
     laptop = 'Up early.\n\nFrom the laptop.'
     s = opening('other-device-meanwhile'); first_turn(s)
     s.step(T + 4000, {'changed': {'body': laptop, 'source': 'typed'}}, stored=laptop, source='typed')
@@ -566,7 +571,7 @@ def end_stories():
 
     s = ending_take('end-provider-failed')
     s.step(T + 6800, heard(A, last('provider_failed', arrived + ' now')), phase='ended', shown=[[arrived + ' now']], saved=[arrived + ' now'], marked=False, wake=None)
-    s.ends('service', 'provider_failed', turns=2, commits=2); out.append(s)
+    s.ends('person', 'provider_failed', turns=2, commits=2); out.append(s)
 
     s = opening('end-limit-inside-frames'); first_turn(s)
     s.step(T + TAKE_MAX - 500, {'frames': [[SPEECH, 10]]}, phase='ending', do=[MIC_CLOSED], send=[audio(30, 34), END], wake=T + TAKE_MAX + END_WAIT)

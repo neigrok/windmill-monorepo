@@ -58,6 +58,6 @@
              "mark": null,
              "wakeAt": null}}
   ],
-  "end": {"cause": "service", "code": "provider_failed", "heard": true, "turns": 2, "commits": 2, "bridges": 0},
+  "end": {"cause": "person", "code": "provider_failed", "heard": true, "turns": 2, "commits": 2, "bridges": 0},
   "recovered": null
 }
