@@ -12,6 +12,20 @@ final class AiRoundBudget {
   init(deadline: Int64, admission: Admission) { self.deadline = deadline; self.admission = admission }
 }
 
+nonisolated public struct AiUse: Sendable, Hashable {
+  public let name: String
+  public let version: Int
+  public let label: String
+  public init(name: String, version: Int, label: String) { self.name = name; self.version = version; self.label = label }
+  var labelQuery: String {
+    "label=" + (label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#?"))) ?? "")
+  }
+}
+
+extension Profile {
+  nonisolated public var use: AiUse { AiUse(name: name, version: version, label: label) }
+}
+
 nonisolated public struct AiCredentials: Sendable {
   public let session: String?
   public let installation: String?
@@ -77,8 +91,12 @@ extension AiClock {
   public func stopAskingAgain() { stop = true; waitTask?.cancel(); cancelPreparation?() }
 
   public func allowance(profile: Profile, seat: Seat) async throws -> JSON {
+    try await allowance(for: profile.use, seat: seat)
+  }
+
+  public func allowance(for use: AiUse, seat: Seat) async throws -> JSON {
     let epoch = generation
-    let response = try await authorized(method: "GET", path: "/v1/allowance", profile: profile, seat: seat, epoch: epoch)
+    let response = try await authorized(method: "GET", path: "/v1/allowance", use: use, seat: seat, epoch: epoch)
     guard response.status == 200 else { throw defect("invalid-answer", source: .wire) }
     let value = try await body(response, operation: "ai-call", epoch: epoch)
     try fence(epoch)
@@ -88,13 +106,17 @@ extension AiClock {
   }
 
   public func upload(_ pictures: [Picture], profile: Profile, seat: Seat) async throws {
+    try await upload(pictures, use: profile.use, seat: seat)
+  }
+
+  func upload(_ pictures: [Picture], use: AiUse, seat: Seat) async throws {
     let epoch = generation
     for picture in pictures {
       guard Self.validID(picture.pictureId), ["image/png", "image/jpeg"].contains(picture.mediaType) else {
         throw defect("invalid_request", source: .wire)
       }
       let response = try await authorized(method: "PUT", path: "/v1/pictures/\(picture.pictureId)",
-        data: picture.bytes, contentType: picture.mediaType, profile: profile, seat: seat, epoch: epoch)
+        data: picture.bytes, contentType: picture.mediaType, use: use, seat: seat, epoch: epoch)
       guard response.status == 204 else { throw defect("invalid-answer", source: .wire) }
       try fence(epoch)
     }
@@ -102,15 +124,15 @@ extension AiClock {
 
   public func call(id: String, request: JSON, profile: Profile, seat: Seat, pictures: [Picture],
                    receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
-    try await round(id: id, body: request.jcs, profile: profile, seat: seat, pictures: pictures, recover: false, receive: receive)
+    try await round(id: id, body: request.jcs, use: profile.use, seat: seat, pictures: pictures, recover: false, receive: receive)
   }
 
   public func recover(id: String, profile: Profile, seat: Seat,
                       receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
-    try await round(id: id, body: nil, profile: profile, seat: seat, pictures: [], recover: true, receive: receive)
+    try await round(id: id, body: nil, use: profile.use, seat: seat, pictures: [], recover: true, receive: receive)
   }
 
-  func round(id: String, body: [UInt8]?, profile: Profile, seat: Seat, pictures: [Picture], recover: Bool,
+  func round(id: String, body: [UInt8]?, use: AiUse, seat: Seat, pictures: [Picture], recover: Bool,
              receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     guard Self.validID(id) else { throw defect("invalid_request", source: .wire) }
     let epoch = generation
@@ -118,7 +140,7 @@ extension AiClock {
     let budget = AiRoundBudget(deadline: clock.nowMs + 1_200_000, admission: recover ? .admitted : .none)
     do {
       let operation: @Sendable () async throws -> Void = { @MainActor [self] in
-        try await exchange(id: id, body: body, profile: profile, seat: seat, pictures: pictures,
+        try await exchange(id: id, body: body, use: use, seat: seat, pictures: pictures,
           recover: recover, budget: budget, epoch: epoch, receive: receive)
       }
       let expiry: @Sendable () async throws -> Void = { @MainActor [self] in
@@ -138,7 +160,7 @@ extension AiClock {
     }
   }
 
-  func exchange(id: String, body: [UInt8]?, profile: Profile, seat: Seat, pictures: [Picture], recover: Bool,
+  func exchange(id: String, body: [UInt8]?, use: AiUse, seat: Seat, pictures: [Picture], recover: Bool,
                 budget: AiRoundBudget, epoch: UInt64, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     var refusalDeadline: Int64?
     var retryRefusal: (deadline: Int64, failure: AiFailure)?
@@ -155,13 +177,12 @@ extension AiClock {
       if clock.nowMs >= budget.deadline { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
       if stop && askAgain { throw AiFailure(source: .transport, code: "stopped", admission: admission) }
       let method = recover || cursor > 0 ? "GET" : "PUT"
-      let label = profile.label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#?"))) ?? ""
-      let path = method == "GET" ? "/v1/calls/\(id)/result" + (cursor > 0 ? "?after=\(cursor)" : "") : "/v1/calls/\(id)/text?label=\(label)"
+      let path = method == "GET" ? "/v1/calls/\(id)/result" + (cursor > 0 ? "?after=\(cursor)" : "") : "/v1/calls/\(id)/text?\(use.labelQuery)"
       let source: AiFailure.Source = method == "GET" ? .result : .text
       var attemptSent = false
       do {
         let passToken: String = try await prepare(retry: askAgain, epoch: epoch) { [self] in
-          try await self.token(profile: profile, seat: seat, epoch: epoch)
+          try await self.token(use: use, seat: seat, epoch: epoch)
         }
         guard clock.nowMs < budget.deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
         if let retryRefusal, clock.nowMs >= retryRefusal.deadline { throw retryRefusal.failure }
@@ -187,7 +208,7 @@ extension AiClock {
           if failure.code == "pass_expired" && !passRefresh { passRefresh = true; pass = nil; continue }
           if failure.code == "picture_gone" && !pictureRefresh && !pictures.isEmpty && method == "PUT" {
             try await prepare(retry: askAgain, epoch: epoch) { [self] in
-              try await upload(pictures, profile: profile, seat: seat)
+              try await upload(pictures, use: use, seat: seat)
             }
             pictureRefresh = true
             continue
@@ -292,8 +313,8 @@ extension AiClock {
     if stop { throw AiFailure(source: .transport, code: "stopped", admission: admission) }
   }
 
-  func token(profile: Profile, seat: Seat, epoch: UInt64) async throws -> String {
-    if let pass, pass.seat == seat, pass.use == profile.name, pass.version == profile.version,
+  func token(use: AiUse, seat: Seat, epoch: UInt64) async throws -> String {
+    if let pass, pass.seat == seat, pass.use == use.name, pass.version == use.version,
        pass.expiresAt - clock.nowMs >= 60_000 { return pass.token }
     let start = clock.nowMs
     do {
@@ -302,7 +323,7 @@ extension AiClock {
       if let session = auth.session { headers["Authorization"] = "Bearer " + session }
       if let installation = auth.installation { headers["X-Windmill-Installation"] = installation }
       let request = JSON.object(.init(uniqueKeysWithValues: [("client", .string("ios")),
-        ("use", .string(profile.name)), ("version", .number(.init(profile.version)))]))
+        ("use", .string(use.name)), ("version", .number(.init(use.version)))]))
       let response = try await transport.send(AiRequest(method: "POST", path: "/v1/ai/passes", headers: headers, body: request.jcs))
       try fence(epoch)
       if !(200..<300).contains(response.status) { throw try await refusal(response, source: .pass, admission: .none, epoch: epoch) }
@@ -318,7 +339,7 @@ extension AiClock {
         expires = try value.member("expiresIn").asInteger()
         guard !token.isEmpty, expires > 0, expires <= 600_000 else { throw AiTransportFailure.invalidResponse }
       } catch { throw defect("invalid-answer", source: .pass) }
-      pass = Pass(token: token, expiresAt: start + expires, seat: seat, use: profile.name, version: profile.version)
+      pass = Pass(token: token, expiresAt: start + expires, seat: seat, use: use.name, version: use.version)
       return token
     } catch let failure as AiFailure { throw failure }
     catch let failure as HostFailure { throw failure }
@@ -330,9 +351,9 @@ extension AiClock {
   }
 
   func authorized(method: String, path: String, data: [UInt8]? = nil, contentType: String = "application/json",
-                  profile: Profile, seat: Seat, epoch: UInt64) async throws -> AiResponse {
+                  use: AiUse, seat: Seat, epoch: UInt64) async throws -> AiResponse {
     for attempt in 0...1 {
-      let token = try await token(profile: profile, seat: seat, epoch: epoch)
+      let token = try await token(use: use, seat: seat, epoch: epoch)
       let response: AiResponse
       do {
         response = try await transport.send(AiRequest(method: method, path: path,

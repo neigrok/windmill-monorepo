@@ -319,7 +319,7 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 
 - The iPhone app reads nothing about Windmill One or an allowance, has no microphone code and no
   microphone permission text.
-- The iPhone's AI client fetches a pass only for a Coach profile and speaks no WebSocket.
+- The iPhone's AI client speaks no WebSocket.
 - The web never marks a page `spoken`, though the journal's architecture says it does.
 - The web's copy says no audio is kept anywhere, which the provider's 30 days makes untrue.
 - The live door refuses every session in production until its audio billing is verified, and a paid

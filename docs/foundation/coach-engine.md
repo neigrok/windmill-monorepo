@@ -102,7 +102,9 @@ apps/ios/                   the engine, in Swift: a module `Agent`, the twin of 
 `POST /v1/ai/passes` is served by the backend. It is the only place a pass is signed (AI service
 I-1), and signing one asks nothing of any other service.
 
-The body is `{"client": "ios" | "android" | "web", "use": "<profile name>", "version": <integer>}`.
+The body is `{"client": "ios" | "android" | "web", "use": "<use>", "version": <integer>}`. A use is
+a Coach profile's name, or one a product without a profile names, as
+[Journal Talk](journal-talk.md) §3 does.
 
 | Presented | Answer |
 |---|---|
@@ -114,9 +116,9 @@ The body is `{"client": "ios" | "android" | "web", "use": "<profile name>", "ver
   for an allowlisted sandbox subscriber. An installation's pass states neither.
 - A pass lasts `PASS_LIFETIME`. `expiresIn` is the milliseconds it has left when it is signed, so a
   device counts them on its own clock and never compares the backend's clock with its own.
-- **A build can be retired.** `use` and `version` say which profile the device will run. The
-  backend holds, as configuration, the oldest version it signs for each use, and refuses an older
-  one as `client-update-required`. A pass does not carry them, and the AI service does not read
+- **A build can be retired.** `use` and `version` say which profile or other use the device will
+  run. The backend holds, as configuration, the oldest version it signs for each use, and refuses an
+  older one as `client-update-required`. A pass does not carry them, and the AI service does not read
   them: this retires an honest build whose Coach is found broken, and is no defence against anyone.
 - A session presented as a cookie is believed only with an allow-listed `Origin` and a JSON body,
   as the backend's other doors that take a cookie require.

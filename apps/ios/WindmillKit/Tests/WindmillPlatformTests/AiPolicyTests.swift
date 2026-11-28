@@ -106,6 +106,31 @@ import SyncCore
     #expect(diagnostics.failures == [])
   }
 
+  @Test func aPassIsFetchedForEachNamedUseAndACoachProfileNamesOne() async throws {
+    let transport = ValidationTransport([ValidationTransport.json(["pass": "talk", "expiresIn": 600000]), ValidationTransport.json(try Self.allowance()),
+                                         ValidationTransport.json(try Self.allowance()),
+                                         ValidationTransport.json(["pass": "coach", "expiresIn": 600000]), ValidationTransport.json(try Self.allowance())])
+    let client = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: PolicyDiagnostics(),
+                                 credentials: { seat in AiCredentials(session: seat.key, installation: "installation") })
+    let talk = AiUse(name: "journal.talk", version: 1, label: "talk")
+    let seat = Seat(kind: .bound, key: "session")
+    let profile = try Self.profile()
+    #expect(try await client.allowance(for: talk, seat: seat) == Self.allowance())
+    #expect(try await client.allowance(for: talk, seat: seat) == Self.allowance())
+    #expect(try await client.allowance(profile: profile, seat: seat) == Self.allowance())
+    #expect(transport.requests.map(\.path) == ["/v1/ai/passes", "/v1/allowance", "/v1/allowance", "/v1/ai/passes", "/v1/allowance"])
+    #expect(transport.requests.map(\.headers) == [
+      ["Authorization": "Bearer session", "X-Windmill-Installation": "installation", "Content-Type": "application/json", "Accept": "application/json"],
+      ["Authorization": "Bearer talk", "Content-Type": "application/json"],
+      ["Authorization": "Bearer talk", "Content-Type": "application/json"],
+      ["Authorization": "Bearer session", "X-Windmill-Installation": "installation", "Content-Type": "application/json", "Accept": "application/json"],
+      ["Authorization": "Bearer coach", "Content-Type": "application/json"],
+    ])
+    #expect(transport.requests[0].body.map { String(decoding: $0, as: UTF8.self) } == #"{"client":"ios","use":"journal.talk","version":1}"#)
+    #expect(try transport.requests[3].body.map { try JSON(parsing: $0) } == ["client": "ios", "use": .string(profile.name), "version": .number(.init(profile.version))])
+    #expect(profile.use == AiUse(name: profile.name, version: profile.version, label: profile.label))
+  }
+
   static func allowance() throws -> JSON {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

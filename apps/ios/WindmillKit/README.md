@@ -11,6 +11,10 @@ pins one HTTPS origin, has no cookie, credential or response cache and refuses r
 loopback-only HTTP option serves local verification. Session and installation credentials go only
 to the pass door. Text, result, allowance and picture requests carry only the pass.
 
+A pass is fetched for an `AiUse`: a name, a version and the label its calls carry. A Coach
+`Profile` gives one as `profile.use`; a product without a profile names its own, as Journal Talk's
+spec names `journal.talk`. `allowance(for:seat:)` reads the allowance under a use's pass.
+
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
 only. PUT transient refusal retries stop thirty seconds after the first PUT. After a lost answer,
