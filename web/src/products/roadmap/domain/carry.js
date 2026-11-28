@@ -588,9 +588,11 @@ export class CarryConversations {
         const now = Object.fromEntries(Object.entries(drawn.f ?? {}).map(([name, [each]]) => [name, each]));
         const later = Object.entries(registers).filter(([name, [, stamp]]) => Stamp.compare(stamp, drawn.f?.[name]?.[1] ?? Stamp.UNSET) > 0);
         value = aimed({ ...now, ...Object.fromEntries(later.map(([name, [each]]) => [name, each])) });
-        const changed = Object.keys(value).filter((name) => jcs(value[name] ?? null) !== jcs(now[name] ?? null));
+        const entity = type.decoding(record, value);
+        const writes = entity.fields();
+        const changed = Object.keys(value).filter((name) => Object.hasOwn(writes, name) && jcs(value[name] ?? null) !== jcs(now[name] ?? null));
         if (changed.length === 0) continue;
-        plan.update(new Valid(type.decoding(record, value), moment, changed), { fields: changed });
+        plan.update(new Valid(entity, moment, changed), { fields: changed });
       }
       written += 1;
       const thread = type === CoachThread ? id : value.threadId;
