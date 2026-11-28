@@ -126,7 +126,8 @@ person is told why before they speak. It stops at the first row that holds:
    code as §4 maps it, and clears the mark. So does a door that has not said `started` within
    `OPEN_WAIT`.
 4. Talk sends no `context` frame and names no language.
-5. A take is not opened within `END_WAIT` of the end of the day.
+5. A take is not opened within `END_WAIT` of the end of the day. A press that opens no take changes
+   nothing: a mark still standing stays, and its recovery goes on.
 
 ### §5.2 Audio and pauses
 
@@ -203,7 +204,7 @@ A session the service ends is read the same way: its `text` is placed and saved.
 | `ended` `cut` with `idle` | ends; the words stay. Talk says it stopped listening. |
 | `ended` `cut` with a refusal of the next slice | ends; the words stay; §4 says why. |
 | `ended` `cut` with `paused` or `restarting` | ends; the words stay; Talk says it is not available now. |
-| `failed` `provider_failed` after `started` | is bridged (§5.5). After `end` was sent nothing is bridged: the words are saved as they arrived and the mark stays for §5.6. |
+| `failed` `provider_failed` after `started` | is bridged (§5.5). After `end` was sent it is not bridged and ends the take as any other `failed` does. |
 | any other `failed` after `started` | ends; the words stay; §4 says why. |
 
 ### §5.5 A connection lost
@@ -222,7 +223,7 @@ refused one.
 3. When the new session answers `started`, the device sends what it kept, then the live audio. A
    take that ends meanwhile, by the person or any other cause, is answered the same way: the kept
    audio is sent, then `end`. Leaving the foreground is the exception (INV-3): the kept audio is
-   dropped and `end` follows alone.
+   dropped, the new session's opening is closed and the take ends with the words it has.
 4. With no `started` within `BRIDGE_WAIT`, or on any other refusal, the take ends with its words.
    A new session lost before its `started` is bridged again within the same wait, whether or not
    the take has ended meanwhile.
@@ -346,7 +347,7 @@ one line for each, as the Coach engine §10 says. It holds no route of Talk's ow
 | `MIN_TURN` | 10 speech frames, the service's 1 s | the pause rule's |
 | `SPEECH_MIN` | an energy of 10,737, which is −50 dBFS | the pause rule's |
 | `LIVENESS` | 2 s | Talk's |
-| `OPEN_WAIT` | 10 s | Talk's |
+| `OPEN_WAIT` | 15 s, over the service's `LIVE_OPEN` | Talk's |
 | `BRIDGE_WAIT` | 10 s, the service's `LIVE_BURST` | Talk's |
 | `MAX_BRIDGES` | 3 | Talk's |
 | `BRIDGE_RETRY` | 2 s | Talk's |

@@ -4,7 +4,7 @@
 import datetime
 import hashlib
 
-TAKE_MAX, OPEN_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, END_WAIT, RESULT_POLL, RECOVER_FOR = 600000, 10000, 10000, 2000, 15000, 5000, 600000
+TAKE_MAX, OPEN_WAIT, BRIDGE_WAIT, BRIDGE_RETRY, END_WAIT, RESULT_POLL, RECOVER_FOR = 600000, 15000, 10000, 2000, 15000, 5000, 600000
 FRAME, SAMPLES, PAUSE, MIN_TURN, SPEECH_MIN, MAX_BRIDGES, PAGE_MAX, DAY = 100, 2400, 7, 10, 10737, 3, 131072, 86400000
 # ECMAScript's WhiteSpace and LineTerminator, as the journal corpus trims: U+0085 is content.
 WHITESPACE = '\t\n\v\f\r                  　﻿'
@@ -211,6 +211,8 @@ class Take:
             self.store.save(None, None, self.mark() if unanswered else None)
 
     def end(self, at, cause):
+        if cause == 'background' and self.bridge_ends is not None:
+            return self.leave_bridge()
         if self.phase in ('ending', 'ended'):
             return
         if self.phase == 'connecting':
@@ -223,8 +225,15 @@ class Take:
         if self.bridge_ends is None:
             return self.send_end(at)
         self.end_owed = True
-        if cause == 'background':
-            self.kept = []
+
+    # INV-3: a bridge does not go on in the background. Its kept frames are dropped and its opening is closed.
+    def leave_bridge(self):
+        session = self.current
+        if session.door:
+            self.do.append({'close': session.call})
+        session.lost, session.door = True, False
+        self.because('background')
+        self.finish()
 
     def send_end(self, at):
         self.send.append({'type': 'end'})
@@ -262,12 +271,11 @@ class Take:
             return self.words(at, session, message)
         if not session.started:
             return self.refused(at, session, message['code'])
-        if message['code'] == 'provider_failed' and self.end_sent is not None:
-            session.lost = True
-            return self.finish()
         self.place(session, message['text'])
-        if message['code'] == 'provider_failed':
+        if message['code'] == 'provider_failed' and self.phase == 'listening':
             return self.bridge(at, written=True)
+        if message['type'] == 'failed':
+            self.cause, self.code = 'service', message['code']
         if self.phase == 'listening':
             self.because('service', message['code'])
         self.finish()
@@ -564,10 +572,13 @@ class Driver:
         if name == 'changed':
             self.store.page = value
         elif name == 'press':
+            self.take = Take(self.store, self.offset, self.calls)
+            self.take.press(at)
+            if self.take.phase == 'ended' and self.acting is not None:
+                return
             if recovery is not None and recovery.phase == 'recovering':
                 recovery.end('press')
-            self.take = self.acting = Take(self.store, self.offset, self.calls)
-            self.take.press(at)
+            self.acting = self.take
         elif name == 'recover':
             self.recovery = self.acting = Recovery(self.store, self.offset, at)
         elif name == 'undo':

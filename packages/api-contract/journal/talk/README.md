@@ -9,7 +9,7 @@ Talk runs every file here, and its runner fails on a file it does not run.
 it writes. `reference.py` is a second derivation: the pause rule, a take and a recovery, written from the
 specification and this file, reading nothing `generate.py` states. `check.py` requires the reference to give every
 answer the files state by hand, and holds the scripts to the AI wire and the marks to the registry;
-`check.py --self-test` also proves it refuses 80 wrong sets of files. The reference checks and writes nothing.
+`check.py --self-test` also proves it refuses 82 wrong sets of files. The reference checks and writes nothing.
 
 ```sh
 python3 packages/api-contract/journal/talk/generate.py --check
@@ -22,7 +22,7 @@ python3 packages/api-contract/journal/talk/check.py --self-test
 |---|---|---|
 | `pauses.json` | 6 frames and their energies, 22 sequences and their commits | `PauseRule` |
 | `saves.json` | 14 scenes | `SaveSpoken` |
-| `takes/<name>.json` | 89 stories, 604 steps | `Take`, `TakeRecovery` |
+| `takes/<name>.json` | 91 stories, 612 steps | `Take`, `TakeRecovery` |
 
 `pauses.json` and `saves.json` are the kit's arrays of `{name, input, expect}`, compared by JCS
 ([kit forms](../../domain-kit/README.md)). A file of `takes/` is one story in the form `journal-take/v1`, a
@@ -151,7 +151,8 @@ journal corpus's scenes do: a repeated retirement is a difference the corpus per
   mints, used in order, every one of them.
 - `steps`: each `{at, in, out}`. `at` is the device's clock in ms. `in` is one input, an object with one key.
   `out` holds the seven outputs after it, all seven always.
-- `end`: how the take ended, or null while it runs or where the story has none.
+- `end`: how the take ended, or null while it runs or where the story has none. A press that opened no take says
+  why here too.
 - `recovered`: how the recovery finished, or null while it runs or where the story has none.
 
 A `press` begins a `Take`. A `recover` begins a `TakeRecovery` from the mark and the page as stored then. A story
@@ -183,7 +184,7 @@ has one take at most and one recovery at most, in either order.
 
 | Output | Meaning |
 |---|---|
-| `phase` | Of the part the last `press` or `recover` began: `connecting`, `listening`, `bridging`, `ending` or `ended` for a take; `recovering` or `recovered` for a recovery. |
+| `phase` | Of the part acting, the take a press began or the recovery a `recover` began: `connecting`, `listening`, `bridging`, `ending` or `ended` for a take; `recovering` or `recovered` for a recovery. A press that opens no take leaves a recovery acting. |
 | `do` | The driver's orders of this step: `{microphone: "open" \| "closed"}`, `{close: callId}`, `{open: callId}` (open the live door for it), `{read: callId}` (read its result). They are listed in that order of kinds. |
 | `send` | The frames sent in this step on the current session's connection, in order: `{audio: [first, last]}`, captured frames by their number in the take from 1; `{type: "commit"}`; `{type: "end"}`. |
 | `page` | What that part shows: `{text, unsettled}`. `unsettled` holds one half-open range of UTF-16 offsets into `text` for each turn whose words are shown and not saved, in order. |
@@ -196,8 +197,9 @@ A step that changes `saved` or `mark`, other than a `changed` step, is one `Save
 `end` is `{cause, code, heard, turns, commits, bridges}`:
 
 - `cause` is what first ended the take: `person`, `limit` (`TAKE_MAX`), `dayEnd`, `background`, `microphone`,
-  `capture`, `pageFull`, `refused` (before the first `started`), `service` (an `ended` or a `failed` the take did
-  not ask for, after `started`), `bridge` (a bridge that did not hold) or `defect`.
+  `capture`, `pageFull`, `refused` (before the first `started`), `service` (an `ended` the take did not ask for,
+  after `started`), `bridge` (a bridge that did not hold) or `defect`. A `failed` after `started` is the
+  exception: it makes the cause `service`, with its code, whenever it comes and whatever ended the take before.
 - `code` is the code that came with a `refused` or a `service` end, null where none came. For `bridge` it is the
   code of the refusal that answered the last opening of the new session's door, and null where that opening got no
   answer or the take ended on a loss.
@@ -239,7 +241,8 @@ join it; what holds text is never trimmed or normalised.
 ### A take
 
 - **Press.** Within `END_WAIT` of the day's end the take ends at once, `dayEnd`; otherwise, on a page with no
-  room for the blank line and one byte, it ends at once, `pageFull`. Neither mints a `callId` or writes a mark.
+  room for the blank line and one byte, it ends at once, `pageFull`. Neither mints a `callId` or writes a mark,
+  and neither changes anything else: a mark still standing stays, and its recovery goes on.
   Otherwise the take writes its mark over any mark still standing, orders the door opened and is `connecting`; a
   recovery under way ends, and writes nothing after. A take reads the page once, here: the words it finds, an
   earlier take's among them, are the page's text before it.
@@ -264,10 +267,10 @@ join it; what holds text is never trimmed or normalised.
 - **An end.** The microphone closes and `end` is sent; the take is `ending` and goes on placing words. The
   session's last message places its text and the take is `ended`. With none by the deadline, where the
   connection is then closed, or when the connection is lost after `end` was sent, every word shown is saved as it
-  arrived and the take is `ended`. A `failed` `provider_failed` after `end` was sent ends the wait the same way:
-  its text is not placed, and the recovery reads it.
-- **The service ends a session.** An `ended` the take did not ask for, whatever its `stop`, and a `failed` other
-  than `provider_failed`, place their text and end the take `service` with their code.
+  arrived and the take is `ended`.
+- **The service ends a session.** An `ended` the take did not ask for, whatever its `stop`, places its text and
+  ends the take `service` with its code. So does a `failed` after `started`, whenever it comes; a
+  `provider_failed` while `listening` is bridged instead, and after `end` was sent it is a `failed` like any other.
 - **The mark at the end.** It is cleared when every session has given its last message or its result. Otherwise
   it is written with the take's last save and stays, every word shown is saved as it arrived, and the take orders
   no more reads: the driver sends `recover`.
@@ -287,8 +290,10 @@ join it; what holds text is never trimmed or normalised.
 - Frames captured while `bridging` are kept and sent, in order, when the new session says `started`; its
   `PauseRule` starts with the first of them.
 - A take that ends meanwhile, by any cause, is `ending`, and `end` follows the kept frames when the new session
-  says `started`. Leaving the foreground is the one exception: the kept frames are dropped and `end` follows
-  alone (INV-3 as written; the owner may rule otherwise, and then `bridge-background` alone moves).
+  says `started`. Leaving the foreground is the one exception: the kept frames are dropped, the new session's
+  opening is closed, no `end` is sent, and the take is `ended` with the words it has; the mark keeps both
+  sessions for the recovery (INV-3 as written; the owner may rule otherwise, and then `bridge-background` alone
+  moves).
 - A first message `failed` `concurrency_exhausted` is tried again `BRIDGE_RETRY` later under the same `callId`,
   while that falls before the wait's end. Any other first failure, an `unopened`, and the wait's end with no
   `started` end the take `bridge`.
@@ -328,7 +333,7 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 |---|---|
 | `open-and-end`, `open-refused`, `open-provider-unavailable`, `open-unopened` | §5.1 steps 2 and 3 |
 | `open-no-started` | §5.1 step 3: `OPEN_WAIT` |
-| `press-with-mark-standing`, `press-during-recovery` | §5.1 step 2: a press over a standing mark, and a result after it |
+| `press-with-mark-standing`, `press-during-recovery`, `press-refused-with-mark-standing` | §5.1 steps 2 and 5: a press over a standing mark, a result after it, and a press that opens no take |
 | `open-near-day-end`, `open-near-day-end-full-page` | §5.1 step 5, and the day's end before a full page |
 | `open-lost` | §5.5: a first session lost before `started` |
 | `end-while-connecting` | §5.4: an end before the first `started` |
@@ -344,7 +349,7 @@ One set of rules, `TakeRecovery`'s, which a `Take` uses for its lost sessions.
 | `end-at-take-max`, `end-before-day-end`, `end-background`, `end-microphone-taken`, `end-capture-failed` | §5.4: the causes of an end, and the day's last millisecond |
 | `end-limit-inside-frames`, `end-day-end-and-limit-together` | the clock: a deadline inside a run of frames, and two at one instant |
 | `end-no-ended`, `end-lost`, `end-ended-at-deadline` | §5.4 step 3, and an `ended` at the instant its wait ends |
-| `end-undo`, `end-undo-mark-standing`, `end-undo-after-typing`, `undo-after-recovery`, `undo-during-recovery` | §5.4 step 4 |
+| `end-undo`, `end-undo-mark-standing`, `end-undo-after-typing`, `undo-after-recovery`, `undo-during-recovery`, `undo-after-press-over-recovery` | §5.4 step 4 |
 | `cut-idle`; `cut-subject-exhausted`, `cut-funding-required`; `cut-paused`, `cut-restarting` | §5.4's table, rows 1 to 3 |
 | `bridge-provider-failed`, `end-provider-failed` | §5.4's table, row 4, while listening and after `end` |
 | `failed-accounting-unavailable`, `failed-invalid-request` | §5.4's table, row 5 |
@@ -386,14 +391,16 @@ Where the specification leaves a choice, this is the one the stories take, and t
 | A clear of the mark is not guarded by the page. | `recover-page-changed`; the scene "the mark is cleared on a page that has changed" |
 | A bridge's session lost before `started` is bridged again under the same wait, even after the take was ended; after `end` was sent a loss ends the wait. | `bridge-lost-again`, `bridge-ended-then-lost`, `end-lost` |
 | Every cause of an end during a bridge is answered as the person's. | `bridge-ended-meanwhile`, `bridge-microphone-taken` |
-| Leaving the foreground during a bridge drops the kept frames. | `bridge-background` |
-| `provider_failed` after `end` was sent is not bridged and not placed; the mark stays. | `end-provider-failed` |
+| Leaving the foreground during a bridge drops the kept frames, closes the opening and ends the take. | `bridge-background`, the one story an owner's ruling may flip |
+| `provider_failed` after `end` was sent is not bridged: its text is placed and the take ends `service` with that code. | `end-provider-failed` |
 | A press over a standing mark replaces it, ends its recovery, and keeps the page's words. | `press-with-mark-standing`, `press-during-recovery` |
-| Undo's guard is the last save by the take or its recovery; Undo ends a recovery under way. | `undo-after-recovery`, `undo-during-recovery`, `end-undo-after-typing` |
+| A press that opens no take changes nothing: the mark stays and its recovery goes on. | `press-refused-with-mark-standing` |
+| Undo's guard is the last save by the take or by the recovery that followed it; Undo ends a recovery under way. | `undo-after-recovery`, `undo-during-recovery`, `end-undo-after-typing` |
+| A recovery that finished before the take's press is no part of Undo's guard. | `undo-after-press-over-recovery` |
 | A deadline takes effect before an input of the same instant. | `end-ended-at-deadline` |
 | A result after midnight finds the mark cleared. | `recover-result-after-midnight` |
 | Each frame is its own input: a deadline falls between two frames. | `end-limit-inside-frames` |
-| A door with no `started` within `OPEN_WAIT` ends the take `refused`. | `open-no-started` |
+| A door with no `started` within `OPEN_WAIT` ends the take `refused`; the service's own reason arrives inside that wait. | `open-no-started`, `open-provider-unavailable` |
 | Of two deadlines at one instant, the day's end comes before the limit. | `end-day-end-and-limit-together` |
 | The day's end is checked before the page's room at the press. | `open-near-day-end-full-page` |
 | A recovery with no mark does nothing. | `recover-no-mark` |
@@ -418,7 +425,6 @@ Where the specification leaves a choice, this is the one the stories take, and t
 | §5.3: the page takes no typing while a take runs | The editor's. A UI test. |
 | §5.5: `LIVENESS` | The connection's own check. A take sees `lost`. |
 | §5.6: the pull that precedes a recovery; the mark and the seat | The driver's and the engine's: a mark is a row of its replica. |
-| A press that opens no take while a mark stands | No ruling. The reference lets it end a recovery under way and leave the mark. |
 | INV-1, INV-4 | Storage and logs: the tests through the real door (§9). |
 | §9: sequences recorded from a microphone | They wait for the capture and for the floor. |
 | Typing that keeps `spoken` | The journal corpus's `page-actions.json`. |
@@ -461,5 +467,5 @@ Talk (R-6).
   day or over 131,072 bytes is refused; every other decision writes the mark last among its device writes, and
   the mark alone writes nothing else.
 - Every clause the files pin has a story, and every story is named by a clause: the table `PINS`.
-- The self-test changes the files 80 ways, each a mistake an implementation or an author could make, and requires
+- The self-test changes the files 82 ways, each a mistake an implementation or an author could make, and requires
   every one refused: 39 of them are a reviewer's, written without reading this folder's generator or checker.
