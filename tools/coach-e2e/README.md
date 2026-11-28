@@ -60,5 +60,6 @@ python3 tools/coach-e2e/room_stack.py --backend-binary <build>/windmill_server -
   --scratch <empty folder> --command-file <argv.json> --ports 8302 8303 8304 8305 8306
 ```
 
-`evidence.json` counts the passes the backend signed and the calls through the origin, and fails the run where a backend
-credential reached the AI service or a session reached a log.
+`evidence.json` counts the passes the backend signed, the calls through the origin and the Coach events the phone sent to
+`/v1/events`, and fails the run where a backend credential reached the AI service or a session reached a log. The seed's
+output is in `seed.log`, the suite's in `suite.log`.

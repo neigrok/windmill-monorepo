@@ -80,10 +80,10 @@ class Provider(http.server.BaseHTTPRequestHandler):
             return self.tool("update_node", {"treeId": context.get("tree", {}).get("id", ""), "nodeId": step,
                                              "subtasks": [words[:1].upper() + words[1:]]})
         if answered:
-            return self.finish("end_turn", closed=True)
+            return self.stop("end_turn", closed=True)
         frontier = [line["label"] for line in steps if line.get("state") == "available"]
         self.text(" ".join(frontier[:2]) + " are open now." if frontier else "Start at the top.")
-        self.finish("end_turn")
+        self.stop("end_turn")
 
     def text(self, words):
         self.events([{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
@@ -93,9 +93,9 @@ class Provider(http.server.BaseHTTPRequestHandler):
         self.events([{"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_" + secrets.token_hex(6), "name": name, "input": {}}},
                      {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": json.dumps(arguments)}},
                      {"type": "content_block_stop", "index": 0}])
-        self.finish("tool_use", closed=True)
+        self.stop("tool_use", closed=True)
 
-    def finish(self, reason, closed=False):
+    def stop(self, reason, closed=False):
         if not closed:
             self.events([{"type": "content_block_stop", "index": 0}])
         self.events([{"type": "message_delta", "delta": {"stop_reason": reason}, "usage": {"output_tokens": 10}}, {"type": "message_stop"}])
@@ -142,6 +142,8 @@ class Origin(http.server.BaseHTTPRequestHandler):
         if ai and any(key.lower() in ("cookie", "x-windmill-installation") for key in headers):
             stack.leaks.append(path)
         stack.requests.append(self.command + " " + path)
+        if path == "/v1/events":
+            stack.events += [event.get("name", "") for event in json.loads(body or b"{}").get("events", [])]
         upstream = http.client.HTTPConnection("127.0.0.1", stack.ai_port if ai else stack.backend_port, timeout=120)
         try:
             upstream.request(self.command, self.path, body or None, headers)
@@ -174,7 +176,7 @@ class Stack:
         self.scratch = args.scratch.resolve()
         self.scratch.mkdir(parents=True, exist_ok=True)
         self.processes, self.servers, self.databases = [], [], []
-        self.requests, self.leaks = [], []
+        self.requests, self.leaks, self.events = [], [], []
         self.backend_port, self.ai_port, self.provider_port, self.internal_port, self.origin_port = args.ports
         self.session = secrets.token_hex(24)
         self.account = str(uuid.uuid4())
@@ -243,11 +245,11 @@ class Stack:
         self.session_file = self.scratch / "session.json"
         self.session_file.write_text(json.dumps({"account": self.account, "token": self.session, "email": self.owner}))
         os.chmod(self.session_file, 0o600)
-        seeded = subprocess.run(["node", str(ROOT / "tools/coach-e2e/room_seed.mjs")], env={**os.environ, "PORT": str(self.backend_port),
-                                "WM_COACH_E2E_SESSION": str(self.session_file)}, capture_output=True, text=True, timeout=150)
-        self.log("seed", seeded.stdout.strip().replace("\n", " | "))
+        with (self.scratch / "seed.log").open("w") as log:
+            seeded = subprocess.run(["node", str(ROOT / "tools/coach-e2e/room_seed.mjs")], env={**os.environ, "PORT": str(self.backend_port),
+                                    "WM_COACH_E2E_SESSION": str(self.session_file)}, stdout=log, stderr=subprocess.STDOUT, timeout=150)
         if seeded.returncode != 0:
-            raise SystemExit("the browser could not seed the account: " + seeded.stdout[-600:] + seeded.stderr[-600:])
+            raise SystemExit("the browser could not seed the account; see " + str(self.scratch / "seed.log"))
 
     def run_suite(self):
         command = json.loads(self.args.command_file.read_text())
@@ -280,9 +282,10 @@ class Stack:
     def evidence(self):
         backend = (self.scratch / "backend.log").read_text(errors="replace")
         ai = (self.scratch / "ai.log").read_text(errors="replace")
+        coach = sorted(name for name in set(self.events) if name.startswith("roadmap_coach_"))
         return {"leaks": self.leaks, "sessionLogged": self.session in backend or self.session in ai,
                 "passesSigned": backend.count("ai.pass.sign"), "calls": sum(1 for request in self.requests if request.startswith("PUT /v1/calls/")),
-                "requests": len(self.requests)}
+                "requests": len(self.requests), "coachEvents": {name: self.events.count(name) for name in coach}}
 
 
 def main():

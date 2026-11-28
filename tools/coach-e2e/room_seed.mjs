@@ -14,8 +14,9 @@ import { registry } from '../../web/src/platform/sync/schema.js';
 import { HttpTransport } from '../../web/src/platform/sync/transport.js';
 import { ActionRunner, EngineReplica } from '../../web/src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../web/src/platform/domain-kit/time.js';
+import { Id } from '../../web/src/platform/domain-kit/entities.js';
 import { CreateRoadmap } from '../../web/src/products/roadmap/domain/roadmaps.js';
-import { EndTurn, OpenTurn } from '../../web/src/products/roadmap/domain/conversation.js';
+import { CoachMessage, EndTurn, OpenTurn } from '../../web/src/products/roadmap/domain/conversation.js';
 import { RoadmapScopes } from '../../web/src/products/roadmap/domain/roadmapRules.js';
 import { FakeLocks, FakeTimers } from '../../web/test/platform/sync/fakes.js';
 
@@ -40,6 +41,12 @@ await engine.signIn(account);
 await engine.start();
 engine.observe(RoadmapScopes.account);
 const runner = new ActionRunner(new EngineReplica(engine), engine.registry, new FixedZone(0));
+// An act run as the browser runs it, its gesture let go at once so the engine sends it.
+const run = async (act) => {
+  const outcome = await runner.runAct(act);
+  if (outcome.kind === 'committed') await runner.release(outcome.receipt.gestureId);
+  return outcome;
+};
 const settle = async () => {
   for (let turn = 0; turn < 40; turn++) {
     for (let wait = 0; !engine.leader && wait < 1000; wait++) await new Promise((done) => setImmediate(done));
@@ -53,12 +60,12 @@ const settle = async () => {
 
 const steps = [['choose', 'Choose a sailing course', []], ['parts', 'Name the boat parts', ['choose']], ['rig', 'Rig the boat', ['parts']],
   ['read', 'Read the wind', ['parts']], ['tie', 'Tie a bowline', ['parts']], ['leave', 'Leave the dock', ['rig', 'read']]];
-const planted = await runner.run(new CreateRoadmap('Learn to sail', {
+const planted = await run(new CreateRoadmap('Learn to sail', {
   steps: steps.map(([key, label]) => ({ key, label })), links: steps.flatMap(([key, , follows]) => follows.map((from) => [from, key])) }));
 console.log(`  ${planted.kind === 'committed' ? 'ok  ' : 'FAIL'} the browser planted Learn to sail`);
-const opened = await runner.run(new OpenTurn({ about: { treeId: String(planted.result.tree?.record ?? planted.result.tree) }, question: 'Which step is first?' }));
+const opened = await run(new OpenTurn({ about: { treeId: String(planted.result.tree) }, question: 'Which step is first?' }));
 const ended = opened.kind === 'committed'
-  ? await runner.run(new EndTurn(opened.result.coach, { state: 'completed', text: 'Choose a sailing course comes first.' })) : opened;
+  ? await run(new EndTurn(new Id(opened.result.coach, CoachMessage), { state: 'completed', text: 'Choose a sailing course comes first.' })) : opened;
 console.log(`  ${ended.kind === 'committed' ? 'ok  ' : 'FAIL'} the browser began a conversation about it, its turn ended`);
 await settle();
 const left = engine.device.activeReplica.outbox.filter((entry) => ['ready', 'sent', 'held'].includes(entry.state)).length;
