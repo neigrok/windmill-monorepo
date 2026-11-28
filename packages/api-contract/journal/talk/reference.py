@@ -151,8 +151,8 @@ class Take:
         self.phase = 'connecting'
 
     def because(self, cause, code=None):
-        if self.cause is None:
-            self.cause, self.code = cause, code
+        self.cause = self.cause or cause
+        self.code = code or self.code
 
     def stop(self, cause, code=None):
         self.because(cause, code)
@@ -274,9 +274,7 @@ class Take:
         self.place(session, message['text'])
         if message['code'] == 'provider_failed' and self.phase == 'listening':
             return self.bridge(at, written=True)
-        if self.phase == 'listening':
-            self.because('service', message['code'])
-        self.code = message['code'] or self.code
+        self.because('service', message['code'])
         self.finish()
 
     def started(self, at, session):
@@ -297,12 +295,11 @@ class Take:
 
     def words(self, at, session, message):
         turn = session.turns.setdefault(message['turn'], {'text': '', 'settled': False})
-        if message['type'] == 'text' and not turn['settled']:
-            turn['text'] += message['delta']
-        if message['type'] == 'text' or self.full:
+        if message['type'] == 'text':
+            turn['text'] += '' if turn['settled'] else message['delta']
             return
         turn['text'], turn['settled'] = message['text'], True
-        if self.save():
+        if self.full or self.save():
             return
         self.full = True
         self.end(at, 'pageFull')
@@ -545,6 +542,9 @@ class Driver:
                 part.do = []
         if self.take is not None:
             self.take.send = []
+        if name == 'changed':
+            self.store.page = value
+            return self.out(name)
         frames = expand(value) if name == 'frames' else [None]
         for index, level in enumerate(frames):
             self.advance(at + FRAME * index)
@@ -568,9 +568,9 @@ class Driver:
 
     def hand(self, at, name, value):
         take, recovery = self.take, self.recovery
-        if name == 'changed':
-            self.store.page = value
-        elif name == 'press':
+        if name in ('press', 'recover') and take is not None and take.phase != 'ended':
+            return
+        if name == 'press':
             self.take = Take(self.store, self.offset, self.calls)
             self.take.press(at)
             if self.take.phase == 'ended' and self.acting is not None:

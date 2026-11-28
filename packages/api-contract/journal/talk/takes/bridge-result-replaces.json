@@ -74,8 +74,20 @@
              "page": {"text": "Up early.\n\nWalked to the river. Cold water.", "unsettled": []},
              "saved": {"body": "Up early.\n\nWalked to the river. Cold water.", "source": "spoken"},
              "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "ff0ee18faeed7b6a", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 32, "heardAt": 1790856004450}, {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "bytesSaved": 0, "heardAt": 1790856005000}]},
-             "wakeAt": 1790856600000}}
+             "wakeAt": 1790856600000}},
+    {"at": 1790856010500, "in": {"end": true},
+     "out": {"phase": "ending", "do": [{"microphone": "closed"}], "send": [{"type": "end"}],
+             "page": {"text": "Up early.\n\nWalked to the river. Cold water.", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river. Cold water.", "source": "spoken"},
+             "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "ff0ee18faeed7b6a", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 32, "heardAt": 1790856004450}, {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "bytesSaved": 0, "heardAt": 1790856005000}]},
+             "wakeAt": 1790856025500}},
+    {"at": 1790856011200, "in": {"heard": {"callId": "BBBBBBBBBBBBBBBBBBBBBB", "message": {"type": "ended", "stop": "completed", "code": null, "text": "", "seconds": 1, "charged": "0.000283334", "allowance": {"tier": "one", "period": "calendar_month_utc", "limit": "7", "used": "0.000283334", "reserved": "0", "remaining": "6.999716666", "resetsAt": 1801440000000, "budgetResetsAt": null, "code": "ok", "capabilities": {"text": {"large": "large", "medium": "medium", "small": "small"}, "transcription": true}}}}},
+     "out": {"phase": "ended", "do": [], "send": [],
+             "page": {"text": "Up early.\n\nWalked to the river. Cold water.", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river. Cold water.", "source": "spoken"},
+             "mark": null,
+             "wakeAt": null}}
   ],
-  "end": null,
+  "end": {"cause": "person", "code": null, "heard": true, "turns": 2, "commits": 1, "bridges": 1},
   "recovered": null
 }
