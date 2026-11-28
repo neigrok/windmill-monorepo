@@ -113,12 +113,12 @@ test('a base past the 262,144 bytes the sync registry caps it at refuses the who
   assert.equal(minted.proposal.base.length, 2 + 100 + 100);
 });
 
-// The records of a roadmap as its reading compares them: every step with its words, colour and order, present or not,
-// the live links, the kinds and the marks.
+// The records of a roadmap as its reading compares them: every step, a present one with its words, colour and order, the
+// live links, the kinds and the marks. A removed step's words are read by nothing, and Apply writes none.
 /** @param {RoadmapTree} tree */
 function compared(tree) {
   return {
-    nodes: tree.nodes.map(({ id, present, label, icon, color, description, links, ord }) => ({ id, present, label, icon, color, description, links, ord }))
+    nodes: tree.nodes.map(({ id, present, label, icon, color, description, links, ord }) => (present ? { id, present, label, icon, color, description, links, ord } : { id, present }))
       .sort((a, b) => (a.id < b.id ? -1 : 1)),
     links: tree.edges.filter((edge) => edge.present).map((edge) => jcs([edge.from, edge.to])).sort(),
     kinds: tree.kinds.map(({ id, present, hue, label, description, ord }) => ({ id, present, hue, label, description, ord })).sort((a, b) => (a.id < b.id ? -1 : 1)),

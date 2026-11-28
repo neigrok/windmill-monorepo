@@ -150,6 +150,7 @@ struct AppliedAct {
     }
   }
 
+  // A step the act makes, with the Undo that deletes it again, but one it makes and removes, which the Undo leaves removed.
   func stepUnit(_ write: ProposalFold.Reduced.RecordWrite) -> RecordUnit {
     RecordUnit(["t": .string(RoadmapStep.type), "id": .string(write.id), "f": .object(JSON.Object(uniqueKeysWithValues: write.fields.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }))]) {
       (plan: inout Plan) throws(Violation) in
@@ -171,7 +172,7 @@ struct AppliedAct {
         return
       }
       plan.create(try Valid(value, at: moment))
-      plan.undoBy(.createdRecord(restoreCommand: Roadmap.Commands.restoreTree, record: .of(value.id)))
+      if !write.removed { plan.undoBy(.createdRecord(restoreCommand: Roadmap.Commands.restoreTree, record: .of(value.id))) }
     }
   }
 
@@ -186,7 +187,7 @@ struct AppliedAct {
   }
 
   // The steps the act removes, held, as the room's delete of a step: each the copy holds brought back by its Undo, and one the
-  // act itself made taken back with its creation.
+  // act itself made left removed.
   func removing(_ removed: [ProposalFold.Reduced.RecordWrite]) -> Plan {
     var plan = Plan()
     for write in removed {

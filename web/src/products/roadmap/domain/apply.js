@@ -26,13 +26,13 @@ import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue, importChu
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
 /** @typedef {import('../../../platform/domain-kit/acts.js').ActReader} ActReader */
 /** @typedef {import('../../../platform/domain-kit/time.js').Moment} Moment */
-/** @typedef {import('../../../platform/domain-kit/runner.js').InverseResult} InverseResult */
 /** @typedef {import('./conversation.js').CoachProposalValue} CoachProposalValue */
 /** @typedef {import('./conversation.js').ProposalState} ProposalState */
 /** @typedef {import('./abilities/standing.js').Standing} Standing */
 /** @typedef {import('./abilities/proposals.js').Reduced} Reduced */
 /** @typedef {import('./records.js').LandingNote} LandingNote */
 /** @typedef {'undone' | 'skipped' | 'unavailable'} UndoOutcome */
+/** @typedef {{ kind: string, changed?: boolean, localChanged?: boolean, appliedCount?: number, skippedCount?: number, reason?: string }} UndoResult an Undo's result, its ids aside */
 
 // §7 The device's own row naming a proposal it is applying, `applying:<proposal>`. Its `stamp` is null: the row is written
 // in its act's own transaction, so its being there says the act landed.
@@ -166,13 +166,14 @@ class AppliedAct {
     });
   }
 
+  // A step the act makes, with the Undo that deletes it again, but one it makes and removes, which the Undo leaves removed.
   /** @param {import('./abilities/proposals.js').RecordWrite} write */
-  stepUnit({ id, created, fields }) {
+  stepUnit({ id, created, removed, fields }) {
     const stepId = new Id(id, RoadmapStep);
     return new RecordUnit({ t: RoadmapStep.type, id, f: fields }, (plan) => {
       if (!created) return this.changing(plan, this.stepOf(id), fields);
       plan.create(new Valid(new RoadmapStepValue(stepId, /** @type {any} */ (fields)), this.moment));
-      plan.undoBy(UndoRecipe.createdRecord(Restore.tree, stepId));
+      if (!removed) plan.undoBy(UndoRecipe.createdRecord(Restore.tree, stepId));
     });
   }
 
@@ -188,7 +189,7 @@ class AppliedAct {
   }
 
   // The steps the act removes, held, as the room's delete of a step: each the copy holds brought back by its Undo, and one
-  // the act itself made taken back with its creation.
+  // the act itself made left removed.
   /** @param {import('./abilities/proposals.js').RecordWrite[]} removed */
   removing(removed) {
     const plan = new Plan();
@@ -320,11 +321,10 @@ export class RejectProposal {
 
 // What an Undo came to as the device draws it: `undone` where it took something back, cancelled in its hold, drawn while
 // it waits for the server or settled; `skipped` where it took nothing back; `unavailable` where there was none to ask.
-/** @param {Omit<InverseResult, 'requestId' | 'inverseActId'> & { kind: string }} result @returns {UndoOutcome} */
-export function undoOutcome(result) {
-  const undo = /** @type {any} */ (result);
+/** @param {UndoResult} undo @returns {UndoOutcome} */
+export function undoOutcome(undo) {
   if (undo.kind === 'unavailable') return 'unavailable';
-  const took = undo.kind === 'cancelled' ? undo.changed : undo.kind === 'pending' ? undo.localChanged : undo.appliedCount > 0;
+  const took = undo.kind === 'cancelled' ? undo.changed : undo.kind === 'pending' ? undo.localChanged : (undo.appliedCount ?? 0) > 0;
   return took === true ? 'undone' : 'skipped';
 }
 
@@ -332,7 +332,7 @@ export function undoOutcome(result) {
 // Undo took something back as the device draws it, so an undone proposal is not offered again, and a card never says
 // Undone of changes that stand. It answers what the Undo came to, as `roadmap_proposal_undone` tells it.
 export class ProposalUndone {
-  /** @param {Id<CoachProposalValue>} proposal @param {Omit<InverseResult, 'requestId' | 'inverseActId'> & { kind: string }} undo */
+  /** @param {Id<CoachProposalValue>} proposal @param {UndoResult} undo */
   constructor(proposal, undo) {
     this.proposal = proposal;
     this.outcome = undoOutcome(undo);

@@ -292,12 +292,19 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | Delete a roadmap | none after its hold (R-7); `cancelHeld` in the hold, which brings back the Coach conversations and proposals it took | — |
 | Save a step's note | the note's `text`, from the text the draft was saved from (`""` for a first note): `StepNote` saves reversibly, so each save is an act; it skips where a write the device had not seen changed the note | writes the saved text back |
 | The landing note | none: device rows are the device's | — |
+| Apply a proposal | each segment's: a recolour's as a kind's recolour, checked by a kind's first; a new kind, step or link `createdRecord`, but a step the act makes and removes none; a changed kind or step its fields; a link made alive again or removed its life; a removed step its life; a mark `roadmap.restoreOverlay` of it. An Apply that removes a step is held, and an Undo in its hold cancels it in place | none: an undone proposal is not offered again |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
-binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+binding, and in Swift over the model server with `RoadmapServerRules`; a scene with `signedOut: true` plays on phones that
+are signed out, whose replica sends nothing. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots; an Undo or a Redo takes the Undo handle of its role's receipt, or of the
-Redo before it), `{device: <name>}`, `{inspect: {scope, t, fields}}` or `{conversation: <thread>}`. An
-input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
+Redo before it), `{device: <name>}`, `{inspect: {scope, t, fields}}`, `{conversation: <thread>}`, `{propose: {treeId, changes},
+thread, message, as?}`, a proposal minted as a turn mints one, `propose_roadmap_change` over the phone's copy with ids the runner
+mints and then `MintProposal` in `thread` on Coach's `message`, its role's result `{proposal, changes}` (the record's changes,
+each new step and kind under its id), or `{undoProposal: <role>}`, an applied proposal undone as a surface undoes it: the Undo
+of its role's `ApplyProposal`, then `ProposalUndone` with what it came to. An
+input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a proposal minted's, a save's result kind, the `InverseResult` without its ids, an undone proposal's
+`{inverse, outcome}`, the Undo's result without its ids and `ProposalUndone`'s answer,
 `{cancelHeld}`, an inspection's visible records, and `{conversation}`: null where the read `conversation` draws none, else
 `{messages, fates}`, how many of each it reads. In what a scene reads back, a minted id (`t_` and sixteen hex
 digits, or sixteen of `0-9a-z`) is named by the first role whose result holds it, `$role` or `$role.path`, and one no role
