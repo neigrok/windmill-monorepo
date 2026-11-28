@@ -21,7 +21,9 @@ roadmap's entities with a turn's opening, end and withdrawal, the read of a conv
 replaces the one pending about its roadmap, the read of that pending one, and a roadmap's delete taking its
 conversations, in `web/src/products/roadmap/domain/conversation.js` and
 `apps/ios/Domain/Sources/RoadmapDomain/Coach/Conversation.swift`, proven by
-`packages/api-contract/roadmap/domain/conversation-actions.json`. No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a
+`packages/api-contract/roadmap/domain/conversation-actions.json`. Signed out, the records reach the account at sign-in with
+the roadmaps they name, and the sign-in question on the web and the iPhone counts the conversations (§11). No turn runs
+either host yet. The roadmap's AI today is tending: a server-side agent that edits a
 roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -601,9 +603,12 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
 - Two devices that both apply one proposal before they sync write the same changes with the same
   ids, and they merge as one.
 - Reject marks the record `rejected` and writes nothing to the roadmap.
-- A roadmap that lives on the device can take a new id when an account claims it. The claim of the
-  roadmap comes first; the conversations and proposals about it then take the new id, which those
-  fields allow.
+- A roadmap made signed out keeps its id when a sign-in adds it to an account, and the conversations
+  and proposals that name it keep naming it: they are records of the same signed-out work, which one
+  answer adds or discards (§11). A subtree whose creation the server answers with the subtree its step
+  already owns takes that subtree's id; by [sync engine](engine.md) §7.7 a global type's mapping renames
+  its id in every scope, and `treeId` is a reference to `tree`, so the conversations and proposals
+  queued about it follow. No test runs that case for Coach's records.
 
 ## §8 The turn
 
@@ -701,16 +706,24 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §11 Signed out
 
 The design rules that everything works signed out: asking, direct writes, reviewing and applying.
-Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6) A signed-out person's roadmap
-already lives on the device, and the sync engine already keeps a signed-out person's records and
-carries them to the account at sign-in. The iPhone holds an installation credential already. What
-is lacking, and this build adds, is:
+Coach goes live, on the web and on the iPhone, only when it works signed out too. (R-6)
 
+- **Records.** Signed out, a conversation, its messages and write fates, and a proposal are records of
+  the device's `anon` replica in `self/roadmap`, beside the roadmaps they name, and the device draws
+  them from its unsent work. At sign-in the sync engine's lineage rule ([sync engine](engine.md)
+  §7.10) adds or discards roadmap's signed-out work as one: Add sends the records with the roadmaps
+  they name, which keep their ids, and a proposal stays as it was, pending among them; Discard takes
+  them from the device with roadmap's device rows, a running turn's mark among them. One exception is
+  known: a roadmap carried over from the old bundle whose creation the server refuses at sign-in loses
+  its Coach records when the work is sent in more than one push (node
+  `m7-a-refused-carried-roadmap-keeps-its-coach-records`).
+- **The sign-in question.** Where the work holds conversations, it counts them beside the roadmaps
+  (board 10.4 on the web, 10.7 on the iPhone), as [Roadmap on the sync engine](roadmap-on-the-engine.md)
+  §5 says. Work that changes no roadmap of the device's own joins the account without a question, its
+  conversations with it.
 - **A credential to ask with, in the browser.** The AI service admits an installation on a pass the
-  backend signs for an installation credential. No such credential exists in the browser.
-- **A screen for sign-in when both sides hold conversations.** The sync engine asks a person what to
-  do with a device's records when the account already has some. Boards 10.4 on the web and 10.7 on
-  the iPhone draw that question for Coach (§15).
+  backend signs for an installation credential. The iPhone holds one already; no such credential
+  exists in the browser yet.
 
 ## §12 What retires, and what stays
 

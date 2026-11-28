@@ -58,10 +58,11 @@ gym's and journal's scopes from its iOS registry, and roadmap's where the build 
 (`AppSettings.engineConfig`). Gym and Journal run their actions on the runtime's `runner`, which removes at once; roadmap's
 take `roadmapRunner`, which holds a removal for the engine's nine seconds. Writes made anonymously stay
 local until adoption. Occupied accounts ask one question naming every room's work by kind
-(`AdoptionQuestion`): workouts, routines, weigh-ins, movements, notes, journal pages and roadmaps, each room's other
-records as its changes, and what the account already holds of each room. The roadmaps named are those made signed out
-that still stand (`AppModel.roadmapsMadeSignedOut`); with none standing, roadmap's work joins the account unasked, as the
-journal's does with no page written. One Add/Discard answers every room, persists against the exact counted work and
+(`AdoptionQuestion`): workouts, routines, weigh-ins, movements, notes, journal pages, roadmaps and Coach's
+conversations, each room's other records as its changes, and what the account already holds of each room. The roadmaps
+and conversations named are those made signed out that still stand (`AppModel.roadmapsMadeSignedOut`,
+`conversationsMadeSignedOut`); with no roadmap standing, roadmap's work joins the account unasked, its conversations with
+it, as the journal's does with no page written. One Add/Discard answers every room, persists against the exact counted work and
 completes together. Changed work asks again about the room that changed. Sign-in from signed out, sign-out and account
 deletion flush the rooms and then, past every check of the app's that could still refuse, the Roadmap room
 (`AppModel.beforeAccountChange()`): its open note is saved and its band leaves with its Undo, since the engine releases

@@ -807,8 +807,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
   nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
   10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
-  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
-  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  as the Shell's, for the Shell's owner to rule. 10.7's question names Coach's conversations made signed out that still
+  stand, after the roadmaps. 10.8 names unconfirmed conversations at sign-out, which the phone cannot make until Coach
+  is built, so its question does not name them. For the Shell's owner: with nothing unconfirmed, Sign
   out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
   person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
@@ -1029,6 +1030,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
+- **Roadmap Coach · the sign-in question when the browser holds conversations (10.4).** Built as drawn: *Add to your
+  account?* says in one sentence how many of the browser's roadmaps and conversations wait, with no list and no note, and
+  Discard asks again, *Discard 2 roadmaps and 3 conversations?*; where the browser holds no conversation the question
+  stays flow 50's. To draw or rule:
+  - 10.4's NOTE says *The engine asks once for the roadmap room when this browser holds work made signed out and the
+    account holds roadmap records*. It is built to [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md)
+    §5 instead: signed-out work that changes no roadmap of the browser's own, such as a conversation about every
+    roadmap or a reader's about someone's public roadmap, is added without asking, its conversations with it, as the
+    iPhone adds it.
+  - No board draws signed-out work that also changes another's roadmap, such as a step a reader marked. It is built with
+    the Shell's noun after the conversations: *This browser has 1 roadmap, 1 conversation, and 1 change from before you
+    signed in.*
+  - The dialog is the shell's `AccountDecision`, as flow 50's and WD9's questions are (see *The sign-in question's
+    dialog* below). 10.4 draws it 460 px wide, with compact answers and the paragraph in the secondary ink. The web keeps
+    540 px, large answers and the lead in the primary ink. 10.4 also draws Discard's label in the danger colour, where
+    flow 50 and the web give Add and Discard equal weight.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -1964,8 +1981,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
-  drafts are not named. The account line names what the account holds; *it* for one item, else
+  movements, notes, journal pages, and on iOS roadmaps and conversations (Roadmap · iOS 10.7). Sets go with their workout; settings,
+  movement names and Coach drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
   three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
@@ -2174,7 +2191,7 @@ Android. It and the product differ in these places.
 
 - **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
   2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
-  shell's words and roadmap's in flow 50's.
+  shell's words and roadmap's in flow 50's, or in Roadmap Coach 10.4's where its work holds conversations.
 - **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
   in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
   all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
@@ -2289,8 +2306,9 @@ Android. It and the product differ in these places.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
 - **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
-  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
-  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+  answers, and its answers start at the left. Roadmap Coach 10.4 draws it 460 px wide with compact answers. The web
+  builds flow 50's `AccountDecision` for every product (540 px, the 28 px display title, large answers at the right,
+  Cancel sign-in at the left). The drawings should agree on one.
 - **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
   the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
   weigh-ins*.

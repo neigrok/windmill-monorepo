@@ -29,8 +29,9 @@ export function SyncDecisions({ question, notices = [], busy, error, onDecision,
   </Dialog>;
 }
 
-// An account decision in its words: a title, a sentence, what the work holds and a note, over its answers. From 744px a
-// dialog over the page; below, a page of its own with the answers pinned under the thumb. Focus enters on the title.
+// An account decision in its words: a title, a sentence, what the work holds and a note, where its words carry them (Roadmap
+// Coach 10.4 says all of it in the sentence), over its answers. From 744px a dialog over the page; below, a page of its own
+// with the answers pinned under the thumb. Focus enters on the title.
 // A sign-in (consistency 7d, WD9) answers Add or Discard, of equal weight, or cancels the sign-in, as Escape does; its
 // Discard asks again, in its words' `discard` (Discard all of it? where a product's words carry none), and Cancel or
 // Escape there returns to the question. A sign-out (flow 50) answers Keep, or a quiet Discard, and Escape cancels it.
@@ -76,12 +77,12 @@ export function AccountDecision({ question, busy, error, onDecision, onCancel })
         <div className="wm-decision-words">
           <h2 id={titleId} ref={titleRef} tabIndex={-1}>{confirm ? confirm.title : words.title}</h2>
           <p className="wm-decision-lead">{confirm ? confirm.body : words.lead}</p>
-          {!confirm && <ul className={`wm-decision-items${words.items.some((item) => typeof item === 'object') ? ' wm-decision-items--counted' : ''}`}>
+          {!confirm && words.items.length > 0 && <ul className={`wm-decision-items${words.items.some((item) => typeof item === 'object') ? ' wm-decision-items--counted' : ''}`}>
             {words.items.map((item, index) => (typeof item === 'object'
               ? <li key={index}><span className="wm-decision-item">{item.label}</span>{item.detail && <span className="wm-decision-detail">{item.detail}</span>}</li>
               : <li key={index}>{item}</li>))}
           </ul>}
-          {!confirm && <p className="wm-decision-note">{words.note}</p>}
+          {!confirm && words.note && <p className="wm-decision-note">{words.note}</p>}
           {error && <p className="wm-decision-note" role="alert">{t('shell.syncDecisions.failed')}</p>}
         </div>
         <div className="wm-decision-answers">{wide ? answers : [...answers].reverse()}</div>

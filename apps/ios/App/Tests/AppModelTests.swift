@@ -431,6 +431,42 @@ import SyncTesting
     #expect(try roadmaps(local) == [sail, kept.tree])
   }
 
+  // Roadmap · iOS 10.7: Coach's conversations made on a phone signed out are named beside its roadmaps, those that still
+  // stand: one withdrawn before its answer began is not, though the engine counts it. Add takes them to the account with
+  // the roadmap they are about.
+  @Test func conversationsMadeSignedOutAreNamedBesideTheRoadmapsAtSignIn() async throws {
+    let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
+    let owner = server.identity(email: "roadmap-conversations@example.com")
+    try await existing.signIn(owner)
+    let sail = try RoadmapFixture.plantLearnToSail(try #require(existing.runtime).roadmapRunner).tree
+    await existing.runtime?.engine.start()
+    try await roadmapSettled(existing, sail)
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+
+    let local = try LineageFlowTests().fixture(server)
+    let runner = try #require(local.runtime).roadmapRunner
+    guard case .committed(let made, _) = try runner.runAct(CreateRoadmap(title: "Learn to cook")), let cook = made.tree.record.string,
+          case .committed(let asked, _) = try runner.runAct(RoadmapDomain.OpenTurn(about: .init(treeId: cook), question: "Where do I start?")),
+          case .committed = try runner.runAct(RoadmapDomain.EndTurn(asked.coach, state: .completed, text: "Boil water.")),
+          case .committed = try runner.runAct(RoadmapDomain.OpenTurn(about: .init(treeId: nil), question: "What should I learn next?")),
+          case .committed(let withdrawn, _) = try runner.runAct(RoadmapDomain.OpenTurn(about: .init(treeId: cook), question: "Never asked")),
+          case .committed = try runner.runAct(RoadmapDomain.WithdrawTurn(turn: withdrawn)) else {
+      Issue.record("the roadmap or its conversations were not made")
+      return
+    }
+    try await local.signIn(server.identity(email: owner.email))
+    #expect(local.sheet == .adoption && local.pendingAdoptions.map(\.product) == ["roadmap"])
+    #expect(local.pendingAdoptions.first?.counts[RoadmapDomain.CoachThread.type] == 3 && local.adoptionCounts[.roadmap]?[RoadmapDomain.CoachThread.type] == 2)
+    #expect(local.adoptionAlertMessage
+            == "This phone has 1 roadmap and 2 conversations from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.")
+    await local.press(.discard, asked: local.pendingAdoptions)
+    #expect(local.adoptionAlertTitle == "Discard 1 roadmap and 2 conversations?")
+    await local.adopt(.add, asked: local.pendingAdoptions)
+    #expect(local.account == owner.account && local.pendingAdoptions.isEmpty)
+    let about = try #require(local.runtime).roadmapRunner.read(RoadmapDomain.CoachThread.scope) { try $0.repository(RoadmapDomain.CoachThread.self).all(in: .drawn).map(\.treeId).sorted { ($0 ?? "") < ($1 ?? "") } }
+    #expect(about == [nil, cook])
+  }
+
   // With no roadmap made signed out left standing, the roadmap work joins the account unasked, as the journal's does with
   // no page written, and the roadmap deleted stays deleted.
   @Test func roadmapWorkWithNoRoadmapStandingJoinsTheAccountUnasked() async throws {

@@ -478,6 +478,28 @@
         }
       }
     },
+    "%lld conversations" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld conversation"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld conversations"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld custom movements" : {
       "localizations" : {
         "en" : {
