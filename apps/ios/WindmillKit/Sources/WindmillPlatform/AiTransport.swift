@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Agent
 import SyncCore
 
@@ -21,12 +22,33 @@ nonisolated public struct AiResponse: Sendable {
   }
 }
 
+nonisolated public enum AiSocketFrame: Sendable, Equatable {
+  case text(String)
+  case binary([UInt8])
+}
+
+@MainActor public protocol AiSocket: AnyObject, Sendable {
+  func send(_ frame: AiSocketFrame, sent: @escaping @MainActor () -> Void)
+  func receive() async throws -> AiSocketFrame?
+  func ping(answered: @escaping @MainActor () -> Void)
+  func close()
+}
+
+nonisolated public enum AiUpgrade: Sendable {
+  case open(any AiSocket)
+  case refused(status: Int)
+}
+
 @MainActor public protocol AiTransport: AnyObject {
   func send(_ request: AiRequest) async throws -> AiResponse
+  func upgrade(_ request: AiRequest, subprotocol: String) async throws -> AiUpgrade
   func cancel()
 }
 
-extension AiTransport { public func cancel() {} }
+extension AiTransport {
+  public func cancel() {}
+  public func upgrade(_ request: AiRequest, subprotocol: String) async throws -> AiUpgrade { throw AiTransportFailure.transport }
+}
 
 nonisolated public enum AiTransportFailure: Error { case offline, transport, invalidOrigin, invalidResponse }
 
@@ -60,12 +82,7 @@ public final class AiURLSessionTransport: AiTransport {
   }
 
   public func send(_ input: AiRequest) async throws -> AiResponse {
-    guard input.path.hasPrefix("/v1/"), !input.path.contains("\\"),
-          let url = URL(string: input.path, relativeTo: origin)?.absoluteURL,
-          url.scheme == origin.scheme, url.host == origin.host, url.port == origin.port,
-          url.user == nil, url.password == nil, url.fragment == nil
-    else { throw AiTransportFailure.invalidOrigin }
-    var request = URLRequest(url: url)
+    var request = URLRequest(url: try pinned(input.path))
     request.httpMethod = input.method
     request.httpShouldHandleCookies = false
     request.httpBody = input.body.map { Data($0) }
@@ -95,13 +112,123 @@ public final class AiURLSessionTransport: AiTransport {
     } catch { throw Self.classify(error) }
   }
 
-  nonisolated static func classify(_ error: Error) -> Error {
+  public func upgrade(_ input: AiRequest, subprotocol: String) async throws -> AiUpgrade {
+    var components = URLComponents(url: try pinned(input.path), resolvingAgainstBaseURL: false)
+    components?.scheme = origin.scheme == "https" ? "wss" : "ws"
+    guard let url = components?.url else { throw AiTransportFailure.invalidOrigin }
+    var request = URLRequest(url: url)
+    request.httpShouldHandleCookies = false
+    for (name, value) in input.headers { request.setValue(value, forHTTPHeaderField: name) }
+    request.setValue(subprotocol, forHTTPHeaderField: "Sec-WebSocket-Protocol")
+    let task = session.webSocketTask(with: request)
+    let opening = AiSocketOpening()
+    task.delegate = opening
+    task.resume()
+    switch await withTaskCancellationHandler(operation: { await opening.outcome() }, onCancel: { task.cancel() }) {
+    case .open(let chosen):
+      guard chosen == subprotocol, let response = task.response as? HTTPURLResponse, response.url?.host == origin.host,
+            response.url?.port == origin.port else { task.cancel(); throw AiTransportFailure.invalidResponse }
+      return .open(AiURLSessionSocket(task: task))
+    case .refused(let status):
+      task.cancel()
+      return .refused(status: status)
+    case .unanswered(let failure):
+      task.cancel()
+      throw failure
+    }
+  }
+
+  func pinned(_ path: String) throws -> URL {
+    guard path.hasPrefix("/v1/"), !path.contains("\\"),
+          let url = URL(string: path, relativeTo: origin)?.absoluteURL,
+          url.scheme == origin.scheme, url.host == origin.host, url.port == origin.port,
+          url.user == nil, url.password == nil, url.fragment == nil
+    else { throw AiTransportFailure.invalidOrigin }
+    return url
+  }
+
+  nonisolated static func classify(_ error: Error) -> AiTransportFailure {
     if let error = error as? AiTransportFailure { return error }
     if let error = error as? URLError,
        [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code) {
-      return AiTransportFailure.offline
+      return .offline
     }
-    return AiTransportFailure.transport
+    return .transport
+  }
+}
+
+final class AiURLSessionSocket: AiSocket {
+  let task: URLSessionWebSocketTask
+  init(task: URLSessionWebSocketTask) { self.task = task }
+
+  func send(_ frame: AiSocketFrame, sent: @escaping @MainActor () -> Void) {
+    let message: URLSessionWebSocketTask.Message = switch frame {
+    case .text(let text): .string(text)
+    case .binary(let bytes): .data(Data(bytes))
+    }
+    task.send(message) { _ in Task { @MainActor in sent() } }
+  }
+
+  func receive() async throws -> AiSocketFrame? {
+    do {
+      switch try await task.receive() {
+      case .string(let text): return .text(text)
+      case .data(let data): return .binary([UInt8](data))
+      @unknown default: throw AiTransportFailure.invalidResponse
+      }
+    } catch {
+      if [.normalClosure, .goingAway].contains(task.closeCode) { return nil }
+      throw AiURLSessionTransport.classify(error)
+    }
+  }
+
+  func ping(answered: @escaping @MainActor () -> Void) {
+    task.sendPing { error in if error == nil { Task { @MainActor in answered() } } }
+  }
+
+  func close() { task.cancel(with: .normalClosure, reason: nil) }
+}
+
+nonisolated final class AiSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
+  enum Outcome: Sendable {
+    case open(String?)
+    case refused(Int)
+    case unanswered(AiTransportFailure)
+  }
+  let state = Mutex<(outcome: Outcome?, waiter: CheckedContinuation<Outcome, Never>?)>((nil, nil))
+
+  func outcome() async -> Outcome {
+    await withCheckedContinuation { continuation in
+      let settled = state.withLock { state -> Outcome? in
+        if state.outcome == nil { state.waiter = continuation }
+        return state.outcome
+      }
+      if let settled { continuation.resume(returning: settled) }
+    }
+  }
+
+  func settle(_ outcome: Outcome) {
+    let waiter = state.withLock { state -> CheckedContinuation<Outcome, Never>? in
+      guard state.outcome == nil else { return nil }
+      state.outcome = outcome
+      defer { state.waiter = nil }
+      return state.waiter
+    }
+    waiter?.resume(returning: outcome)
+  }
+
+  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol chosen: String?) {
+    settle(.open(chosen))
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+    if let status = (task.response as? HTTPURLResponse)?.statusCode, status != 101 { return settle(.refused(status)) }
+    settle(.unanswered(AiURLSessionTransport.classify(error ?? AiTransportFailure.transport)))
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+    completionHandler(nil)
   }
 }
 

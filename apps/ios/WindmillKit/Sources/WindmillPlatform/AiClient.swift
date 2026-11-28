@@ -72,6 +72,7 @@ extension AiClock {
   var stop = false
   var waitTask: Task<Void, Error>?
   var cancelPreparation: (() -> Void)?
+  var connections: [AiLiveConnection] = []
   public private(set) var lastAllowance: JSON?
 
   public init(transport: any AiTransport, clock: any AiClock, diagnostics: any AiDiagnostics,
@@ -85,7 +86,10 @@ extension AiClock {
 
   public func seatWillChange() {
     generation &+= 1; pass = nil; lastAllowance = nil; stop = true; waitTask?.cancel()
-    cancelPreparation?(); cancelPreparation = nil; transport.cancel()
+    cancelPreparation?(); cancelPreparation = nil
+    for connection in connections { connection.seatChanged() }
+    connections = []
+    transport.cancel()
   }
   public func invalidAnswer() { diagnostics.failure(operation: "ai-call", kind: "wire") }
   public func stopAskingAgain() { stop = true; waitTask?.cancel(); cancelPreparation?() }
@@ -130,6 +134,62 @@ extension AiClock {
   public func recover(id: String, profile: Profile, seat: Seat,
                       receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     try await round(id: id, body: nil, use: profile.use, seat: seat, pictures: [], recover: true, receive: receive)
+  }
+
+  public func openLive(callId: String, use: AiUse, seat: Seat, livenessMs: Int64) async throws -> AiLiveOpening {
+    guard Self.validID(callId) else { return .refused(defect("invalid_request", source: .wire)) }
+    let epoch = generation
+    var renewed = false
+    while true {
+      let token: String
+      do { token = try await self.token(use: use, seat: seat, epoch: epoch) }
+      catch let failure as AiFailure { return failure.source == .transport ? .lost : .refused(failure) }
+      let upgrade: AiUpgrade
+      do {
+        upgrade = try await transport.upgrade(AiRequest(method: "GET", path: "/v1/calls/\(callId)/transcription?\(use.labelQuery)",
+          headers: ["Authorization": "Bearer " + token]), subprotocol: "wm-live.v1")
+      } catch {
+        try fence(epoch)
+        if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
+        return .lost
+      }
+      do { try fence(epoch) } catch {
+        if case .open(let socket) = upgrade { socket.close() }
+        throw error
+      }
+      switch upgrade {
+      case .open(let socket):
+        let connection = AiLiveConnection(socket: socket, clock: clock, diagnostics: diagnostics, livenessMs: livenessMs)
+        connections.removeAll { $0.finished }
+        connections.append(connection)
+        let opening = try await connection.firstMessage(callId: callId)
+        try fence(epoch)
+        return opening
+      case .refused(status: 401) where !renewed:
+        renewed = true
+        pass = nil
+      case .refused(status: 401): return .refused(defect("invalid-answer", source: .text))
+      case .refused(status: 400): return .refused(defect("invalid_request", source: .text))
+      case .refused: return .lost
+      }
+    }
+  }
+
+  public func liveResult(callId: String, use: AiUse, seat: Seat) async throws -> AiLiveResult {
+    guard Self.validID(callId) else { throw defect("invalid_request", source: .wire) }
+    let epoch = generation
+    let response: AiResponse
+    do {
+      response = try await authorized(method: "GET", path: "/v1/calls/\(callId)/result", use: use, seat: seat, epoch: epoch,
+                                      source: .result, answers: Set(Self.liveStates.keys))
+    } catch let failure as AiFailure {
+      if let state = Self.liveStates[failure.code ?? ""] { return state }
+      throw failure
+    }
+    guard response.status == 200 else { throw defect("invalid-answer", source: .wire) }
+    let value = try await body(response, operation: "ai-call", epoch: epoch)
+    try fence(epoch)
+    do { return .answered(try AiLiveEnd(value, opening: false)) } catch { throw defect("invalid-answer", source: .wire) }
   }
 
   func round(id: String, body: [UInt8]?, use: AiUse, seat: Seat, pictures: [Picture], recover: Bool,
@@ -351,7 +411,8 @@ extension AiClock {
   }
 
   func authorized(method: String, path: String, data: [UInt8]? = nil, contentType: String = "application/json",
-                  use: AiUse, seat: Seat, epoch: UInt64) async throws -> AiResponse {
+                  use: AiUse, seat: Seat, epoch: UInt64, source: AiFailure.Source = .text,
+                  answers: Set<String> = []) async throws -> AiResponse {
     for attempt in 0...1 {
       let token = try await token(use: use, seat: seat, epoch: epoch)
       let response: AiResponse
@@ -365,14 +426,15 @@ extension AiClock {
       }
       try fence(epoch)
       if (200..<300).contains(response.status) { return response }
-      let failure = try await refusal(response, source: .text, admission: .none, epoch: epoch)
+      let failure = try await refusal(response, source: source, admission: .none, epoch: epoch)
       if failure.code == "pass_expired" && attempt == 0 { pass = nil; continue }
+      if answers.contains(failure.code ?? "") { throw failure }
       if Self.defectCodes.contains(failure.code ?? "") || failure.code?.hasPrefix("pass_") == true {
-        throw defect(failure.code ?? "invalid-answer", source: .text)
+        throw defect(failure.code ?? "invalid-answer", source: source)
       }
       throw failure
     }
-    throw defect("pass_expired", source: .text)
+    throw defect("pass_expired", source: source)
   }
 
   func body(_ response: AiResponse, operation: String, epoch: UInt64) async throws -> JSON {
@@ -431,6 +493,7 @@ extension AiClock {
   static let recoveryRetryCodes: Set<String> = ["rate_limited", "busy", "accounting_unavailable"]
   static let transientCodes: Set<String> = ["busy", "paused", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable"]
   static let defectCodes: Set<String> = ["invalid_request", "too_large", "provider_rejected", "funding_required", "conflict", "call_unknown"]
+  static let liveStates: [String: AiLiveResult] = ["conflict": .open, "result_gone": .gone, "call_unknown": .unknown]
   static func validID(_ value: String) -> Bool {
     (22...64).contains(value.utf8.count) && value.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }
   }

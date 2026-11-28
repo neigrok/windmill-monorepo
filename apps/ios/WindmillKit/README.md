@@ -9,11 +9,23 @@ The shipped app retains its existing Coach wiring.
 with sixty seconds left and fences delayed results against a seat generation. `AiURLSessionTransport`
 pins one HTTPS origin, has no cookie, credential or response cache and refuses redirects. An explicit
 loopback-only HTTP option serves local verification. Session and installation credentials go only
-to the pass door. Text, result, allowance and picture requests carry only the pass.
+to the pass door. Text, result, allowance, picture and live requests carry only the pass.
 
 A pass is fetched for an `AiUse`: a name, a version and the label its calls carry. A Coach
 `Profile` gives one as `profile.use`; a product without a profile names its own, as Journal Talk's
-spec names `journal.talk`. `allowance(for:seat:)` reads the allowance under a use's pass.
+spec names `journal.talk`. `allowance(for:seat:)` reads the allowance under a use's pass, and
+`liveResult(callId:use:seat:)` reads a live session's last message, answering it or that the session
+is still open, gone or unknown. `openLive(callId:use:seat:livenessMs:)` upgrades
+`/v1/calls/{callId}/transcription` to `wm-live.v1` on the pinned origin, with the pass as
+`Authorization`. URLSession gives a refused upgrade's status and never its body, so a 401 renews the
+pass and tries once more, a second 401 or a 400 is a reported defect, and any other status is lost.
+The opening answers `started` with an `AiLiveConnection`, a refusal, a first `failed`, or lost. The
+connection sends audio frames, `commit` and `end`, holds no audio, and delivers `text`, `turn` and
+the session's `ended` or `failed`, each validated field by field, or lost. It is lost when it closes
+or errors first, when an audio frame has waited `livenessMs` to be sent, or when a ping goes
+unanswered that long; it pings every `livenessMs` from `started` until `end`. A wire defect is
+reported and loses it, a cancelled read closes it, and a seat change closes every connection and
+fences its reads.
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
@@ -61,7 +73,8 @@ Product integration supplies the Sentry and first-party event sinks described in
 or user content enters either port.
 
 Run `swift test --package-path apps/ios/WindmillKit --explicit-target-dependency-import-check error`. Tests replay every shared story, parse the AI
-wire fixtures across byte boundaries, exercise URLSession credential isolation, race pass and
+wire fixtures across byte boundaries, play the live door from them through a played socket and a
+loopback WebSocket, exercise URLSession credential isolation, race pass and
 allowance replies against seat changes, and verify real sync commit guards. No provider runs.
 `CoachLocalProbeTests/run` is opt-in: `WM_COACH_PROBE_CONFIG` supplies a protected synthetic config,
 `WM_COACH_PROBE_OUT` names the JSON result and optional `WM_COACH_PROBE_STATE` holds only the visible
