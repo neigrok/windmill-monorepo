@@ -90,7 +90,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests; build its image and run it; check its wire fixtures are what `generate.py` writes and pass `check.py` |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
-| `coach.yml` | check the shared Coach turn stories match their declarations and the AI wire shapes |
+| `coach.yml` | check the shared Coach turn stories match their declarations and the AI wire shapes, and Journal Talk's stories match theirs, the pause rule, the AI wire's live messages and the mark's registry row |
 | `deploy.yml` | deploy a successful backend main-push SHA or a main-reachable commit SHA; sync minimum changes require an exact manual cutoff acknowledgement |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger

@@ -1,0 +1,15 @@
+{
+  "format": "journal-take/v1",
+  "name": "recover-no-mark",
+  "given": {"offsetSeconds": 0, "page": {"body": "Up early.\n", "source": "typed"}, "mark": null, "callIds": []},
+  "steps": [
+    {"at": 1790856060000, "in": {"recover": true},
+     "out": {"phase": "recovered", "do": [], "send": [],
+             "page": {"text": "Up early.\n", "unsettled": []},
+             "saved": {"body": "Up early.\n", "source": "typed"},
+             "mark": null,
+             "wakeAt": null}}
+  ],
+  "end": null,
+  "recovered": {"cause": "dropped", "answered": 0}
+}

@@ -1,0 +1,21 @@
+{
+  "format": "journal-take/v1",
+  "name": "recover-page-changed",
+  "given": {"offsetSeconds": 0, "page": {"body": "Up early.\n\nWalked to the river.\n\nAnd home by dark.", "source": "spoken"}, "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "2b52e661f19e998f", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856005800}]}, "callIds": []},
+  "steps": [
+    {"at": 1790856060000, "in": {"recover": true},
+     "out": {"phase": "recovering", "do": [{"read": "AAAAAAAAAAAAAAAAAAAAAA"}], "send": [],
+             "page": {"text": "Up early.\n\nWalked to the river.\n\nAnd home by dark.", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river.\n\nAnd home by dark.", "source": "spoken"},
+             "mark": {"day": "2026-10-01", "bytesBefore": 9, "pageDigest": "2b52e661f19e998f", "sessions": [{"callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesSaved": 20, "heardAt": 1790856005800}]},
+             "wakeAt": 1790856605800}},
+    {"at": 1790856060200, "in": {"result": {"callId": "AAAAAAAAAAAAAAAAAAAAAA", "message": {"type": "ended", "stop": "cut", "code": "went_away", "text": "Walked to the river. Cold water.", "seconds": 1, "charged": "0.000283334", "allowance": {"tier": "one", "period": "calendar_month_utc", "limit": "7", "used": "0.000283334", "reserved": "0", "remaining": "6.999716666", "resetsAt": 1801440000000, "budgetResetsAt": null, "code": "ok", "capabilities": {"text": {"large": "large", "medium": "medium", "small": "small"}, "transcription": true}}}}},
+     "out": {"phase": "recovered", "do": [], "send": [],
+             "page": {"text": "Up early.\n\nWalked to the river.\n\nAnd home by dark.", "unsettled": []},
+             "saved": {"body": "Up early.\n\nWalked to the river.\n\nAnd home by dark.", "source": "spoken"},
+             "mark": null,
+             "wakeAt": null}}
+  ],
+  "end": null,
+  "recovered": {"cause": "recovered", "answered": 1}
+}
