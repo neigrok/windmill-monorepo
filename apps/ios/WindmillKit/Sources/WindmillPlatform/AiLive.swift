@@ -5,14 +5,14 @@ import SyncCore
 nonisolated public enum AiLiveOpening: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
   case started(AiLiveConnection)
   case refused(AiFailure)
-  case failed(AiLiveEnd)
+  case failed(AiLiveEnd, admitted: Bool)
   case lost(AiLiveLoss)
 
   public var description: String {
     switch self {
     case .started: "started"
     case .refused(let failure): "refused(\(failure))"
-    case .failed(let end): "failed(\(end))"
+    case .failed(let end, let admitted): "failed(\(end), admitted: \(admitted))"
     case .lost(let loss): "lost(\(loss))"
     }
   }
@@ -95,7 +95,7 @@ extension AiLiveEnd {
       else { throw AiTransportFailure.invalidResponse }
       stop = ended
     case "failed":
-      guard code != nil, !opening || (charged == nil && seconds == 0 && text.isEmpty) else { throw AiTransportFailure.invalidResponse }
+      guard code != nil, !opening || ([nil, "0"].contains(charged) && seconds == 0 && text.isEmpty) else { throw AiTransportFailure.invalidResponse }
       stop = .failed
     default: throw AiTransportFailure.invalidResponse
     }
@@ -117,8 +117,8 @@ extension AiLiveEnd {
   static let cuts: Set<String> = ["subject_exhausted", "funding_required", "paused", "session_limit", "idle", "went_away", "restarting"]
   static let failures: Set<String> = ["provider_failed", "provider_unavailable", "accounting_unavailable", "invalid_request", "funding_required"]
   static let refusals: Set<String> = [
-    "invalid_request", "conflict", "funding_required", "device_bound", "subject_exhausted", "free_month_exhausted",
-    "free_day_exhausted", "concurrency_exhausted", "rate_limited", "busy", "paused", "accounting_unavailable", "provider_unavailable",
+    "invalid_request", "conflict", "rate_limited", "busy", "accounting_unavailable", "funding_required", "concurrency_exhausted",
+    "subject_exhausted", "paused", "provider_unavailable",
   ]
   static let defects: Set<String> = ["invalid_request", "conflict"]
 }
@@ -217,7 +217,7 @@ extension AiLiveMessage {
         let end = try AiLiveEnd(value, opening: true)
         report(end, failures: AiLiveEnd.refusals)
         finish(.end(end))
-        return .failed(end)
+        return .failed(end, admitted: end.charged != nil)
       }
       let started = try AiWire.fields(value, "type callId remainingSeconds")
       guard try started.member("type").asString() == "started", try started.member("callId").asString() == callId
@@ -311,8 +311,8 @@ extension AiLiveMessage {
     socket?.send(.text(JSON.object(.init(uniqueKeysWithValues: [("type", .string(type))])).jcsText)) {}
   }
 
-  @discardableResult func finish(_ message: AiLiveMessage) -> AiLiveMessage {
-    guard last == nil else { return last ?? message }
+  func finish(_ message: AiLiveMessage) {
+    guard last == nil else { return }
     last = message
     for task in tasks { task.cancel() }
     tasks = []
@@ -321,6 +321,5 @@ extension AiLiveMessage {
     let waiting = readers
     readers = []
     for reader in waiting { reader.resume(returning: message) }
-    return message
   }
 }
